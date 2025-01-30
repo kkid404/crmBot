@@ -1,0 +1,89 @@
+const { Scenes } = require('telegraf');
+const { BaseScene } = Scenes;
+const ruMessage = require('../lang/ru.json');
+const { start } = require('../keyboards/start.keyboard');
+const { back } = require('../keyboards/back.keyboard');
+const { dont_example } = require('../keyboards/dont_example.keyboard');
+const userService = require('../services/user.service');
+
+const taskService = require('../services/task.service');
+
+const createName = async (geo) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    let counTaskToday = await taskService.getTaskToday()
+    counTaskToday = counTaskToday.length + 1
+    return `${geo}_${day}_${month}_${year}_${counTaskToday}`
+}
+
+
+const writeTTScene = new BaseScene('writeTTScene');
+
+writeTTScene.enter(async (ctx) => {
+    ctx.session.step = 1;
+    await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+});
+
+writeTTScene.on('text', async (ctx) => {
+    const step = ctx.session.step;
+    const tgId = String(ctx.from.id);
+    const userInput = ctx.message.text;
+
+    // обработка кнопки назад
+    if (userInput == ruMessage.keyboards.back[0]) {
+        
+        await ctx.scene.enter('backScene')
+        ctx.session = {};
+        ctx.scene.leave();
+        return
+    }
+
+    switch (step) {
+        case 1:
+            ctx.session.geo = ctx.message.text
+            const name = await createName(ctx.session.geo)
+            ctx.session.name = name
+            await ctx.reply(ruMessage.messages.writeTT.send_app, back())
+            break;
+        case 2:
+            ctx.session.app = ctx.message.text
+            await ctx.reply(ruMessage.messages.writeTT.send_description, back())
+            break;
+        case 3:
+            ctx.session.description = ctx.message.text
+            await ctx.reply(ruMessage.messages.writeTT.send_example, await dont_example())
+            break;
+        case 4:
+            ctx.session.example = ctx.message.text
+            let user = await userService.findUserByTelegramId(tgId);
+            const data = {
+                name: ctx.session.name,
+                link_app: ctx.session.app,
+                description: ctx.session.description,
+                example_creative: ctx.session.example,
+                buyer: user._id
+            }
+            try{
+                await taskService.createTask(data)
+                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", ctx.session.name), await start(ctx.from.id))
+            }catch(error){
+                console.log(error)
+                await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+            }
+            ctx.session = {};
+            ctx.scene.leave();
+            break;
+        default:
+            await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+            ctx.session = {};
+            ctx.scene.leave();
+            break;
+    }
+    ctx.session.step++;
+    })
+
+
+module.exports = writeTTScene;
+
