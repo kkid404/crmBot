@@ -8,6 +8,42 @@ const userService = require('../services/user.service');
 
 const taskService = require('../services/task.service');
 
+function handleError(error) {
+    console.error(`Error occurred: ${error.message}`);
+    // Вы можете также отправить сообщение пользователю или записать ошибку более детально
+}
+
+async function handleMedia(ctx) {
+    const tgId = String(ctx.from.id);
+    // Проверяем, ожидаем ли мы медиафайл
+    if (!ctx.session.awaitingMedia) {
+        return; // Если не ожидаем медиафайл, ничего не делаем
+    }
+
+    const fileId = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : ctx.message.video.file_id;
+    if (!fileId) return; // Если нет файла, пропускаем
+
+
+    ctx.session.example = fileId
+    let user = await userService.findUserByTelegramId(tgId);
+    const data = {
+        name: ctx.session.name,
+        link_app: ctx.session.app,
+        description: ctx.session.description,
+        example_creative: ctx.session.example,
+        buyer: user._id
+    }
+    try{
+        await taskService.createTask(data)
+        await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", ctx.session.name), await start(ctx.from.id))
+    }catch(error){
+        console.log(error)
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+    }
+    ctx.session = {};
+    ctx.scene.leave();
+}
+
 const createName = async (geo) => {
     const now = new Date();
     const year = now.getFullYear();
@@ -54,6 +90,8 @@ writeTTScene.on('text', async (ctx) => {
         case 3:
             ctx.session.description = ctx.message.text
             await ctx.reply(ruMessage.messages.writeTT.send_example, await dont_example())
+            // Ожидаем медиафайл и сохраняем его в сессии
+            ctx.session.awaitingMedia = true; // Устанавливаем флаг ожидания медиафайла
             break;
         case 4:
             ctx.session.example = ctx.message.text
@@ -84,6 +122,9 @@ writeTTScene.on('text', async (ctx) => {
     ctx.session.step++;
     })
 
+
+writeTTScene.on('photo', handleMedia);
+writeTTScene.on('video', handleMedia);
 
 module.exports = writeTTScene;
 

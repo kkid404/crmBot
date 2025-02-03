@@ -24,8 +24,17 @@ getTTScene.enter(async (ctx) => {
 });
 
 getTTScene.action("back", async (ctx) => {
+    // Если ранее отправлялось медиа, удаляем его
+    if (ctx.session.exampleMediaMessageId) {
+        try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
+        } catch (err) {
+            console.error("Ошибка при удалении медиа примера:", err);
+        }
+        ctx.session.exampleMediaMessageId = null;
+    }
     await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await tasks());
-    ctx.session.selectedTask = ''
+    ctx.session.selectedTask = '';
 })
 
 getTTScene.action("select", async (ctx) => {
@@ -102,10 +111,8 @@ getTTScene.action("done", async (ctx) => {
 
 // Обработчик callback-запросов
 getTTScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное выражение для ObjectId
-
     const taskId = ctx.callbackQuery.data; // Получаем ID задачи из callback_data
     const task = await taskService.findTaskById(taskId); // Находим задачу по ID
-
     ctx.session.selectedTask = taskId; // Сохраняем выбранную задачу в сессии
 
     if (!task) {
@@ -113,23 +120,53 @@ getTTScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное в�
         return;
     }
 
+    // Проверяем, является ли example_creative file_id (медиа) или текстом.
+    // Здесь проверяем, начинается ли строка с "AgAC" или "BAAC"
+    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+
+    // Формируем строку для отображения примера креатива.
+    // Если это медиа, выводим подсказку, если текст — выводим его.
+    const exampleLine = isMedia
+        ? "🎨 Пример креатива: Пример креатива ниже"
+        : `🎨 Пример креатива: ${task.example_creative}`;
+
     // Формируем текст сообщения с информацией о задаче
     const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${task.example_creative}
+${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
 
-    // Редактируем сообщение с новой информацией
+    // Редактируем сообщение с информацией о задаче
     await ctx.editMessageText(taskInfo, selected_or_back());
 
-    ctx.session.taskInfo = taskInfo
-    ctx.session.taskname = task.name
+    ctx.session.taskInfo = taskInfo;
+    ctx.session.taskname = task.name;
+
+    // Если example_creative содержит file_id, отправляем медиа и сохраняем id сообщения
+    if (isMedia) {
+        let mediaResponse;
+        try {
+            // Пробуем отправить как фото
+            mediaResponse = await ctx.replyWithPhoto(task.example_creative);
+        } catch (photoError) {
+            try {
+                // Если не удалось отправить как фото, пробуем отправить как видео
+                mediaResponse = await ctx.replyWithVideo(task.example_creative);
+            } catch (videoError) {
+                console.error("Ошибка отправки медиа примера:", videoError);
+                await ctx.reply("Ошибка отправки медиа примера");
+            }
+        }
+        // Сохраняем идентификатор отправленного сообщения с медиа для последующего удаления
+        if (mediaResponse && mediaResponse.message_id) {
+            ctx.session.exampleMediaMessageId = mediaResponse.message_id;
+        }
+    }
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
 });
-
 
 module.exports = getTTScene
