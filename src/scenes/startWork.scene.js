@@ -11,7 +11,6 @@ startWorkScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     let user = await userService.findUserByTelegramId(tgId);
     const hasActiveShift = await EmployeeScheduleService.findActiveShiftByCreativeId(user._id);
-    console.log(hasActiveShift)
     if(hasActiveShift !== null) {
         await EmployeeScheduleService.updateShift(hasActiveShift._id, {shiftEnd: Date()})
     } else {

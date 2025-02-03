@@ -34,7 +34,6 @@ getMyTtCreatorScene.action("quit", async (ctx) => {
 
 // Обработчик callback-запросов
 getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное выражение для ObjectId
-    console.log(ctx.callbackQuery.data);
 
     const taskId = ctx.callbackQuery.data; // Получаем ID задачи из callback_data
     const task = await taskService.findTaskById(taskId); // Находим задачу по ID

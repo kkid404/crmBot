@@ -25,7 +25,6 @@ async function start(tgId) {
 
             const hasActiveShift = await EmployeeScheduleService.findActiveShiftByCreativeId(user._id);
             const shiftButton = hasActiveShift === null ? shiftControl.start_shift : shiftControl.end_shift;
-            console.log(hasActiveShift)
             // Убедимся, что индекс существует, или добавляем кнопку в конец
             if (keyboardLayout.length >= 4) {
                 keyboardLayout[3] = shiftButton;
