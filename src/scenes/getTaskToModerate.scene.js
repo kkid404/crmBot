@@ -108,7 +108,6 @@ getTaskToModerateScene.enter(async (ctx) => {
     }
 });
 
-// Обработчик выбора задания (ID задания)
 getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     try {
         const taskId = ctx.callbackQuery.data;
@@ -121,7 +120,32 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
 
         ctx.session.selectedTask = taskId;
         const taskInfo = formatTaskInfo(task);
-        await ctx.editMessageText(taskInfo, moderate());
+
+        // Если в задании есть медиа (file_id)
+        if (task.result) {
+            // Если тип медиа сохранён, используем его
+            if (task.mediaType) {
+                if (task.mediaType === 'photo') {
+                    await ctx.replyWithPhoto(task.result);
+                } else if (task.mediaType === 'video') {
+                    await ctx.replyWithVideo(task.result);
+                }
+            } else {
+                // Если тип не сохранён, пробуем отправить как фото, а при ошибке – как видео
+                try {
+                    await ctx.replyWithPhoto(task.result);
+                } catch (photoError) {
+                    try {
+                        await ctx.replyWithVideo(task.result);
+                    } catch (videoError) {
+                        console.error("Не удалось отправить медиа:", videoError);
+                        await ctx.reply("Ошибка отправки медиафайла.");
+                    }
+                }
+            }
+        }
+
+        await ctx.reply(taskInfo, moderate());
 
         ctx.session.taskInfo = taskInfo;
         ctx.session.taskname = task.name;
@@ -132,6 +156,8 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
     }
 });
+
+
 
 // Обработчик нажатия кнопки "✅ Принять" (done)
 getTaskToModerateScene.action('done', async (ctx) => {
