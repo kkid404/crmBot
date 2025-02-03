@@ -20,6 +20,92 @@ const formatTaskInfo = (task) => {
     `;
 };
 
+const safeEditMessageText = async (ctx, text, extra) => {
+    try {
+        await ctx.editMessageText(text, extra);
+    } catch (error) {
+        // Если редактирование не удалось, отправляем новое сообщение
+        if (error.response &&
+            error.response.error_code === 400 &&
+            error.response.description.includes("message can't be edited")) {
+            await ctx.reply(text, extra);
+        } else {
+            throw error;
+        }
+    }
+};
+
+
+// Функция для проверки, проголосовали ли все чекеры, и финализации задания
+const checkAndFinalizeTask = async (ctx) => {
+    try {
+        const taskId = ctx.session.selectedTask;
+        const task = await taskService.findTaskById(taskId);
+        if (!task) return;
+        const version = task.version;
+
+        // Получаем записи голосования для текущей версии
+        const allRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
+        const versionRecords = allRecords.filter(record => record.version === version);
+        
+        // Получаем всех чекеров (предполагается, что голосовать должны все чекеры системы)
+        const checkers = await userService.findAllCheckers();
+        const totalCheckers = checkers.length;
+        
+        if (versionRecords.length < totalCheckers) {
+            // Не все голосовали – обновляем сообщение о статусе
+            const approvedSet = new Set();
+            versionRecords.forEach(record => {
+                if (record.status === 'done') {
+                    approvedSet.add(record.chekerId.toString());
+                }
+            });
+            const pending = totalCheckers - versionRecords.length;
+            await safeEditMessageText(ctx,
+                `✅ Ваш голос зафиксирован.\nОжидается голосов: ${pending} чекеров.\n\n${ctx.session.taskInfo}`,
+                moderate()
+            );            return false; // финализация не проведена
+        } else {
+            // Все чекеры проголосовали
+            const hasFailed = versionRecords.some(record => record.status === 'failed');
+            if (hasFailed) {
+                // Агрегируем правки из всех записей с failed
+                const corrections = versionRecords
+                    .filter(record => record.status === 'failed')
+                    .map(record => record.message)
+                    .join('\n');
+
+                // Формируем сообщение для креатива в заданном формате
+                const creativeMessage = `
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
+📝 Описание: ${task.description}
+🎨 Пример креатива: ${task.example_creative}
+📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+
+правки:
+${corrections}
+                `;
+                // Обновляем состояние задания и отправляем сообщение креативищику
+                await taskService.updateTask(taskId, { state: 'progress', version:  task.version + 1});
+                // Предполагается, что у задания есть свойство creatorId – telegramId креатива
+                const creator = await userService.findById(task.creator);
+                console.log(`Креативщик ${creator}`)
+                await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
+                await ctx.editMessageText(`❌ Задание отклонено чекерами.\n\n${ctx.session.taskInfo}`, moderate());
+            } else {
+                // Все одобрили задание – обновляем состояние и уведомляем
+                await taskService.updateTask(taskId, { state: 'done' });
+                await ctx.editMessageText(`✅ Задание одобрено всеми чекерами и выполнено!\n\n${ctx.session.taskInfo}`, moderate());
+            }
+            return true;
+        }
+    } catch (error) {
+        console.error('Error in checkAndFinalizeTask:', error);
+        return false;
+    }
+};
+
 getTaskToModerateScene.enter(async (ctx) => {
     try {
         const tgId = String(ctx.from.id);
@@ -103,38 +189,9 @@ getTaskToModerateScene.action('done', async (ctx) => {
             message: 'Задание принято'
         });
 
-        // Получаем всех чекеров через userService.findAllCheckers() и определяем их количество
-        const checkers = await userService.findAllCheckers();
-        const totalCheckers = checkers.length;
+        // Проверяем, проголосовали ли все чекеры, и, если да – финализируем задание
+        await checkAndFinalizeTask(ctx);
 
-        // Обновляем список записей проверки после добавления нового
-        const updatedCheckerRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
-
-        // Если хотя бы один чекер отклонил задание, считаем задание отклоненным
-        const hasFailed = updatedCheckerRecords.some(record => record.status === 'failed' && record.version === version);
-        if (hasFailed) {
-            await taskService.updateTask(taskId, { state: 'failed' });
-            await ctx.editMessageText(`❌ Задание отклонено одним из чекеров.\n\n${ctx.session.taskInfo}`);
-            await ctx.answerCbQuery();
-            return;
-        }
-
-        // Считаем число уникальных одобрений для текущей версии
-        const approvedSet = new Set();
-        updatedCheckerRecords.forEach(record => {
-            if (record.status === 'done' && record.version === version) {
-                approvedSet.add(record.chekerId.toString());
-            }
-        });
-        const approvedCount = approvedSet.size;
-
-        if (approvedCount >= totalCheckers) {
-            // Если подтверждений от всех чекеров, обновляем состояние задания на 'done'
-            await taskService.updateTask(taskId, { state: 'done' });
-            await ctx.editMessageText(`✅ Задание одобрено всеми чекерами и выполнено!\n\n${ctx.session.taskInfo}`);
-        } else {
-            await ctx.editMessageText(`✅ Ваше одобрение зафиксировано.\nОсталось одобрить ${totalCheckers - approvedCount} чекерам.\n\n${ctx.session.taskInfo}`);
-        }
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in moderate "done" action:', error);
@@ -143,6 +200,7 @@ getTaskToModerateScene.action('done', async (ctx) => {
 });
 
 // Обработчик нажатия кнопки "❌ Отклонить" (cancel)
+// Вместо непосредственного создания записи, бот запрашивает правки
 getTaskToModerateScene.action('cancel', async (ctx) => {
     try {
         const taskId = ctx.session.selectedTask;
@@ -174,22 +232,48 @@ getTaskToModerateScene.action('cancel', async (ctx) => {
             return;
         }
         
-        // Создаем новую запись проверки с отклонением
-        await taskChekerService.createTaskChecker({
-            taskId: taskId,
-            chekerId: user._id,
-            status: 'failed',
-            version: version,
-            message: 'Задание отклонено'
-        });
+        // Сохраняем в сессии данные, чтобы дождаться сообщения с правкой
+        ctx.session.waitingForCorrection = true;
+        ctx.session.pendingCancelVote = {
+            taskId,
+            version,
+            userId: user._id
+        };
 
-        // После отклонения обновляем состояние задания на 'failed'
-        await taskService.updateTask(taskId, { state: 'failed' });
-        await ctx.editMessageText(`❌ Задание отклонено.\n\n${ctx.session.taskInfo}`);
+        await ctx.reply("❌ Задание отклонено. Пожалуйста, введите сообщение с правкой:");
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in moderate "cancel" action:', error);
         await ctx.answerCbQuery('Произошла ошибка при отклонении задания');
+    }
+});
+
+// Обработчик текстовых сообщений – ждём ввод правок, если ожидается
+getTaskToModerateScene.on('text', async (ctx) => {
+    if (ctx.session.waitingForCorrection && ctx.session.pendingCancelVote) {
+        try {
+            const correction = ctx.message.text;
+            const { taskId, version, userId } = ctx.session.pendingCancelVote;
+            
+            // Создаем запись проверки с отклонением и переданными правками
+            await taskChekerService.createTaskChecker({
+                taskId,
+                chekerId: userId,
+                status: 'failed',
+                version: version,
+                message: correction
+            });
+            
+            // Сбрасываем флаги ожидания
+            delete ctx.session.waitingForCorrection;
+            delete ctx.session.pendingCancelVote;
+            
+            // Проверяем, проголосовали ли уже все чекеры, и, если да – финализируем задание
+            await checkAndFinalizeTask(ctx);
+        } catch (error) {
+            console.error('Error processing correction text:', error);
+            await ctx.reply('Ошибка при обработке вашего сообщения с правкой');
+        }
     }
 });
 

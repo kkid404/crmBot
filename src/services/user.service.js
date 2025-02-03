@@ -30,6 +30,14 @@ class UserService {
     static async findAllCheckers() {
         return User.find({ cheker: true });
       }
+
+      static async findById(id) {
+        try {
+            return User.findOne({ _id: id });
+        } catch (error) {
+            throw new Error(`Ошибка поиска пользователя: ${error.message}`);
+        }
+    }
 }
 
 module.exports = UserService;
