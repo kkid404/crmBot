@@ -115,6 +115,35 @@ class TaskService {
         }
     }
 
+    // Метод для подсчета уникальных креативов (с префиксом U_)
+    static async getUniqCount() {
+        try {
+            const count = await Task.countDocuments({ name: { $regex: "^U_" } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете уникальных креативов: ${error.message}`);
+        }
+    }
+
+    // Метод для подсчета глубоких уникальных креативов (с префиксом DU_)
+    static async getDeepUniqCount() {
+        try {
+            const count = await Task.countDocuments({ name: { $regex: "^DU_" } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете глубоких уникальных креативов: ${error.message}`);
+        }
+    }
+
+    static async getAdaptivCount() {
+        try {
+            const count = await Task.countDocuments({ name: { $regex: "^A_" } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете адаптивных креативов: ${error.message}`);
+        }
+    }
+    
 }
 
 module.exports = TaskService;

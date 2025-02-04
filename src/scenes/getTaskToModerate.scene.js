@@ -78,10 +78,15 @@ ${corrections}
                 await taskService.updateTask(taskId, { state: 'progress', version: task.version + 1 });
                 // Отправляем сообщение креативщику (учтите, что findById теперь возвращает объект, а не массив)
                 const creator = await userService.findById(task.creator);
+                const buyer = await userService.findById(task.buyer);
                 await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
             } else {
+                const creator = await userService.findById(task.creator);
+                const buyer = await userService.findById(task.buyer);
                 // Все одобрили задание – обновляем состояние задания
-                await taskService.updateTask(taskId, { state: 'done' });
+                await taskService.updateTask(taskId, { state: 'done' })
+                await ctx.telegram.sendMessage(creator.tg_id, `✅ ${task.name} Одобрено!`);;
+                await ctx.telegram.sendMessage(buyer.tg_id, `✅ ${task.name} готово!`);;
             }
             return true;
         }

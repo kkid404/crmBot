@@ -46,14 +46,16 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
     }
 
     // Формируем текст сообщения с информацией о задаче
-    const taskInfo = `
+    let  taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 🎨 Пример креатива: ${task.example_creative}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
-📅Дата выполнения: ${task.completionDate.toLocaleDateString()}
     `;
+    if(task.completionDate !== null) {
+        taskInfo += `\n📅Дата выполнения: ${task.completionDate.toLocaleDateString()}`
+    }
 
     // Редактируем сообщение с новой информацией
     await ctx.editMessageText(taskInfo, backInline());

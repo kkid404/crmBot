@@ -84,14 +84,16 @@ async function handleTaskSelect(ctx) {
         await ctx.answerCbQuery(ruMessage.messages.taskNotFound); 
         return;
     }
-    const taskInfo = `
+    let  taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 🎨 Пример креатива: ${task.example_creative}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
-📅Дата выполнения: ${task.completionDate.toLocaleDateString()}
     `;
+    if(task.completionDate !== null) {
+        taskInfo += `\n📅Дата выполнения: ${task.completionDate.toLocaleDateString()}`
+    }
     await ctx.editMessageText(taskInfo, back_or_done_Creator());
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
