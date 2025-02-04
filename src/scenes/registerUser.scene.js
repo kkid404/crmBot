@@ -5,10 +5,10 @@ const userService = require('../services/user.service');
 const { start } = require('../keyboards/start.keyboard');
 
 const tokenRolesMap = {
-    "ee2433259b0fe399b40e81d2c98a38b6": { role: 'admin', position: 'creator' },
-    "794aad24cbd58461011ed9094b7fa212": { role: 'admin', position: 'buyer' },
-    "9473e947b07c43539e9a759c6161b55e": { role: 'user', position: 'creator' },
-    "41d5d26dfcaf933381b64e708acea053": { role: 'user', position: 'buyer' },
+    "ee2433259b0fe399b40e81d2c98a38b6": { role: 'admin', position: 'creator', checker: true },
+    "794aad24cbd58461011ed9094b7fa212": { role: 'admin', position: 'buyer', checker: true },
+    "9473e947b07c43539e9a759c6161b55e": { role: 'user', position: 'creator', checker: false },
+    "41d5d26dfcaf933381b64e708acea053": { role: 'user', position: 'buyer', checker: false },
 };
 
 const RegisterUserScene = new BaseScene('RegisterUser');
@@ -60,12 +60,13 @@ RegisterUserScene.on('text', async (ctx) => {
     }
 
     try {
-        // Создаем пользователя с ролью и позицией из маппинга
+        // Создаем пользователя с ролью, позицией и флагом checker из маппинга
         await userService.createUser({
             tg_id: tgId,
             role: tokenData.role,
             position: tokenData.position,
             username: ctx.from.username,
+            checker: tokenData.checker, // Устанавливаем значение checker
             created_at: new Date(),
         });
 
