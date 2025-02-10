@@ -14,6 +14,7 @@ const taskSchema = new Schema({
     buyer: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     creator: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     points: { type: Number, default: null }, 
+    expectedDate: { type: Date, default: null },
     completionDate: { type: Date, default: null },
     CTR: { type: Number, default: null }, 
     bonus: { type: Number, default: null },

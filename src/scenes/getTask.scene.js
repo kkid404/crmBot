@@ -87,7 +87,7 @@ getTTScene.action("done", async (ctx) => {
         const taskInfo = {
             state: "progress",
             creator: user._id,
-            completionDate: ctx.session.readyDate 
+            expectedDate: ctx.session.readyDate 
         };
         
         await taskService.updateTask(ctx.session.selectedTask, taskInfo);

@@ -23,7 +23,7 @@ function buildTaskInfo(task, state) {
 
     // Добавляем информацию о CTR, если она задана
     if (task.CTR !== null && task.CTR !== undefined) {
-        taskInfo += `\n📊 CTR: ${task.CTR}`;
+        taskInfo += `📊 CTR: ${task.CTR}`;
     }  
 
     // Добавляем информацию о бонусе, если она задана
@@ -165,10 +165,9 @@ watchReadyTzScene.action('edit_ctr', async (ctx) => {
 });
 
 watchReadyTzScene.action('reply', async (ctx) => {
-    // Меняем клавиатуру на replyCreative
     await ctx.editMessageText(
         'Выберите тип креатива:',
-        replyCreative() // здесь передаем клавиатуру с ключами reply_uniq, reply_adaptiv, reply_deep_uniq
+        replyCreative() 
     );
     await ctx.answerCbQuery();
 });
