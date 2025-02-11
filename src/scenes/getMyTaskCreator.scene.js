@@ -20,9 +20,23 @@ getMyTtCreatorScene.enter(async (ctx) => {
 getMyTtCreatorScene.action("back", async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
+    
+    // Если сообщение с медиа было отправлено, удаляем его
+    if (ctx.session.exampleMediaMessageId) {
+        try {
+            await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
+        } catch (deleteError) {
+            console.error("Ошибка при удалении сообщения с медиа:", deleteError);
+        }
+    }
+
+    // Возвращаем информацию о задаче и обновляем клавиатуру
     await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(ctx.session.user._id, user.position, "progress"));
-    ctx.session.selectedTask = ''
-})
+    
+    // Очищаем выбранную задачу
+    ctx.session.selectedTask = '';
+});
+
 
 getMyTtCreatorScene.action("quit", async (ctx) => {
     await ctx.deleteMessage();
@@ -45,26 +59,57 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
         return;
     }
 
+    // Проверяем, является ли example_creative file_id (медиа) или текстом.
+    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+
+    // Формируем строку для отображения примера креатива.
+    const exampleLine = isMedia
+        ? "🎨 Пример креатива: Пример креатива ниже"
+        : `🎨 Пример креатива: ${task.example_creative}`;
+
     // Формируем текст сообщения с информацией о задаче
-    let  taskInfo = `
+    const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${task.example_creative}
+${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
-    if(task.completionDate !== null) {
-        taskInfo += `\n📅Дата выполнения: ${task.completionDate.toLocaleDateString()}`
-    }
 
-    // Редактируем сообщение с новой информацией
+    // Редактируем сообщение с информацией о задаче
     await ctx.editMessageText(taskInfo, backInline());
 
-    ctx.session.taskInfo = taskInfo
-    ctx.session.taskname = task.name
+    ctx.session.taskInfo = taskInfo;
+    ctx.session.taskname = task.name;
+
+    // Если example_creative содержит file_id, отправляем медиа и сохраняем id сообщения
+    if (isMedia) {
+        let mediaResponse;
+        try {
+            // Пробуем отправить как фото
+            mediaResponse = await ctx.replyWithPhoto(task.example_creative);
+        } catch (photoError) {
+            try {
+                // Если не удалось отправить как фото, пробуем отправить как видео
+                mediaResponse = await ctx.replyWithVideo(task.example_creative);
+            } catch (videoError) {
+                console.error("Ошибка отправки медиа примера:", videoError);
+                await ctx.reply("Ошибка отправки медиа примера");
+            }
+        }
+
+        // Сохраняем идентификатор отправленного сообщения с медиа для последующего удаления
+        if (mediaResponse && mediaResponse.message_id) {
+            ctx.session.exampleMediaMessageId = mediaResponse.message_id;
+        }
+    }
+
+    ctx.session.taskInfo = taskInfo;
+    ctx.session.taskname = task.name;
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
 });
+
 
 
 module.exports = getMyTtCreatorScene;
