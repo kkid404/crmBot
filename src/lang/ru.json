@@ -66,6 +66,10 @@
         "backInline" : {
             "back" : "⬅️ Назад"
         },
+
+        "back_to_task" : {
+            "back_to_task" : "⬅️ К заданию"
+        },
         
         "back_or_done_Creator" : {
             "done" : "✅ Сдать",
@@ -107,6 +111,7 @@
         "moderate" : {
             "done" : "✅ Принять",
             "cancel" : "❌ Отклонить",
+            "show_example" : "📸 Показать пример",
             "back" : "📋 К заданиям"
         },
 
