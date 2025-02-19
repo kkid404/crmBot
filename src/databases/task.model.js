@@ -19,7 +19,8 @@ const taskSchema = new Schema({
     CTR: { type: Number, default: null }, 
     bonus: { type: Number, default: null },
     version: { type: Number, default: 1 },
-    result : { type: String, default: null },
+    result: { type: String, default: null },
+    workType: { type: String, default: null },
 }, {
     timestamps: true, // Добавляет createdAt и updatedAt
 });

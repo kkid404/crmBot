@@ -1,8 +1,18 @@
 const ruMessage = require('../lang/ru.json');
 const Task = require('../databases/task.model');
-const { exportTasksInProgressToCsv, exportTasksDoneCsv, exportAllTasksCsv } = require('../controllers/task.controller');
+const { 
+    exportTasksInProgressCsv, 
+    exportTasksDoneCsv, 
+    exportAllTasksCsv 
+} = require('../controllers/task.controller');
 const { start } = require('../keyboards/start.keyboard');
 const { statistics } = require('../keyboards/statistics.keyboard');
+const fetch = require('node-fetch');
+
+// Проверяем, что функции импортировались корректно
+if (!exportTasksInProgressCsv || !exportTasksDoneCsv || !exportAllTasksCsv) {
+    console.error('Ошибка: функции экспорта не импортировались корректно');
+}
 
 const actions = (bot) => {
     // Добавляем новый обработчик для возврата в меню статистики
@@ -21,20 +31,49 @@ const actions = (bot) => {
     // Обработка кнопки "Креативы в работе"
     bot.action('progressCsv', async (ctx) => {
         try {
-            // Удаляем предыдущее сообщение
             await ctx.deleteMessage();
             
-            const csvBuffer = await exportTasksInProgressToCsv();
-            await ctx.replyWithDocument(
-                { source: csvBuffer, filename: 'tasks_in_progress.csv' },
-                { 
-                    caption: '📊 Отчет по креативам в работе',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: ruMessage.keyboards.statistics.backToStatMenu, callback_data: 'backToStatMenu' }]]
+            // Отправляем сообщение о начале генерации
+            const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
+            
+            try {
+                const spreadsheetUrl = await exportTasksInProgressCsv();
+                
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                // Отправляем результат
+                await ctx.reply(
+                    `📊 Отчет по креативам в работе готов!\n${spreadsheetUrl}`,
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        },
+                        disable_web_page_preview: true
                     }
-                }
-            );
+                );
+            } catch (error) {
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                console.error('Ошибка при создании отчета:', error);
+                await ctx.reply(
+                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        }
+                    }
+                );
+            }
         } catch (error) {
+            console.error('Ошибка в обработчике progressCsv:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });
@@ -42,20 +81,49 @@ const actions = (bot) => {
     // Обработка кнопки "Выполненные креативы"
     bot.action('doneCsv', async (ctx) => {
         try {
-            // Удаляем предыдущее сообщение
             await ctx.deleteMessage();
             
-            const csvBuffer = await exportTasksDoneCsv();
-            await ctx.replyWithDocument(
-                { source: csvBuffer, filename: 'completed_tasks.csv' },
-                { 
-                    caption: '📊 Отчет по выполненным креативам',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: ruMessage.keyboards.statistics.backToStatMenu, callback_data: 'backToStatMenu' }]]
+            // Отправляем сообщение о начале генерации
+            const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
+            
+            try {
+                const spreadsheetUrl = await exportTasksDoneCsv();
+                
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                // Отправляем результат
+                await ctx.reply(
+                    `📊 Отчет по выполненным креативам готов!\n${spreadsheetUrl}`,
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        },
+                        disable_web_page_preview: true // Отключаем превью ссылки
                     }
-                }
-            );
+                );
+            } catch (error) {
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                console.error('Ошибка при создании отчета:', error);
+                await ctx.reply(
+                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        }
+                    }
+                );
+            }
         } catch (error) {
+            console.error('Ошибка в обработчике doneCsv:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });
@@ -63,20 +131,49 @@ const actions = (bot) => {
     // Обработка кнопки "Все креативы"
     bot.action('allCsv', async (ctx) => {
         try {
-            // Удаляем предыдущее сообщение
             await ctx.deleteMessage();
             
-            const csvBuffer = await exportAllTasksCsv();
-            await ctx.replyWithDocument(
-                { source: csvBuffer, filename: 'all_tasks.csv' },
-                { 
-                    caption: '📊 Полный отчет по креативам',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: ruMessage.keyboards.statistics.backToStatMenu, callback_data: 'backToStatMenu' }]]
+            // Отправляем сообщение о начале генерации
+            const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
+            
+            try {
+                const spreadsheetUrl = await exportAllTasksCsv();
+                
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                // Отправляем результат
+                await ctx.reply(
+                    `📊 Полный отчет по креативам готов!\n${spreadsheetUrl}`,
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        },
+                        disable_web_page_preview: true
                     }
-                }
-            );
+                );
+            } catch (error) {
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                console.error('Ошибка при создании отчета:', error);
+                await ctx.reply(
+                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        }
+                    }
+                );
+            }
         } catch (error) {
+            console.error('Ошибка в обработчике allCsv:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });
@@ -107,6 +204,157 @@ const actions = (bot) => {
             
             await ctx.reply('📋 Вы вернулись в главное меню', await start(ctx.from.id));
         } catch (error) {
+            await ctx.reply(ruMessage.messages.error);
+        }
+    });
+
+    // Добавляем обработчик для CSV файлов
+    bot.on('document', async (ctx) => {
+        try {
+            // Проверяем, ожидаем ли мы CSV файл
+            if (!ctx.session.awaitingCsvFile) {
+                console.log('CSV файл не ожидается');
+                return;
+            }
+
+            const file = ctx.message.document;
+            console.log('Получен файл:', file.file_name);
+            
+            // Проверяем, что это CSV файл
+            if (!file.file_name.toLowerCase().endsWith('.csv')) {
+                await ctx.reply('❌ Пожалуйста, отправьте файл в формате CSV');
+                return;
+            }
+
+            // Отправляем сообщение о начале обработки
+            const loadingMessage = await ctx.reply('⏳ Обработка CSV файла...');
+
+            try {
+                // Получаем файл
+                const fileLink = await ctx.telegram.getFile(file.file_id);
+                const filePath = fileLink.file_path;
+                
+                // Используем ctx.telegram.token вместо process.env.BOT_TOKEN
+                const fileUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${filePath}`;
+                console.log('URL файла:', fileUrl);
+
+                // Скачиваем и обрабатываем файл
+                const response = await fetch(fileUrl);
+                if (!response.ok) {
+                    throw new Error(`Ошибка получения файла: ${response.status} ${response.statusText}`);
+                }
+
+                const csvText = await response.text();
+                console.log('Содержимое CSV:', csvText);
+
+                // Парсим CSV (добавляем обработку кавычек и экранирование)
+                const rows = csvText
+                    .split('\n')
+                    .map(line => line
+                        .split(',')
+                        .map(cell => cell.trim().replace(/^["']|["']$/g, '')) // Удаляем кавычки и пробелы
+                    );
+
+                console.log('Распарсенные строки:', rows);
+                
+                // Пропускаем заголовок
+                const dataRows = rows.slice(1).filter(row => row.length >= 7 && row.some(cell => cell)); // Фильтруем пустые строки
+                console.log('Строки с данными:', dataRows);
+                
+                let updatedCount = 0;
+                let errorCount = 0;
+
+                // Обновляем статусы в базе данных
+                for (const row of dataRows) {
+                    console.log('Обработка строки:', row);
+                    
+                    if (row.length < 7) {
+                        console.log('Пропущена строка - недостаточно колонок:', row);
+                        continue;
+                    }
+
+                    const taskName = row[1].trim(); // Название во второй колонке
+                    const newStatus = row[6].trim(); // Статус в седьмой колонке
+                    console.log(`Попытка обновления: задача=${taskName}, новый статус=${newStatus}`);
+
+                    try {
+                        // Проверяем, что у нас есть название задачи
+                        if (!taskName) {
+                            console.log('Пропущена строка с пустым названием задачи');
+                            continue;
+                        }
+
+                        // Сначала найдем задачу
+                        const task = await Task.findOne({ name: taskName });
+                        if (!task) {
+                            console.log(`Задача не найдена: ${taskName}`);
+                            continue;
+                        }
+
+                        console.log(`Текущий статус задачи ${taskName}: ${task.state}`);
+
+                        const result = await Task.updateOne(
+                            { name: taskName },
+                            { $set: { state: newStatus } }
+                        );
+
+                        if (result.modifiedCount > 0) {
+                            updatedCount++;
+                            console.log(`Обновлена задача ${taskName}: новый статус = ${newStatus}`);
+                        } else {
+                            console.log(`Задача ${taskName} не обновлена: modifiedCount = 0`);
+                        }
+                    } catch (err) {
+                        console.error(`Ошибка обновления задачи ${taskName}:`, err);
+                        errorCount++;
+                    }
+                }
+
+                console.log(`Итоги обработки: обновлено=${updatedCount}, ошибок=${errorCount}`);
+
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+
+                // Отправляем результат
+                await ctx.reply(
+                    `✅ Обработка CSV завершена\n\n` +
+                    `📊 Статистика:\n` +
+                    `• Обновлено задач: ${updatedCount}\n` +
+                    `• Ошибок: ${errorCount}`,
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        }
+                    }
+                );
+
+            } catch (error) {
+                console.error('Ошибка обработки CSV:', error);
+                
+                // Удаляем сообщение о загрузке
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
+                
+                await ctx.reply(
+                    '❌ Произошла ошибка при обработке файла. Пожалуйста, проверьте формат CSV и попробуйте снова.',
+                    { 
+                        reply_markup: {
+                            inline_keyboard: [[{ 
+                                text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                callback_data: 'backToStatMenu' 
+                            }]]
+                        }
+                    }
+                );
+            }
+
+            // Сбрасываем флаг ожидания файла
+            ctx.session.awaitingCsvFile = false;
+
+        } catch (error) {
+            console.error('Ошибка в обработчике document:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });

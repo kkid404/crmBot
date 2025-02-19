@@ -16,12 +16,17 @@ async function handlePoints(ctx) {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId).catch(handleError);
     if (!user) throw new Error("User not found");
+    
+    // Получаем описание типа работы из ru.json
+    const workType = ruMessage.keyboards.points_for_creatives[points];
+    
     const today = new Date();
     const taskInfo = {
         state: "wait",
         completionDate: today,
         points: Number(points),
-        result: ctx.session.mediaFileId
+        result: ctx.session.mediaFileId,
+        workType: workType // Добавляем тип работы
     };
     
     await taskService.updateTask(ctx.session.selectedTask, taskInfo).catch(handleError);
@@ -78,10 +83,31 @@ async function handleQuit(ctx) {
 
 // Обработчик кнопки "done"
 async function handleDone(ctx) {
-    await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
-    delete ctx.session.exampleMediaMessageId;
-    await ctx.editMessageText("Пожалуйста, отправьте ваш креатив (фото или видео).");
-    ctx.session.awaitingMedia = true; // Устанавливаем флаг ожидания медиафайла
+    try {
+        // Удаляем предыдущее медиа, если оно есть
+        if (ctx.session.exampleMediaMessageId) {
+            try {
+                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
+                delete ctx.session.exampleMediaMessageId;
+            } catch (err) {
+                console.error("Ошибка при удалении медиа:", err);
+            }
+        }
+
+        // Отправляем новое сообщение вместо редактирования
+        await ctx.deleteMessage();
+        await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).");
+        ctx.session.awaitingMedia = true;
+    } catch (error) {
+        console.error("Ошибка в handleDone:", error);
+        // Если произошла ошибка, все равно устанавливаем флаг ожидания медиа
+        ctx.session.awaitingMedia = true;
+        try {
+            await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).");
+        } catch (err) {
+            console.error("Ошибка при отправке сообщения:", err);
+        }
+    }
 }
 
 // Обработчик для выбора задачи

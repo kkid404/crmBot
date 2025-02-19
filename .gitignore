@@ -3,3 +3,4 @@ node_modules
 session_db.json
 *.zip
 dist
+credentials.json

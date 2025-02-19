@@ -1,43 +1,68 @@
 const Task = require('../databases/task.model');
-const { Parser } = require('json2csv');
+const googleSheets = require('../services/googleSheets.service');
 
-const exportTasksInProgressToCsv = async () => {
+// Вспомогательная функция для форматирования даты
+const formatDate = (date) => {
+    if (!date) return '';
     try {
-        // Получаем задачи в работе (state: 'progress') и активные (state: 'active')
+        return new Date(date).toLocaleDateString('ru-RU');
+    } catch (error) {
+        console.error('Ошибка форматирования даты:', error);
+        return '';
+    }
+};
+
+const exportTasksInProgressCsv = async () => {
+    try {
         const tasks = await Task.find({ 
             state: { $in: ['progress', 'active'] } 
         })
             .populate('buyer')
             .populate('creator')
-            .sort({ createdAt: 1 }); // Сортировка по дате создания
+            .sort({ createdAt: 1 });
 
-        const fields = [
-            { label: 'Дата создания', value: row => new Date(row.createdAt).toLocaleDateString('ru-RU') },
-            { label: 'Название', value: 'name' },
-            { 
-                label: 'Вид работы', 
-                value: (row) => {
-                    if (row.name.startsWith('U_')) return 'Уникальный';
-                    if (row.name.startsWith('DU_')) return 'Глубоко уникальный';
-                    if (row.name.startsWith('A_')) return 'Адаптивный';
-                    return 'Стандартный';
-                }
-            },
-            { label: 'Заказчик', value: row => row.buyer?.username || 'Не указан' },
-            { 
-                label: 'Дата план выдачи', 
-                value: row => row.expectedDate ? new Date(row.expectedDate).toLocaleDateString('ru-RU') : ''
-            },
-            { label: 'Исполнитель', value: row => row.creator?.username || 'Не указан' },
-            { 
-                label: 'Статус', 
-                value: row => row.state === 'progress' ? 'В работе' : 'Активно'
-            }
+        // Создаем новую таблицу
+        const spreadsheetId = await googleSheets.createSpreadsheet('Задачи в работе');
+        
+        // Заголовки для таблицы
+        const headers = [
+            'Дата создания',
+            'Название',
+            'Вид работы',
+            'Заказчик',
+            'Дата план выдачи',
+            'Исполнитель',
+            'Статус'
         ];
 
-        const parser = new Parser({ fields });
-        const csv = parser.parse(tasks);
-        return Buffer.from('\uFEFF' + csv, 'utf-8'); // Добавляем BOM для корректной работы с кириллицей в Excel
+        // Подготавливаем данные
+        const values = [
+            headers,
+            ...tasks.map(task => [
+                formatDate(task.createdAt),
+                task.name,
+                task.workType || 'Не указан',
+                task.buyer?.username || 'Не указан',
+                formatDate(task.expectedDate),
+                task.creator?.username || 'Не указан',
+                task.state === 'progress' ? 'В работе' : 'Активно'
+            ])
+        ];
+
+        // Записываем данные
+        await googleSheets.writeData(spreadsheetId, `A1:G${values.length}`, values);
+
+        // Проверяем доступность таблицы
+        try {
+            await googleSheets.sheets.spreadsheets.get({
+                spreadsheetId,
+                fields: 'spreadsheetUrl'
+            });
+        } catch (error) {
+            throw new Error('Не удалось получить доступ к созданной таблице');
+        }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/view`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте задач в работе: ${error.message}`);
     }
@@ -45,49 +70,84 @@ const exportTasksInProgressToCsv = async () => {
 
 const exportTasksDoneCsv = async () => {
     try {
-        // Получаем выполненные задачи (state: 'done')
         const tasks = await Task.find({ state: 'done' })
             .populate('buyer')
             .populate('creator')
-            .sort({ creator: 1, createdAt: 1 }); // Сортировка сначала по исполнителю, потом по дате
+            .sort({ creator: 1, createdAt: 1 });
 
-        const fields = [
-            { label: 'Дата создания', value: 'createdAt' },
-            { label: 'Название', value: 'name' },
-            { 
-                label: 'Вид работы', 
-                value: (row) => {
-                    if (row.name.startsWith('U_')) return 'Уникальный';
-                    if (row.name.startsWith('DU_')) return 'Глубоко уникальный';
-                    if (row.name.startsWith('A_')) return 'Адаптивный';
-                    return 'Стандартный';
-                }
-            },
-            { label: 'Баллы', value: 'points' },
-            { label: 'Бонус', value: 'bonus' },
-            { label: 'CTR', value: 'CTR' },
-            { label: 'Дата план выдачи', value: 'expectedDate' },
-            { label: 'Дата факт выдачи', value: 'completionDate' },
-            { label: 'Заказчик', value: row => row.buyer?.username || 'Не указан' },
-            { label: 'Исполнитель', value: row => row.creator?.username || 'Не указан' }
+        // Группируем задачи по креативщикам
+        const tasksByCreator = tasks.reduce((acc, task) => {
+            const creatorName = task.creator?.username || 'Без исполнителя';
+            if (!acc[creatorName]) {
+                acc[creatorName] = [];
+            }
+            acc[creatorName].push(task);
+            return acc;
+        }, {});
+
+        // Создаем новую таблицу
+        const spreadsheetId = await googleSheets.createSpreadsheet('Выполненные задачи');
+        
+        // Получаем информацию о первом листе
+        const spreadsheet = await googleSheets.sheets.spreadsheets.get({
+            spreadsheetId
+        });
+        const firstSheetId = spreadsheet.data.sheets[0].properties.sheetId;
+        
+        // Заголовки для таблицы
+        const headers = [
+            'Дата создания',
+            'Название',
+            'Вид работы',
+            'Баллы',
+            'Бонус',
+            'CTR',
+            'Дата план выдачи',
+            'Дата факт выдачи',
+            'Заказчик',
+            'Исполнитель'
         ];
 
-        const parser = new Parser({ 
-            fields,
-            // Группировка по исполнителям
-            transforms: [(row) => {
-                return {
-                    ...row,
-                    createdAt: new Date(row.createdAt).toLocaleDateString('ru-RU'),
-                    expectedDate: row.expectedDate ? new Date(row.expectedDate).toLocaleDateString('ru-RU') : '',
-                    completionDate: row.completionDate ? new Date(row.completionDate).toLocaleDateString('ru-RU') : ''
-                };
-            }]
-        });
+        // Для каждого креативщика создаем отдельный лист
+        for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
+            // Создаем новый лист
+            await googleSheets.addSheet(spreadsheetId, creatorName);
 
-        const csv = parser.parse(tasks);
-        return Buffer.from(csv, 'utf-8');
+            // Подготавливаем данные
+            const values = [
+                headers,
+                ...creatorTasks.map(task => [
+                    formatDate(task.createdAt),
+                    task.name,
+                    task.workType || 'Не указан',
+                    task.points,
+                    task.bonus,
+                    task.CTR,
+                    formatDate(task.expectedDate),
+                    formatDate(task.completionDate),
+                    task.buyer?.username || 'Не указан',
+                    task.creator?.username || 'Не указан'
+                ])
+            ];
 
+            // Записываем данные
+            await googleSheets.writeData(spreadsheetId, `${creatorName}!A1:J${values.length}`, values);
+        }
+
+        // Удаляем первый пустой лист
+        await googleSheets.deleteSheet(spreadsheetId, firstSheetId);
+
+        // Проверяем доступность таблицы
+        try {
+            await googleSheets.sheets.spreadsheets.get({
+                spreadsheetId,
+                fields: 'spreadsheetUrl'
+            });
+        } catch (error) {
+            throw new Error('Не удалось получить доступ к созданной таблице');
+        }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/view`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте выполненных задач: ${error.message}`);
     }
@@ -100,50 +160,68 @@ const exportAllTasksCsv = async () => {
             .populate('creator')
             .sort({ state: 1, creator: 1, createdAt: 1 });
 
-        const fields = [
-            { label: 'Статус', value: 'state' },
-            { label: 'Дата создания', value: 'createdAt' },
-            { label: 'Название', value: 'name' },
-            { 
-                label: 'Вид работы', 
-                value: (row) => {
-                    if (row.name.startsWith('U_')) return 'Уникальный';
-                    if (row.name.startsWith('DU_')) return 'Глубоко уникальный';
-                    if (row.name.startsWith('A_')) return 'Адаптивный';
-                    return 'Стандартный';
-                }
-            },
-            { label: 'Баллы', value: 'points' },
-            { label: 'Бонус', value: 'bonus' },
-            { label: 'CTR', value: 'CTR' },
-            { label: 'Дата план выдачи', value: 'expectedDate' },
-            { label: 'Дата факт выдачи', value: 'completionDate' },
-            { label: 'Заказчик', value: row => row.buyer?.username || 'Не указан' },
-            { label: 'Исполнитель', value: row => row.creator?.username || 'Не указан' }
+        // Создаем новую таблицу
+        const spreadsheetId = await googleSheets.createSpreadsheet('Все задачи');
+        
+        // Заголовки для таблицы
+        const headers = [
+            'Статус',
+            'Дата создания',
+            'Название',
+            'Вид работы',
+            'Баллы',
+            'Бонус',
+            'CTR',
+            'Дата план выдачи',
+            'Дата факт выдачи',
+            'Заказчик',
+            'Исполнитель'
         ];
 
-        const parser = new Parser({ 
-            fields,
-            transforms: [(row) => {
-                return {
-                    ...row,
-                    createdAt: new Date(row.createdAt).toLocaleDateString('ru-RU'),
-                    expectedDate: row.expectedDate ? new Date(row.expectedDate).toLocaleDateString('ru-RU') : '',
-                    completionDate: row.completionDate ? new Date(row.completionDate).toLocaleDateString('ru-RU') : ''
-                };
-            }]
-        });
+        // Подготавливаем данные
+        const values = [
+            headers,
+            ...tasks.map(task => [
+                task.state === 'active' ? 'Активно' : 
+                task.state === 'progress' ? 'В работе' : 
+                task.state === 'wait' ? 'На проверке' : 
+                task.state === 'done' ? 'Выполнено' : 
+                task.state === 'failed' ? 'Отклонено' : 
+                task.state === 'canceled' ? 'Отменено' : task.state,
+                formatDate(task.createdAt),
+                task.name,
+                task.workType || 'Не указан',
+                task.points,
+                task.bonus,
+                task.CTR,
+                formatDate(task.expectedDate),
+                formatDate(task.completionDate),
+                task.buyer?.username || 'Не указан',
+                task.creator?.username || 'Не указан'
+            ])
+        ];
 
-        const csv = parser.parse(tasks);
-        return Buffer.from(csv, 'utf-8');
+        // Записываем данные
+        await googleSheets.writeData(spreadsheetId, `A1:K${values.length}`, values);
 
+        // Проверяем доступность таблицы
+        try {
+            await googleSheets.sheets.spreadsheets.get({
+                spreadsheetId,
+                fields: 'spreadsheetUrl'
+            });
+        } catch (error) {
+            throw new Error('Не удалось получить доступ к созданной таблице');
+        }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/view`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте всех задач: ${error.message}`);
     }
 };
 
 module.exports = {
-    exportTasksInProgressToCsv,
+    exportTasksInProgressCsv,
     exportTasksDoneCsv,
     exportAllTasksCsv
 }; 
