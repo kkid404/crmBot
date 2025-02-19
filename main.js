@@ -6,6 +6,7 @@ const ruMessage = require('./src/lang/ru.json');
 const { connectToMongo } = require('./src/databases/connect.database');
 const LocalSession = require('telegraf-session-local');
 const checkUser = require('./src/middlewares/isUser.middleware')
+const { statisticsActions } = require('./src/actions/statistics.actions'); // Добавляем импорт
 
 const botToken = process.env.TELEGRAM_TOKEN;
 
@@ -57,6 +58,15 @@ fs.readdirSync(handlersPath).forEach(file => {
   if (file.endsWith('.js')) {
     const { handler } = require(`./src/handlers/${file}`);
     handler(bot);
+  }
+});
+
+// Регистрация actions
+const actionsPath = path.join(__dirname, 'src/actions');
+fs.readdirSync(actionsPath).forEach(file => {
+  if (file.endsWith('.js')) {
+    const { actions } = require(`./src/actions/${file}`);
+    actions(bot);
   }
 });
 

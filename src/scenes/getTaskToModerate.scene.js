@@ -98,6 +98,29 @@ ${corrections}
     }
 };
 
+// В начале файла добавим функцию для удаления медиа
+const deleteMediaMessages = async (ctx) => {
+    // Удаляем сданное изображение
+    if (ctx.session.mediaMessageId) {
+        try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
+            ctx.session.mediaMessageId = null;
+        } catch (err) {
+            console.error("Ошибка при удалении медиа:", err);
+        }
+    }
+
+    // Удаляем пример креатива
+    if (ctx.session.exampleMediaMessageId) {
+        try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
+            ctx.session.exampleMediaMessageId = null;
+        } catch (err) {
+            console.error("Ошибка при удалении примера:", err);
+        }
+    }
+};
+
 getTaskToModerateScene.enter(async (ctx) => {
     try {
         const tgId = String(ctx.from.id);
@@ -124,13 +147,16 @@ getTaskToModerateScene.enter(async (ctx) => {
     }
 });
 
-
+// Модифицируем обработчик выбора задачи
 getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     try {
+        // Удаляем все предыдущие медиа при выборе новой задачи
+        await deleteMediaMessages(ctx);
+        await ctx.deleteMessage();
+
         const taskId = ctx.callbackQuery.data;
         const task = await taskService.findTaskById(taskId);
         if (!task) {
-            console.error(`Task with id ${taskId} not found`);
             await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
             return;
         }
@@ -138,45 +164,40 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         ctx.session.selectedTask = taskId;
         const taskInfo = formatTaskInfo(task);
 
-        // Если в задании есть медиа (file_id)
+        // Отправляем результат креатива
         if (task.result) {
-            // Если тип медиа сохранён, используем его
-            if (task.mediaType) {
+            try {
+                let mediaResponse;
                 if (task.mediaType === 'photo') {
-                    await ctx.replyWithPhoto(task.result);
+                    mediaResponse = await ctx.replyWithPhoto(task.result);
                 } else if (task.mediaType === 'video') {
-                    await ctx.replyWithVideo(task.result);
-                }
-            } else {
-                // Если тип не сохранён, пробуем отправить как фото, а при ошибке – как видео
-                try {
-                    await ctx.replyWithPhoto(task.result);
-                } catch (photoError) {
+                    mediaResponse = await ctx.replyWithVideo(task.result);
+                } else {
                     try {
-                        await ctx.replyWithVideo(task.result);
-                    } catch (videoError) {
-                        console.error("Не удалось отправить медиа:", videoError);
-                        await ctx.reply("Ошибка отправки медиафайла.");
+                        mediaResponse = await ctx.replyWithPhoto(task.result);
+                    } catch {
+                        mediaResponse = await ctx.replyWithVideo(task.result);
                     }
                 }
+
+                if (mediaResponse?.message_id) {
+                    ctx.session.mediaMessageId = mediaResponse.message_id;
+                }
+            } catch (error) {
+                console.error("Ошибка при отправке результата:", error);
             }
         }
 
-        // Сохраняем идентификатор отправленного сообщения с описанием задания для использования в кнопке "Назад"
+        // Отправляем описание задачи
         const taskMessage = await ctx.reply(taskInfo, moderate());
         ctx.session.taskMessageId = taskMessage.message_id;
 
-        ctx.session.taskInfo = taskInfo;
-        ctx.session.taskname = task.name;
-
         await ctx.answerCbQuery();
     } catch (error) {
-        console.error('Error in getTaskToModerateScene.action:', error);
+        console.error('Error in task selection:', error);
         await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
     }
 });
-
-
 
 // Обработчик нажатия кнопки "✅ Принять" (done)
 getTaskToModerateScene.action('done', async (ctx) => {
@@ -328,143 +349,101 @@ getTaskToModerateScene.action("quit", async (ctx) => {
     ctx.scene.leave();
 });
 
-// Обработчик для кнопки "show_example"
+// Модифицируем обработчик показа примера
 getTaskToModerateScene.action('show_example', async (ctx) => {
     try {
-        const taskId = ctx.session.selectedTask; // Получаем ID выбранной задачи
-        const task = await taskService.findTaskById(taskId); // Находим задачу по ID
-        // Удаляем медиа, если оно было отправлено
-        if (ctx.session.mediaMessageId) {
-            try {
-                // Удаляем медиа сообщение
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
+        // Удаляем все предыдущие медиа
+        await deleteMediaMessages(ctx);
 
-            } catch (err) {
-                console.error("Ошибка при удалении медиа:", err);
-            }
-            ctx.session.mediaMessageId = null; // Сбрасываем message_id медиа
-        }
+        const taskId = ctx.session.selectedTask;
+        const task = await taskService.findTaskById(taskId);
+        
         if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound); // Если задача не найдена
+            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
             return;
         }
 
-        // Формируем строку с информацией о задаче
-        const taskInfo = buildTaskInfo(task);
-
-        // Если медиа (креатив) был отправлен ранее, удаляем его
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
-            } catch (deleteError) {
-                console.error("Ошибка при удалении старого креатива:", deleteError);
-            }
-        }
-
-        // Отправляем информацию о задаче
+        const taskInfo = formatTaskInfo(task);
         await ctx.editMessageText(taskInfo, back_to_task());
 
-        // Отправляем креатив (фото или видео)
-        let mediaResponse;
+        // Отправляем пример
         if (task.example_creative) {
-            // Если тип медиа сохранён, используем его
-            if (task.mediaType === 'photo') {
-                mediaResponse = await ctx.replyWithPhoto(task.example_creative);
-            } else if (task.mediaType === 'video') {
-                mediaResponse = await ctx.replyWithVideo(task.example_creative);
-            } else {
-                // Если тип не сохранён, пробуем отправить как фото, а при ошибке – как видео
-                try {
+            try {
+                let mediaResponse;
+                if (task.mediaType === 'photo') {
                     mediaResponse = await ctx.replyWithPhoto(task.example_creative);
-                } catch (photoError) {
+                } else if (task.mediaType === 'video') {
+                    mediaResponse = await ctx.replyWithVideo(task.example_creative);
+                } else {
                     try {
+                        mediaResponse = await ctx.replyWithPhoto(task.example_creative);
+                    } catch {
                         mediaResponse = await ctx.replyWithVideo(task.example_creative);
-                    } catch (videoError) {
-                        console.error("Не удалось отправить медиа:", videoError);
-                        await ctx.reply("Ошибка отправки медиафайла.");
                     }
                 }
-            }
 
-            // Сохраняем идентификатор отправленного сообщения с медиа для последующего удаления
-            if (mediaResponse && mediaResponse.message_id) {
-                ctx.session.exampleMediaMessageId = mediaResponse.message_id;
+                if (mediaResponse?.message_id) {
+                    ctx.session.exampleMediaMessageId = mediaResponse.message_id;
+                }
+            } catch (error) {
+                console.error("Ошибка при отправке примера:", error);
             }
         }
 
-        // Добавляем кнопку "К заданию", которая вернёт к описанию задания
-        await ctx.answerCbQuery(); // Подтверждаем обработку callback
+        await ctx.answerCbQuery();
     } catch (error) {
-        console.error('Error in show_example action:', error);
+        console.error('Error in show_example:', error);
         await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
     }
 });
 
-// Обработчик для кнопки "К заданию"
+// Модифицируем обработчик возврата к заданию
 getTaskToModerateScene.action('back_to_task', async (ctx) => {
     try {
-        await ctx.deleteMessage();
-        const taskId = ctx.session.selectedTask; // Получаем ID выбранной задачи
-        const task = await taskService.findTaskById(taskId); // Находим задачу по ID
+        // Удаляем все предыдущие медиа
+        await deleteMediaMessages(ctx);
+
+        const taskId = ctx.session.selectedTask;
+        const task = await taskService.findTaskById(taskId);
 
         if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound); // Если задача не найдена
+            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
             return;
         }
 
-        const taskInfo = buildTaskInfo(task);
+        const taskInfo = formatTaskInfo(task);
+        await ctx.editMessageText(taskInfo, moderate());
 
-        // Возвращаем к информации о задании и удаляем креатив
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
-                delete ctx.session.exampleMediaMessageId; // Очистить идентификатор медиа после удаления
-            } catch (deleteError) {
-                console.error("Ошибка при удалении старого креатива:", deleteError);
-            }
-        }
-
-        // Редактируем сообщение с описанием задания
+        // Отправляем результат креатива
         if (task.result) {
-            // Если тип медиа сохранён, используем его
-            let mediaResponse;
-            if (task.mediaType) {
+            try {
+                let mediaResponse;
                 if (task.mediaType === 'photo') {
                     mediaResponse = await ctx.replyWithPhoto(task.result);
                 } else if (task.mediaType === 'video') {
                     mediaResponse = await ctx.replyWithVideo(task.result);
-                }
-            } else {
-                // Если тип не сохранён, пробуем отправить как фото, а при ошибке – как видео
-                try {
-                    mediaResponse = await ctx.replyWithPhoto(task.result);
-                } catch (photoError) {
+                } else {
                     try {
+                        mediaResponse = await ctx.replyWithPhoto(task.result);
+                    } catch {
                         mediaResponse = await ctx.replyWithVideo(task.result);
-                    } catch (videoError) {
-                        console.error("Не удалось отправить медиа:", videoError);
-                        await ctx.reply("Ошибка отправки медиафайла.");
                     }
                 }
-            }
-    
-            // Если медиа было отправлено, сохраняем его message_id для удаления
-            if (mediaResponse && mediaResponse.message_id) {
-                ctx.session.mediaMessageId = mediaResponse.message_id;
+
+                if (mediaResponse?.message_id) {
+                    ctx.session.mediaMessageId = mediaResponse.message_id;
+                }
+            } catch (error) {
+                console.error("Ошибка при отправке результата:", error);
             }
         }
-      
-    
-        await ctx.reply(taskInfo, moderate());
 
-        // Подтверждаем callback
         await ctx.answerCbQuery();
     } catch (error) {
-        console.error('Error in back_to_task action:', error);
+        console.error('Error in back_to_task:', error);
         await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
     }
 });
-
 
 // Обработчик для кнопки "back"
 getTaskToModerateScene.action('back', async (ctx) => {
@@ -488,5 +467,5 @@ getTaskToModerateScene.action('back', async (ctx) => {
     }
 });
 
-
 module.exports = getTaskToModerateScene;
+

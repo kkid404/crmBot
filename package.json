@@ -4,14 +4,16 @@
   "main": "index.js",
   "scripts": {
     "test": "nodemon main.js",
-    "start" : "node main.js"
+    "start": "node main.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "csv-writer": "^1.6.0",
     "dotenv": "^16.4.7",
+    "json2csv": "^6.0.0-alpha.2",
     "mongoose": "^8.9.5",
     "telegraf": "^4.16.3",
     "telegraf-session-local": "^2.1.1"
