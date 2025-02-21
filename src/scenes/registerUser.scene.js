@@ -14,69 +14,104 @@ const tokenRolesMap = {
 const RegisterUserScene = new BaseScene('RegisterUser');
 
 RegisterUserScene.enter(async (ctx) => {
-    await ctx.reply(ruMessage.messages.send_token);
     const tgId = String(ctx.from.id);
+    await ctx.reply(ruMessage.messages.send_token);
 
-    try {
-        // Получаем всех пользователей
-        // const allUsers = await userService.getAll();
+    // Получаем всех пользователей
+    const allUsers = await userService.getAll();
 
-        // if (allUsers.length === 0) {
-        //     // Если пользователей нет, создаем первого
-        //     await userService.createUser({
-        //         tg_id: tgId,
-        //         role: 'admin', // Первый пользователь назначается админом
-        //         created_at: new Date(),
-        //     });
-        // }
-    } catch (error) {
-        console.error(ruMessage.messages.registration_error, error);
-        await ctx.reply(ruMessage.messages.registration_error);
+    if (allUsers.length === 0) {
+        // Если пользователей нет, создаем первого
+        await userService.createUser({
+            tg_id: tgId,
+            role: 'admin',
+            created_at: new Date(),
+        });
     }
 });
 
 RegisterUserScene.on('text', async (ctx) => {
-    const tgId = String(ctx.from.id);
-    let user = await userService.findUserByTelegramId(tgId);
-
-    if (user) {
-        // Если пользователь уже существует, очищаем сессию и выходим из сцены
-        ctx.session = {};
-        ctx.scene.leave();
-        return;
-    }
-
-    const userInput = ctx.message.text.trim();
-
-    // Проверяем, существует ли токен в маппинге
-    const tokenData = tokenRolesMap[userInput];
-
-    if (!tokenData) {
-        // Если токен не найден
-        await ctx.reply(ruMessage.messages.error_token);
-        ctx.session = {};
-        ctx.scene.leave();
-        return;
-    }
-
     try {
-        // Создаем пользователя с ролью, позицией и флагом checker из маппинга
-        await userService.createUser({
-            tg_id: tgId,
-            role: tokenData.role,
-            position: tokenData.position,
-            username: ctx.from.username,
-            checker: tokenData.checker, // Устанавливаем значение checker
-            created_at: new Date(),
-        });
+        const tgId = String(ctx.from.id);
+        let user = await userService.findUserByTelegramId(tgId);
 
-        await ctx.reply(`Вы успешно зарегистрированы как ${tokenData.position} с ролью ${tokenData.role}.`, await start(ctx.from.id));
+        if (user) {
+            // Если пользователь уже существует, очищаем сессию и выходим из сцены
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+
+        const userInput = ctx.message.text.trim();
+
+        // Проверяем, существует ли токен в маппинге
+        const tokenData = tokenRolesMap[userInput];
+
+        if (!tokenData) {
+            // Если токен не найден
+            try {
+                await ctx.reply(ruMessage.messages.error_token);
+            } catch (error) {
+                if (error.response?.error_code === 403) {
+                    console.log(`Пользователь ${tgId} заблокировал бота`);
+                } else {
+                    console.error('Ошибка при отправке сообщения:', error);
+                }
+            }
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+
+        try {
+            // Создаем пользователя с ролью, позицией и флагом checker из маппинга
+            await userService.createUser({
+                tg_id: tgId,
+                role: tokenData.role,
+                position: tokenData.position,
+                username: ctx.from.username,
+                checker: tokenData.checker, // Устанавливаем значение checker
+                created_at: new Date(),
+            });
+
+            try {
+                await ctx.reply(
+                    `Вы успешно зарегистрированы как ${tokenData.position} с ролью ${tokenData.role}.`,
+                    await start(ctx.from.id)
+                );
+            } catch (error) {
+                if (error.response?.error_code === 403) {
+                    console.log(`Пользователь ${tgId} заблокировал бота`);
+                } else {
+                    console.error('Ошибка при отправке сообщения:', error);
+                }
+            }
+        } catch (error) {
+            console.error("Ошибка при создании пользователя:", error);
+            try {
+                await ctx.reply("Произошла ошибка при регистрации.");
+            } catch (replyError) {
+                if (replyError.response?.error_code === 403) {
+                    console.log(`Пользователь ${ctx.from.id} заблокировал бота`);
+                } else {
+                    console.error('Ошибка при отправке сообщения об ошибке:', replyError);
+                }
+            }
+        }
+
     } catch (error) {
-        console.error("Error during user creation:", error);
-        await ctx.reply("Произошла ошибка при регистрации.");
+        console.error("Ошибка при создании пользователя:", error);
+        try {
+            await ctx.reply("Произошла ошибка при регистрации.");
+        } catch (replyError) {
+            if (replyError.response?.error_code === 403) {
+                console.log(`Пользователь ${ctx.from.id} заблокировал бота`);
+            } else {
+                console.error('Ошибка при отправке сообщения об ошибке:', replyError);
+            }
+        }
     }
 
-    // Очистка сессии и выход из сцены
     ctx.session = {};
     ctx.scene.leave();
 });
