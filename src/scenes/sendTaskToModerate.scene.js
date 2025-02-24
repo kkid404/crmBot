@@ -96,14 +96,14 @@ async function handleDone(ctx) {
 
         // Отправляем новое сообщение вместо редактирования
         await ctx.deleteMessage();
-        await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).");
+        await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nМаксимальный размер медиа файла 50 МБ.");
         ctx.session.awaitingMedia = true;
     } catch (error) {
         console.error("Ошибка в handleDone:", error);
         // Если произошла ошибка, все равно устанавливаем флаг ожидания медиа
         ctx.session.awaitingMedia = true;
         try {
-            await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).");
+            await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nМаксимальный размер медиа файла 50 МБ.");
         } catch (err) {
             console.error("Ошибка при отправке сообщения:", err);
         }
