@@ -16,11 +16,12 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 
 // Функция для сборки текста задачи
 function buildTaskInfo(task, state) {
-    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
-    const exampleLine = isMedia
-    ? "Медиа"
-    : `${task.example_creative}`;
     // Базовый текст
+            // Формируем строку для отображения примера креатива.
+            const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+            const exampleLine = isMedia
+            ? "Медиа"
+            : `${task.example_creative}`;
     let taskInfo = `🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}

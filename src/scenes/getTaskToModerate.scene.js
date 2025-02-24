@@ -15,8 +15,8 @@ const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
 const formatTaskInfo = (task) => {
     const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
     const exampleLine = isMedia
-    ? "🎨 Пример креатива: Пример креатива ниже"
-    : `🎨 Пример креатива: ${task.example_creative}`;
+    ? "🎨 Медиа"
+    : `🎨 ${task.example_creative}`;
     return `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
@@ -71,8 +71,8 @@ const checkAndFinalizeTask = async (ctx) => {
                     .join('\n');
                     const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
                     const exampleLine = isMedia
-                    ? "🎨 Пример креатива: Пример креатива ниже"
-                    : `🎨 Пример креатива: ${task.example_creative}`;
+                    ? "🎨 Пример креатива ниже"
+                    : `🎨 ${task.example_creative}`;
                 const creativeMessage = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}

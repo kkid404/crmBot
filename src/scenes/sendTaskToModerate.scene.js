@@ -122,8 +122,8 @@ async function handleTaskSelect(ctx) {
     const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
 
     const exampleLine = isMedia
-        ? "🎨 Пример креатива: Пример креатива ниже"
-        : `🎨 Пример креатива: ${task.example_creative}`;
+        ? "🎨Медиа"
+        : `🎨 ${task.example_creative}`;
 
     let taskInfo = `
 🎯 Название: ${task.name}

@@ -19,7 +19,7 @@ function buildTaskInfo(task, state) {
         // Формируем строку для отображения примера креатива.
         const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
         const exampleLine = isMedia
-        ? "🎨 Пример креатива: Пример креатива ниже"
+        ? "Медиа"
         : `🎨 Пример креатива: ${task.example_creative}`;
     // Базовый текст
     let taskInfo = `
@@ -64,47 +64,40 @@ MyTzBuyerScene.action('canceled_task', async (ctx) => {
     ctx.scene.leave();
 });
 
-// Кнопка назад
+// Обработчик для кнопки "back"
 MyTzBuyerScene.action('back', async (ctx) => {
     try {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
+        
         if (!user) {
             await ctx.answerCbQuery('Пользователь не найден');
             return;
         }
-
+        
         // Удаляем медиа, если оно было отправлено
         if (ctx.session.mediaMessageId) {
             try {
-                // Удаляем медиа сообщение
                 await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-
             } catch (err) {
                 console.error("Ошибка при удалении медиа:", err);
             }
-            ctx.session.mediaMessageId = null; // Сбрасываем message_id медиа
+            ctx.session.mediaMessageId = null;
         }
-
-            // Удаляем медиа, если оно было отправлено
-            if (ctx.session.exampleMediaMessageId) {
-                try {
-                    // Удаляем медиа сообщение
-                    await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-    
-                } catch (err) {
-                    console.error("Ошибка при удалении медиа:", err);
-                }
-                ctx.session.exampleMediaMessageId = null; // Сбрасываем message_id медиа
-            }
-
-        // Редактируем сообщение, чтобы показать список заданий
-        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
-
+        
+        // Важно: используем "progress" как состояние для фильтрации задач в работе
+        await ctx.editMessageText(
+            ruMessage.messages.getTT.select_tt, 
+            await myTasks(user._id, 'buyer', 'progress')
+        );
+        
+        // Очищаем выбранную задачу
+        ctx.session.selectedTask = null;
+        
         await ctx.answerCbQuery();
     } catch (error) {
-        console.error('Error in moderate "back" action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при переходе назад');
+        console.error('Error in "back" action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при возврате к списку задач');
     }
 });
 
