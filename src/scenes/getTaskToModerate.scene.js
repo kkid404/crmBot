@@ -13,11 +13,15 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
 
 const formatTaskInfo = (task) => {
+    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+    const exampleLine = isMedia
+    ? "🎨 Пример креатива: Пример креатива ниже"
+    : `🎨 Пример креатива: ${task.example_creative}`;
     return `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${task.example_creative}
+🎨 Пример креатива: ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
 };
@@ -65,12 +69,15 @@ const checkAndFinalizeTask = async (ctx) => {
                     .filter(record => record.status === 'failed')
                     .map(record => record.message)
                     .join('\n');
-
+                    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+                    const exampleLine = isMedia
+                    ? "🎨 Пример креатива: Пример креатива ниже"
+                    : `🎨 Пример креатива: ${task.example_creative}`;
                 const creativeMessage = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${task.example_creative}
+🎨 Пример креатива: ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 
 правки:

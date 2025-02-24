@@ -17,23 +17,21 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 // Функция для сборки текста задачи
 function buildTaskInfo(task, state) {
     // Базовый текст
-    let taskInfo = `
-🎯 Название: ${task.name}
+    let taskInfo = `🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 🎨 Пример креатива: ${task.example_creative}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
-📅 Дата выполнения: ${task.completionDate.toLocaleDateString()}
-    `;
+📅 Дата выполнения: ${task.completionDate.toLocaleDateString()}`;
 
     // Добавляем информацию о CTR, если она задана
     if (task.CTR !== null && task.CTR !== undefined) {
-        taskInfo += `📊 CTR: ${task.CTR}`;
+        taskInfo += `\n📊 CTR: ${task.CTR}`;
     }  
 
     // Добавляем информацию о бонусе, если она задана
     if (task.bonus !== null && task.bonus !== undefined) {
-        taskInfo += `💰 Бонус для креативщика: ${task.bonus}\n`;
+        taskInfo += `\n💰 Бонус для креативщика: ${task.bonus}`;
     }  
 
     return taskInfo;
@@ -299,7 +297,7 @@ watchReadyTzScene.action('edit_ctr', async (ctx) => {
         ctx.session.step = 1;
 
         // Запрашиваем у пользователя CTR
-        await ctx.editMessageText('Введите новый CTR:');
+        await ctx.editMessageText('Введите новый CTR:\nНапример: 0.3');
     } catch (error) {
         console.error('Ошибка при обработке edit_ctr:', error);
         await ctx.answerCbQuery('Произошла ошибка');
@@ -525,7 +523,7 @@ watchReadyTzScene.on('text', async (ctx) => {
 
         // Переходим ко второму вопросу — запрос бонуса
         ctx.session.step = 2;
-        await ctx.reply('Введите бонус для креативщика:');
+        await ctx.reply('Введите бонус для креативщика:\nНапример: 1000');
     } else if (step === 2) {
         // Пользователь ввел бонус
         const bonus = ctx.message.text;
