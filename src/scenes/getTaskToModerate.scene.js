@@ -196,7 +196,7 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         }
 
         // Отправляем описание задачи
-        const taskMessage = await ctx.reply(taskInfo, moderate());
+        const taskMessage = await ctx.reply(taskInfo, moderate(task));
         ctx.session.taskMessageId = taskMessage.message_id;
 
         await ctx.answerCbQuery();
@@ -419,7 +419,7 @@ getTaskToModerateScene.action('back_to_task', async (ctx) => {
         }
 
         const taskInfo = formatTaskInfo(task);
-        await ctx.editMessageText(taskInfo, moderate());
+        await ctx.editMessageText(taskInfo, moderate(task));
 
         // Отправляем результат креатива
         if (task.result) {

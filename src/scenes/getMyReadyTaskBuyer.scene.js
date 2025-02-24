@@ -16,11 +16,15 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 
 // Функция для сборки текста задачи
 function buildTaskInfo(task, state) {
+    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+    const exampleLine = isMedia
+    ? "Медиа"
+    : `${task.example_creative}`;
     // Базовый текст
     let taskInfo = `🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${task.example_creative}
+🎨 Пример креатива: ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 📅 Дата выполнения: ${task.completionDate.toLocaleDateString()}`;
 
@@ -172,7 +176,7 @@ watchReadyTzScene.action('back_to_task', async (ctx) => {
             }
         }
     
-        await ctx.reply(taskInfo, doneTask());
+        await ctx.reply(taskInfo, doneTask(task));
 
         // Подтверждаем callback
         await ctx.answerCbQuery();
@@ -272,7 +276,7 @@ watchReadyTzScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         }
     }
 
-    await ctx.reply(taskInfo, doneTask());
+    await ctx.reply(taskInfo, doneTask(task));
 
     // Сохраняем информацию в сессии
     ctx.session.taskInfo = taskInfo;
