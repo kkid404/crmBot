@@ -191,4 +191,61 @@ ttToModerateScene.action(/^[a-f0-9]{24}$/, handleTaskSelect);
 ttToModerateScene.on('photo', handleMedia);
 ttToModerateScene.on('video', handleMedia);
 
+// Добавляем обработчик текстовых сообщений
+ttToModerateScene.on('text', async (ctx) => {
+    const { selectedTask, awaitingMedia } = ctx.session;
+    const tgId = String(ctx.from.id);
+    const userInput = ctx.message.text;
+    const user = await userService.findUserByTelegramId(tgId).catch(handleError);
+
+    // Если пользователь ввёл "назад" текстом
+    if (userInput === ruMessage.keyboards.back[0]) {
+        await ctx.scene.enter('backScene');
+        ctx.session = {};
+        ctx.scene.leave();
+        return;
+    }
+
+    // Если ожидаем медиафайл, но получили текст
+    if (awaitingMedia) {
+        await ctx.reply("Ожидается отправка медиафайла (фото или видео). Пожалуйста, отправьте ваш креатив.");
+        return;
+    }
+
+    // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+    if (selectedTask) {
+        const task = await taskService.findTaskById(selectedTask).catch(handleError);
+        if (task) {
+            await ctx.reply(`Вы работаете с задачей: ${task.name}`);
+            if (ctx.session.taskInfo) {
+                await ctx.reply(ctx.session.taskInfo, back_or_done_Creator());
+            } else {
+                // Формируем информацию о задаче
+                const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
+                const exampleLine = isMedia
+                    ? "🎨 Пример креатива: Медиа"
+                    : `🎨 Пример креатива: ${task.example_creative}`;
+                
+                const taskInfo = `
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
+📝 Описание: ${task.description}
+${exampleLine}
+📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+                `;
+                
+                await ctx.reply(taskInfo, back_or_done_Creator());
+            }
+        } else {
+            await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
+            const keyboard = await myTasks(user._id, user.position, "progress");
+            await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+        }
+    } else {
+        await ctx.reply("Вы находитесь в режиме отправки задачи на модерацию. Пожалуйста, выберите задачу из списка:");
+        const keyboard = await myTasks(user._id, user.position, "progress");
+        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+    }
+});
+
 module.exports = ttToModerateScene;

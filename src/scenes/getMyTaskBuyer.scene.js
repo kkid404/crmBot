@@ -414,6 +414,38 @@ MyTzBuyerScene.on('text', async (ctx) => {
 
     // Если нет выбранной задачи или нет "шага" редактирования — выходим
     if (!selectedTask || !step) {
+        // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+        let currentState = "Просмотр задач";
+        
+        if (ctx.session.stateGetTask) {
+            currentState = `Просмотр задач в состоянии: ${ctx.session.stateGetTask}`;
+            await ctx.reply(`Вы находитесь в режиме просмотра задач. Текущий статус: ${ctx.session.stateGetTask}`);
+            
+            // Показываем список задач снова
+            if (user) {
+                const keyboard = await myTasks(user._id, 'buyer', ctx.session.stateGetTask);
+                await ctx.reply(
+                    ruMessage.messages.getTT.select_tt,
+                    {
+                        ...keyboard,
+                        reply_markup: {
+                            ...keyboard.reply_markup,
+                            remove_keyboard: true
+                        }
+                    }
+                );
+            }
+        } else if (selectedTask) {
+            currentState = "Просмотр выбранной задачи";
+            const task = await taskService.findTaskById(selectedTask);
+            if (task) {
+                await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
+            }
+        } else {
+            // Если не удалось определить состояние, возвращаем к начальному экрану
+            await ctx.reply("Не удалось определить текущий шаг. Пожалуйста, выберите действие:", tzBuyers());
+        }
+        
         return;
     }
 
@@ -431,7 +463,9 @@ MyTzBuyerScene.on('text', async (ctx) => {
             updatedField.example_creative = userInput;
             break;
         default:
-            return; // Неожиданное значение step
+            // Неожиданное значение step
+            await ctx.reply(`Не удалось обработать ваше сообщение. Текущий шаг: ${step}. Пожалуйста, следуйте инструкциям.`);
+            return;
     }
 
     try {

@@ -350,6 +350,41 @@ getTaskToModerateScene.on('text', async (ctx) => {
             console.error('Error processing correction text:', error);
             await ctx.reply('Ошибка при обработке вашего сообщения с правкой');
         }
+        return;
+    }
+
+    // Если мы не ожидаем правки, но получили текстовое сообщение
+    const { selectedTask } = ctx.session;
+    const tgId = String(ctx.from.id);
+    const userInput = ctx.message.text;
+    const user = await userService.findUserByTelegramId(tgId);
+
+    // Если пользователь ввёл "назад" текстом
+    if (userInput === ruMessage.keyboards.back[0]) {
+        await ctx.scene.enter('backScene');
+        ctx.session = {};
+        ctx.scene.leave();
+        return;
+    }
+
+    // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+    if (ctx.session.waitingForCorrection) {
+        await ctx.reply("Ожидается ввод правки для отклонения задачи. Пожалуйста, введите текст правки.");
+    } else if (selectedTask) {
+        const task = await taskService.findTaskById(selectedTask);
+        if (task) {
+            await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
+            const taskInfo = formatTaskInfo(task);
+            await ctx.reply(taskInfo, moderate(task));
+        } else {
+            await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
+            const keyboard = await myTasks(user._id, '', "wait");
+            await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+        }
+    } else {
+        await ctx.reply("Вы находитесь в режиме модерации задач. Пожалуйста, выберите задачу из списка:");
+        const keyboard = await myTasks(user._id, '', "wait");
+        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     }
 });
 

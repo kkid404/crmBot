@@ -119,6 +119,37 @@ ${exampleLine}
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
 });
 
+// Добавляем обработчик текстовых сообщений
+getMyTtCreatorScene.on('text', async (ctx) => {
+    const { selectedTask } = ctx.session;
+    const tgId = String(ctx.from.id);
+    const userInput = ctx.message.text;
+    const user = await userService.findUserByTelegramId(tgId);
 
+    // Если пользователь ввёл "назад" текстом
+    if (userInput === ruMessage.keyboards.back[0]) {
+        await ctx.scene.enter('backScene');
+        ctx.session = {};
+        ctx.scene.leave();
+        return;
+    }
+
+    // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+    if (selectedTask) {
+        const task = await taskService.findTaskById(selectedTask);
+        if (task) {
+            await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
+            await ctx.reply(ctx.session.taskInfo || "Информация о задаче недоступна", backInline());
+        } else {
+            await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
+            const keyboard = await myTasks(user._id, user.position, "progress");
+            await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+        }
+    } else {
+        await ctx.reply("Вы находитесь в режиме просмотра задач. Пожалуйста, выберите задачу из списка:");
+        const keyboard = await myTasks(user._id, user.position, "progress");
+        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+    }
+});
 
 module.exports = getMyTtCreatorScene;

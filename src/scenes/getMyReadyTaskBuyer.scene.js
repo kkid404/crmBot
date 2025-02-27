@@ -537,10 +537,43 @@ watchReadyTzScene.on('text', async (ctx) => {
 
         // Завершаем шаг
         ctx.session.step = null; // Сбрасываем шаг
+        return;
     }
 
     // Если нет выбранной задачи или нет "шага" редактирования — выходим
     if (!selectedTask || !step) {
+        // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+        let currentState = "Просмотр задач";
+        
+        if (ctx.session.awaitingAppLink) {
+            currentState = "Ожидание ввода новой ссылки на приложение";
+            await ctx.reply("Пожалуйста, введите новую ссылку на приложение.");
+        } else if (ctx.session.step === 'adaptiv_what') {
+            currentState = "Ожидание ввода текста для адаптации";
+            await ctx.reply("Пожалуйста, введите текст для адаптации.");
+        } else if (ctx.session.step === 1) {
+            currentState = "Ожидание ввода CTR";
+            await ctx.reply("Пожалуйста, введите CTR для креатива.");
+        } else if (ctx.session.step === 2) {
+            currentState = "Ожидание ввода бонуса";
+            await ctx.reply("Пожалуйста, введите бонус для креативщика.");
+        } else if (selectedTask) {
+            currentState = "Просмотр выбранной задачи";
+            const task = await taskService.findTaskById(selectedTask);
+            if (task) {
+                await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
+            }
+        } else {
+            // Если не удалось определить состояние, возвращаем список задач
+            const tgId = String(ctx.from.id);
+            const user = await userService.findUserByTelegramId(tgId);
+            if (user) {
+                await ctx.reply("Выберите задачу из списка:", await myTasks(user._id, user.position, "done"));
+            } else {
+                await ctx.reply("Не удалось определить текущий шаг. Пожалуйста, вернитесь в главное меню.", await start(ctx.from.id));
+            }
+        }
+        
         return;
     }
 
@@ -574,6 +607,10 @@ watchReadyTzScene.on('text', async (ctx) => {
         } else {
             await ctx.reply('Задача не найдена.');
         }
+    } else {
+        // Если мы здесь, значит пользователь отправил текст, который не обрабатывается ни одним из обработчиков
+        // Возвращаем информацию о текущем шаге
+        await ctx.reply(`Не удалось обработать ваше сообщение. Текущий шаг: ${step}. Пожалуйста, следуйте инструкциям.`);
     }
 });
 
