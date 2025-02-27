@@ -13,8 +13,9 @@ const getMyTtCreatorScene = new BaseScene('getMyTtCreatorScene');
 getMyTtCreatorScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
-    ctx.session.user = user
-    await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "progress"));
+    ctx.session.user = user;
+    const keyboard = await myTasks(user._id, user.position, "progress");
+    await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
 });
 
 getMyTtCreatorScene.action("back", async (ctx) => {
@@ -31,7 +32,8 @@ getMyTtCreatorScene.action("back", async (ctx) => {
     }
 
     // Возвращаем информацию о задаче и обновляем клавиатуру
-    await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(ctx.session.user._id, user.position, "progress"));
+    const keyboard = await myTasks(ctx.session.user._id, user.position, "progress");
+    await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
     
     // Очищаем выбранную задачу
     ctx.session.selectedTask = '';
@@ -40,10 +42,17 @@ getMyTtCreatorScene.action("back", async (ctx) => {
 
 getMyTtCreatorScene.action("quit", async (ctx) => {
     await ctx.deleteMessage();
-    await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
+    const keyboard = await start(ctx.from.id);
+    await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), {
+        ...keyboard,
+        reply_markup: {
+            ...keyboard.reply_markup,
+            remove_keyboard: false // Здесь оставляем клавиатуру, так как выходим из inline сценария
+        }
+    });
     ctx.session = {};
     ctx.scene.leave();
-})
+});
 
 
 // Обработчик callback-запросов

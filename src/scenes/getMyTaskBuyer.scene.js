@@ -300,9 +300,14 @@ ${exampleLine}
       keyboard = managementBuyerTasks();
     }
   
-    // Отправляем/редактируем сообщение с инфой о задаче и нужной клавиатурой
-    await ctx.reply(taskInfo, keyboard);
-    // Редактируем сообщение с информацией о задаче
+    // Удаляем обычную клавиатуру перед отправкой inline клавиатуры
+    await ctx.reply(taskInfo, {
+        ...keyboard,
+        reply_markup: {
+            ...keyboard.reply_markup,
+            remove_keyboard: true
+        }
+    });
 
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
@@ -333,8 +338,7 @@ ${exampleLine}
     ctx.session.taskname = task.name;
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
-  });
-  
+});
 
 /**
  * Обработчики кнопок редактирования
@@ -376,9 +380,16 @@ MyTzBuyerScene.on('text', async (ctx) => {
     if (userInput === ruMessage.keyboards.tzBuyers.tz_in_progress) {
         ctx.session.stateGetTask = 'progress';
         if (user) {
+            const keyboard = await myTasks(user._id, 'buyer', ctx.session.stateGetTask);
             await ctx.reply(
                 ruMessage.messages.getTT.select_tt,
-                await myTasks(user._id, 'buyer', ctx.session.stateGetTask)
+                {
+                    ...keyboard,
+                    reply_markup: {
+                        ...keyboard.reply_markup,
+                        remove_keyboard: true
+                    }
+                }
             );
         }
         return;
@@ -386,9 +397,16 @@ MyTzBuyerScene.on('text', async (ctx) => {
     if (userInput === ruMessage.keyboards.tzBuyers.tz_in_line) {
         ctx.session.stateGetTask = 'active';
         if (user) {
+            const keyboard = await myTasks(user._id, 'buyer', ctx.session.stateGetTask);
             await ctx.reply(
                 ruMessage.messages.getTT.select_tt,
-                await myTasks(user._id, 'buyer', ctx.session.stateGetTask)
+                {
+                    ...keyboard,
+                    reply_markup: {
+                        ...keyboard.reply_markup,
+                        remove_keyboard: true
+                    }
+                }
             );
         }
         return;

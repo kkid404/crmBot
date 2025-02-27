@@ -133,21 +133,18 @@ getTaskToModerateScene.enter(async (ctx) => {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
         if (!user) {
-            console.error(`User with telegram id ${tgId} not found`);
             await ctx.reply(ruMessage.messages.userNotFound);
             return;
         }
         
-        // Проверяем, является ли пользователь чекером
-        if (!user.cheker) {
-            await ctx.reply("У вас нет прав для проверки заданий.", await start(ctx.from.id));
-            ctx.session = {};
-            ctx.scene.leave();
-            return;
-        }
-
-        ctx.session.user = user;
-        await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
+        // Очищаем сессию при входе в сцену
+        ctx.session.selectedTask = null;
+        ctx.session.mediaMessageId = null;
+        ctx.session.exampleMediaMessageId = null;
+        ctx.session.taskMessageId = null;
+        
+        const keyboard = await myTasks(user._id, '', "wait");
+        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {
         console.error('Error in getTaskToModerateScene.enter:', error);
         await ctx.reply(ruMessage.messages.errorOccurred);
@@ -195,8 +192,15 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
             }
         }
 
-        // Отправляем описание задачи
-        const taskMessage = await ctx.reply(taskInfo, moderate(task));
+        // Отправляем описание задачи с удалением обычной клавиатуры
+        const moderateKeyboard = moderate(task);
+        const taskMessage = await ctx.reply(taskInfo, {
+            ...moderateKeyboard,
+            reply_markup: {
+                ...moderateKeyboard.reply_markup,
+                remove_keyboard: true
+            }
+        });
         ctx.session.taskMessageId = taskMessage.message_id;
 
         await ctx.answerCbQuery();

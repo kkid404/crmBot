@@ -49,8 +49,10 @@ async function handlePoints(ctx) {
 async function handleEnter(ctx) {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId).catch(handleError);
-    ctx.session.user = user;
-    await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, "creator", "progress"));
+    if (!user) throw new Error("User not found");
+    
+    const keyboard = await myTasks(user._id, user.position, "progress");
+    await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
 }
 
 // Обработчик кнопки "back"
@@ -114,53 +116,39 @@ async function handleDone(ctx) {
 async function handleTaskSelect(ctx) {
     const taskId = ctx.callbackQuery.data;
     const task = await taskService.findTaskById(taskId).catch(handleError);
+    if (!task) throw new Error("Task not found");
+    
     ctx.session.selectedTask = taskId;
-    if (!task) {
-        await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-        return;
-    }
+    ctx.session.taskname = task.name;
+    
+    // Проверяем, является ли example_creative file_id (медиа) или текстом.
     const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
-
+    
+    // Формируем строку для отображения примера креатива.
     const exampleLine = isMedia
-        ? "🎨Медиа"
-        : `🎨 ${task.example_creative}`;
-
-    let taskInfo = `
+        ? "🎨 Пример креатива: Медиа"
+        : `🎨 Пример креатива: ${task.example_creative}`;
+    
+    // Формируем текст сообщения с информацией о задаче
+    const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${exampleLine}
+${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
-
-    if (task.completionDate !== null) {
-        taskInfo += `\n📅Дата выполнения: ${task.completionDate.toLocaleDateString()}`;
-    }
-
-    if (isMedia) {
-        let mediaResponse;
-        try {
-            // Пробуем отправить как фото
-            mediaResponse = await ctx.replyWithPhoto(task.example_creative);
-        } catch (photoError) {
-            try {
-                // Если не удалось отправить как фото, пробуем отправить как видео
-                mediaResponse = await ctx.replyWithVideo(task.example_creative);
-            } catch (videoError) {
-                console.error("Ошибка отправки медиа примера:", videoError);
-                await ctx.reply("Ошибка отправки медиа примера");
-            }
+    
+    // Редактируем сообщение с информацией о задаче
+    const keyboard = back_or_done_Creator();
+    await ctx.editMessageText(taskInfo, {
+        ...keyboard,
+        reply_markup: {
+            ...keyboard.reply_markup,
+            remove_keyboard: true
         }
-        // Сохраняем идентификатор отправленного сообщения с медиа для последующего удаления
-        if (mediaResponse && mediaResponse.message_id) {
-            ctx.session.exampleMediaMessageId = mediaResponse.message_id;
-        }
-    }
-
-    await ctx.editMessageText(taskInfo, back_or_done_Creator());
+    });
+    
     ctx.session.taskInfo = taskInfo;
-    ctx.session.taskname = task.name;
-    ctx.session.selectedTask = taskId;
     await ctx.answerCbQuery();
 }
 

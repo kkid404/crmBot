@@ -9,7 +9,7 @@ const { myTasks } = require('../keyboards/get_my_tt.keyboard');
 const { replyCreative } = require('../keyboards/replyCreative.keyboard');
 const { doneTask } = require('../keyboards/doneTask.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
-
+const { Markup } = require('telegraf');
 
 
 
@@ -324,131 +324,153 @@ watchReadyTzScene.action(/^reply_/, async (ctx) => {
     // Отделяем префикс "reply_" от оставшейся части
     const replyType = actionData.replace('reply_', '');
 
-    // Логика для копирования задания в зависимости от типа креатива
-    const taskId = ctx.session.selectedTask;
-    const task = await taskService.findTaskById(taskId);
-
-    if (!task) {
-        await ctx.reply("Задача не найдена.");
-        return;
-    }
-
-    // Получаем данные пользователя
-    const tgId = String(ctx.from.id);
-    let user;
-    try {
-        user = await userService.findUserByTelegramId(tgId);
-    } catch (error) {
-        console.error("Ошибка получения пользователя:", error);
-        await ctx.reply("Ошибка при получении данных пользователя.");
-        return;
-    }
-
-    const creator = await userService.findById(task.creator);
-    if (!creator) {
-        await ctx.reply("Создатель задания не найден.");
-        return;
-    }
-
-    // Переменная для создания нового имени креатива (номер уникального креатива по счету)
-    let newName;
-
-    // В зависимости от типа креатива, формируем имя и сохраняем данные
-    switch (replyType) {
-        case 'uniq':
-            // Логика для "Уник"
-            const uniqCount = await taskService.getUniqCount(); // Функция для подсчета количества уникальных креативов
-            newName = `${task.name}_U_${uniqCount + 1}`;
-
-            const data = {
-                name: newName,
-                link_app: task.link_app,
-                description: task.description,
-                example_creative: task.example_creative,
-                buyer: user._id,
-                creator: creator._id, 
-                state: 'progress',
-                points: null,
-                completionDate: null,
-                CTR: null,
-                bonus: null,
-                result: null,
-                version: 1,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            try {
-                await taskService.createTask(data);
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
-            } catch (error) {
-                console.log(error);
-                await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-            }
-
-            await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-            await ctx.editMessageText(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
-            ctx.session = {};
-            ctx.scene.leave();
-            break;
-
-        case 'adaptiv':
-           // Логика для "Адаптив"
-            // Задаем вопрос "Что адаптировать?"
-            await ctx.editMessageText("Что адаптировать?");
-
-            // Ожидаем ответа от пользователя
-            ctx.session.step = 'adaptiv'; // Устанавливаем текущий шаг для адаптива
-            break;
-
-        case 'deep_uniq':
-            // Логика для "Глубокий уник"
-            const deepUniqCount = await taskService.getDeepUniqCount(); // Функция для подсчета количества глубоких уникальных креативов
-            newName = `DU_${task.name}_${deepUniqCount + 1}`;
-
-            const dataDU = {
-                name: newName,
-                link_app: task.link_app,
-                description: task.description,
-                example_creative: task.example_creative,
-                buyer: user._id,
-                creator: creator._id, 
-                state: 'progress',
-                points: null,
-                completionDate: null,
-                CTR: null,
-                bonus: null,
-                result: null,
-                version: 1,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            try {
-                await taskService.createTask(dataDU);
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
-            } catch (error) {
-                console.log(error);
-                await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-            }
-
-            await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-            await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
-            ctx.session = {};
-            ctx.scene.leave();
-            break;
-
-        default:
-            await ctx.reply("Неверный выбор.");
-    }
-
+    // Сохраняем тип креатива в сессии для последующего использования
+    ctx.session.replyType = replyType;
+    
+    // Запрашиваем у пользователя новую ссылку на приложение
+    await ctx.editMessageText('Введите новую ссылку на приложение:');
+    
+    // Устанавливаем флаг ожидания ссылки
+    ctx.session.awaitingAppLink = true;
+    
+    await ctx.answerCbQuery();
 });
 
-
-
-
-
+// Объединенный обработчик для всех текстовых сообщений
 watchReadyTzScene.on('text', async (ctx) => {
+    // Проверяем, ожидаем ли мы ссылку на приложение
+    if (ctx.session.awaitingAppLink) {
+        // Получаем новую ссылку из сообщения пользователя
+        const newAppLink = ctx.message.text;
+        
+        // Сохраняем ссылку в сессии
+        ctx.session.newAppLink = newAppLink;
+        
+        // Сбрасываем флаг ожидания ссылки
+        ctx.session.awaitingAppLink = false;
+        
+        // Получаем данные из сессии
+        const { replyType, selectedTask } = ctx.session;
+        const taskId = selectedTask;
+        const task = await taskService.findTaskById(taskId);
+
+        if (!task) {
+            await ctx.reply("Задача не найдена.");
+            return;
+        }
+
+        // Получаем данные пользователя
+        const tgId = String(ctx.from.id);
+        let user;
+        try {
+            user = await userService.findUserByTelegramId(tgId);
+        } catch (error) {
+            console.error("Ошибка получения пользователя:", error);
+            await ctx.reply("Ошибка при получении данных пользователя.");
+            return;
+        }
+
+        const creator = await userService.findById(task.creator);
+        if (!creator) {
+            await ctx.reply("Создатель задания не найден.");
+            return;
+        }
+
+        // Переменная для создания нового имени креатива (номер уникального креатива по счету)
+        let newName;
+
+        // В зависимости от типа креатива, формируем имя и сохраняем данные
+        switch (replyType) {
+            case 'uniq':
+                // Логика для "Уник"
+                const uniqCount = await taskService.getUniqCount(); // Функция для подсчета количества уникальных креативов
+                newName = `${task.name}_U_${uniqCount + 1}`;
+
+                const data = {
+                    name: newName,
+                    link_app: newAppLink, // Используем новую ссылку
+                    description: task.description,
+                    example_creative: task.example_creative,
+                    buyer: user._id,
+                    creator: creator._id, 
+                    state: 'progress',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                try {
+                    await taskService.createTask(data);
+                    await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
+                } catch (error) {
+                    console.log(error);
+                    await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+                }
+
+                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
+                await ctx.reply(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
+                ctx.session = {};
+                ctx.scene.leave();
+                break;
+
+            case 'adaptiv':
+               // Логика для "Адаптив"
+                // Задаем вопрос "Что адаптировать?", но только после получения новой ссылки
+                await ctx.reply("Что адаптировать?");
+
+                // Ожидаем ответа от пользователя, но сохраняем информацию, что после этого шага мы в режиме адаптива
+                ctx.session.step = 'adaptiv_what'; // Устанавливаем текущий шаг для адаптива
+                break;
+
+            case 'deep_uniq':
+                // Логика для "Глубокий уник"
+                const deepUniqCount = await taskService.getDeepUniqCount(); // Функция для подсчета количества глубоких уникальных креативов
+                newName = `DU_${task.name}_${deepUniqCount + 1}`;
+
+                const dataDU = {
+                    name: newName,
+                    link_app: newAppLink,
+                    description: task.description,
+                    example_creative: task.example_creative,
+                    buyer: user._id,
+                    creator: creator._id, 
+                    state: 'progress',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                try {
+                    await taskService.createTask(dataDU);
+                    await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
+                } catch (error) {
+                    console.log(error);
+                    await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+                }
+
+                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
+                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
+                ctx.session = {};
+                ctx.scene.leave();
+                break;
+
+            default:
+                await ctx.reply("Неверный выбор.");
+        }
+        return; // Важно выйти из обработчика
+    }
+
+    // Получаем данные из сессии
     const { step, selectedTask } = ctx.session;
     const tgId = String(ctx.from.id);
     const userInput = ctx.message.text;
@@ -462,7 +484,7 @@ watchReadyTzScene.on('text', async (ctx) => {
         return;
     }
 
-    if (ctx.session.step === 'adaptiv') {
+    if (ctx.session.step === 'adaptiv_what') {
         const adaptivText = ctx.message.text;
 
         // Получаем данные задания
@@ -484,7 +506,7 @@ watchReadyTzScene.on('text', async (ctx) => {
         // Создание нового задания с обновленным описанием
         const newTaskAdaptiv = {
             name: newName,
-            link_app: task.link_app,
+            link_app: ctx.session.newAppLink, // Используем новую ссылку на приложение
             description: newDescription,
             example_creative: task.example_creative,
             buyer: user._id,
@@ -522,6 +544,7 @@ watchReadyTzScene.on('text', async (ctx) => {
         return;
     }
 
+    // Добавляем обработку шагов для ввода CTR и бонуса
     if (step === 1) {
         // Пользователь ввел CTR
         ctx.session.CTR = ctx.message.text;
@@ -552,7 +575,6 @@ watchReadyTzScene.on('text', async (ctx) => {
             await ctx.reply('Задача не найдена.');
         }
     }
-
 });
 
 module.exports = watchReadyTzScene;
