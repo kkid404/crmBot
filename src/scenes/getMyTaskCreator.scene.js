@@ -2,7 +2,7 @@ const { Scenes } = require('telegraf');
 const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
-const { myTasks } = require('../keyboards/get_my_tt.keyboard');
+const { creatorTasks } = require('../keyboards/get_my_tt.keyboard');
 const userService = require('../services/user.service');
 const taskService = require('../services/task.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
@@ -14,7 +14,7 @@ getMyTtCreatorScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
     ctx.session.user = user;
-    const keyboard = await myTasks(user._id, user.position, "progress");
+    const keyboard = await creatorTasks(user._id,  "progress");
     await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
 });
 
@@ -32,7 +32,7 @@ getMyTtCreatorScene.action("back", async (ctx) => {
     }
 
     // Возвращаем информацию о задаче и обновляем клавиатуру
-    const keyboard = await myTasks(ctx.session.user._id, user.position, "progress");
+    const keyboard = await creatorTasks(ctx.session.user._id,  "progress");
     await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
     
     // Очищаем выбранную задачу
@@ -142,12 +142,12 @@ getMyTtCreatorScene.on('text', async (ctx) => {
             await ctx.reply(ctx.session.taskInfo || "Информация о задаче недоступна", backInline());
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
-            const keyboard = await myTasks(user._id, user.position, "progress");
+            const keyboard = await creatorTasks(user._id,  "progress");
             await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
         }
     } else {
         await ctx.reply("Вы находитесь в режиме просмотра задач. Пожалуйста, выберите задачу из списка:");
-        const keyboard = await myTasks(user._id, user.position, "progress");
+        const keyboard = await creatorTasks(user._id,  "progress");
         await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     }
 });
