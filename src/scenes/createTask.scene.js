@@ -34,10 +34,48 @@ async function handleMedia(ctx) {
         buyer: user._id
     }
     try{
-        await taskService.createTask(data)
-        await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", ctx.session.name), await start(ctx.from.id))
-    }catch(error){
-        console.log(error)
+        let taskData = {
+            name: ctx.session.name,
+            link_app: ctx.session.app,
+            description: ctx.session.description,
+            example_creative: ctx.session.example,
+            buyer: user._id
+        };
+        
+        let maxRetries = 5; // Максимальное количество попыток
+        let retryCount = 0;
+        let success = false;
+        
+        while (!success && retryCount < maxRetries) {
+            try {
+                await taskService.createTask(taskData);
+                success = true;
+                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", taskData.name), await start(ctx.from.id));
+            } catch (error) {
+                // Если ошибка связана с дублированием ключа, увеличиваем счетчик и пробуем снова
+                if (error.message.includes('duplicate key error') && error.message.includes('name')) {
+                    retryCount++;
+                    // Извлекаем части имени
+                    const nameParts = taskData.name.split('_');
+                    // Увеличиваем счетчик в имени
+                    const currentCounter = parseInt(nameParts[nameParts.length - 1]);
+                    nameParts[nameParts.length - 1] = (currentCounter + retryCount).toString();
+                    // Формируем новое имя
+                    taskData.name = nameParts.join('_');
+                } else {
+                    // Если ошибка не связана с дублированием, выходим из цикла
+                    throw error;
+                }
+            }
+        }
+        
+        // Если после всех попыток не удалось создать задачу
+        if (!success) {
+            console.error("Не удалось создать задачу после нескольких попыток");
+            await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+        }
+    } catch(error) {
+        console.error("Ошибка создания задачи:", error);
         await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
     }
     ctx.session = {};
@@ -96,20 +134,52 @@ writeTTScene.on('text', async (ctx) => {
         case 4:
             ctx.session.example = ctx.message.text
             let user = await userService.findUserByTelegramId(tgId);
-            const data = {
+            let taskData = {
                 name: ctx.session.name,
                 link_app: ctx.session.app,
                 description: ctx.session.description,
                 example_creative: ctx.session.example,
                 buyer: user._id
             }
-            try{
-                await taskService.createTask(data)
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", ctx.session.name), await start(ctx.from.id))
-            }catch(error){
-                console.log(error)
+            
+            try {
+                let maxRetries = 5; // Максимальное количество попыток
+                let retryCount = 0;
+                let success = false;
+                
+                while (!success && retryCount < maxRetries) {
+                    try {
+                        await taskService.createTask(taskData);
+                        success = true;
+                        await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", taskData.name), await start(ctx.from.id));
+                    } catch (error) {
+                        // Если ошибка связана с дублированием ключа, увеличиваем счетчик и пробуем снова
+                        if (error.message.includes('duplicate key error') && error.message.includes('name')) {
+                            retryCount++;
+                            // Извлекаем части имени
+                            const nameParts = taskData.name.split('_');
+                            // Увеличиваем счетчик в имени
+                            const currentCounter = parseInt(nameParts[nameParts.length - 1]);
+                            nameParts[nameParts.length - 1] = (currentCounter + retryCount).toString();
+                            // Формируем новое имя
+                            taskData.name = nameParts.join('_');
+                        } else {
+                            // Если ошибка не связана с дублированием, выходим из цикла
+                            throw error;
+                        }
+                    }
+                }
+                
+                // Если после всех попыток не удалось создать задачу
+                if (!success) {
+                    console.error("Не удалось создать задачу после нескольких попыток");
+                    await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+                }
+            } catch (error) {
+                console.error("Ошибка создания задачи:", error);
                 await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
             }
+            
             ctx.session = {};
             ctx.scene.leave();
             break;
