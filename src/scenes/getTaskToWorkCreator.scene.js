@@ -91,6 +91,16 @@ getTTScene.action("done", async (ctx) => {
         };
         
         await taskService.updateTask(ctx.session.selectedTask, taskInfo);
+        
+        // Удаляем медиа пример, если он есть
+        if (ctx.session.exampleMediaMessageId) {
+            try {
+                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
+            } catch (err) {
+                console.error("Ошибка при удалении медиа примера:", err);
+            }
+        }
+        
         await ctx.deleteMessage();
         await ctx.reply(
             ruMessage.messages.getTT.success_selected
@@ -99,13 +109,12 @@ getTTScene.action("done", async (ctx) => {
             await start(tgId)
         );
     } catch (error) {
-        console.error("Error in done action:", error);
+        console.error("Ошибка в действии 'done':", error);
         await ctx.reply(ruMessage.messages.errors.general);
     } finally {
         ctx.session = {};
         ctx.scene.leave();
     }
-
 })
 
 
