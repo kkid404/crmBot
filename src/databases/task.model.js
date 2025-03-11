@@ -5,7 +5,7 @@ const taskSchema = new Schema({
     name: { type: String, required: true, unique: true },
     link_app: { type: String, required: true },
     description: { type: String, required: true },
-    example_creative: { type: String, default: null },
+    example_creative: { type: [String], default: [] },
     state: { 
         type: String, 
         default: 'active',
