@@ -13,17 +13,28 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
 
 const formatTaskInfo = (task) => {
-    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
-    const exampleLine = isMedia
-    ? "🎨 Медиа"
-    : `🎨 ${task.example_creative}`;
-    return `
+    // Определяем, есть ли медиафайлы
+    const hasMedia = Array.isArray(task.example_creative) 
+        ? task.example_creative.length > 0 
+        : typeof task.example_creative === 'string' && task.example_creative.trim() !== '';
+    
+    // Формируем строку для отображения информации о примерах креатива
+    const exampleLine = hasMedia
+        ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
+        : "🎨 Примеры креатива: отсутствуют";
+
+    // Формируем текст с информацией о задании
+    const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${exampleLine}
+${exampleLine}
+👨‍💻 Креатор: ${task.creator?.username || 'Не назначен'}
+📝 Результат: ${task.result ? "✅ Загружен" : "❌ Отсутствует"}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
+    
+    return taskInfo;
 };
 
 // Функция для безопасного редактирования сообщения (если потребуется где‑то ещё)
@@ -69,15 +80,26 @@ const checkAndFinalizeTask = async (ctx) => {
                     .filter(record => record.status === 'failed')
                     .map(record => record.message)
                     .join('\n');
-                    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
-                    const exampleLine = isMedia
-                    ? "🎨 Пример креатива ниже"
-                    : `🎨 ${task.example_creative}`;
+                
+                // Обеспечиваем обратную совместимость с массивом example_creative
+                let exampleLine = "🎨 Пример креатива: отсутствует";
+                
+                if (Array.isArray(task.example_creative) && task.example_creative.length > 0) {
+                    // Определяем, сколько примеров креатива есть
+                    exampleLine = `🎨 Примеры креатива: ${task.example_creative.length}`;
+                } else if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
+                    // Обрабатываем случай, когда example_creative - это строка
+                    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAA");
+                    exampleLine = isMedia
+                        ? "🎨 Пример креатива ниже"
+                        : `🎨 Пример креатива: ${task.example_creative}`;
+                }
+                
                 const creativeMessage = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-🎨 Пример креатива: ${exampleLine}
+${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 
 правки:
@@ -117,7 +139,19 @@ const deleteMediaMessages = async (ctx) => {
         }
     }
 
-    // Удаляем пример креатива
+    // Удаляем примеры креативов (поддержка массива сообщений)
+    if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
+        for (const messageId of ctx.session.exampleMediaMessageIds) {
+            try {
+                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
+            } catch (error) {
+                console.error(`Ошибка при удалении медиа сообщения: ${error.message}`);
+            }
+        }
+        ctx.session.exampleMediaMessageIds = [];
+    }
+
+    // Для обратной совместимости проверяем и старое одиночное сообщение
     if (ctx.session.exampleMediaMessageId) {
         try {
             await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
@@ -141,6 +175,7 @@ getTaskToModerateScene.enter(async (ctx) => {
         ctx.session.selectedTask = null;
         ctx.session.mediaMessageId = null;
         ctx.session.exampleMediaMessageId = null;
+        ctx.session.exampleMediaMessageIds = [];
         ctx.session.taskMessageId = null;
         
         const keyboard = await myTasks(user._id, '', "wait");
@@ -395,7 +430,7 @@ getTaskToModerateScene.action("quit", async (ctx) => {
     ctx.scene.leave();
 });
 
-// Модифицируем обработчик показа примера
+// Обработчик для показа примера задания
 getTaskToModerateScene.action('show_example', async (ctx) => {
     try {
         // Удаляем все предыдущие медиа
@@ -409,30 +444,89 @@ getTaskToModerateScene.action('show_example', async (ctx) => {
             return;
         }
 
+        // Инициализируем массив для ID сообщений
+        ctx.session.exampleMediaMessageIds = [];
+
         const taskInfo = formatTaskInfo(task);
         await ctx.editMessageText(taskInfo, back_to_task());
 
-        // Отправляем пример
-        if (task.example_creative) {
+        // Обеспечиваем обратную совместимость, преобразуя строку в массив
+        if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
+            task.example_creative = [task.example_creative];
+        } else if (!Array.isArray(task.example_creative)) {
+            task.example_creative = [];
+        }
+
+        // Разделяем примеры на медиа и текст
+        const mediaExamples = [];
+        const textExamples = [];
+
+        // Определяем, какие примеры являются медиа, а какие текстом
+        task.example_creative.forEach(example => {
+            // Проверяем форматы file_id для Telegram
+            if (example.startsWith('AgAC') || example.startsWith('BAA') || example.startsWith('BQA') || 
+                example.startsWith('CQA') || example.startsWith('DQA')) {
+                mediaExamples.push(example);
+            } else {
+                textExamples.push(example);
+            }
+        });
+
+        // Сначала отправляем текстовые примеры, если они есть
+        if (textExamples.length > 0) {
+            const textMessage = await ctx.reply(`📝 Текстовые примеры креативов (${textExamples.length}):\n\n${textExamples.join('\n\n')}`);
+            ctx.session.exampleMediaMessageIds.push(textMessage.message_id);
+        }
+
+        // Если есть медиафайлы, отправляем их в группе
+        if (mediaExamples.length > 0) {
             try {
-                let mediaResponse;
-                if (task.mediaType === 'photo') {
-                    mediaResponse = await ctx.replyWithPhoto(task.example_creative);
-                } else if (task.mediaType === 'video') {
-                    mediaResponse = await ctx.replyWithVideo(task.example_creative);
-                } else {
-                    try {
-                        mediaResponse = await ctx.replyWithPhoto(task.example_creative);
-                    } catch {
-                        mediaResponse = await ctx.replyWithVideo(task.example_creative);
+                // Готовим массив медиафайлов для отправки в группе
+                const mediaGroup = mediaExamples.map(fileId => {
+                    // Определяем тип медиа по первым символам file_id
+                    const isVideo = fileId.startsWith('BAA');
+                    const isDocument = fileId.startsWith('BQA');
+                    const isAudio = fileId.startsWith('CQA');
+                    const isAnimation = fileId.startsWith('DQA');
+                    
+                    // Определяем тип медиа
+                    let type = 'photo'; // По умолчанию фото
+                    if (isVideo) type = 'video';
+                    else if (isDocument) type = 'document';
+                    else if (isAudio) type = 'audio';
+                    else if (isAnimation) type = 'animation';
+                    
+                    return {
+                        type: type,
+                        media: fileId
+                    };
+                });
+                
+                // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+                if (mediaGroup.length > 0) {
+                    // Telegram поддерживает до 10 файлов в одной группе
+                    const chunks = [];
+                    for (let i = 0; i < mediaGroup.length; i += 10) {
+                        chunks.push(mediaGroup.slice(i, i + 10));
+                    }
+                    
+                    // Отправляем каждую группу отдельно
+                    for (const chunk of chunks) {
+                        if (chunk.length > 0) {
+                            const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
+                            
+                            // Сохраняем ID всех отправленных сообщений
+                            if (sentMessages && sentMessages.length > 0) {
+                                sentMessages.forEach(msg => {
+                                    ctx.session.exampleMediaMessageIds.push(msg.message_id);
+                                });
+                            }
+                        }
                     }
                 }
-
-                if (mediaResponse?.message_id) {
-                    ctx.session.exampleMediaMessageId = mediaResponse.message_id;
-                }
             } catch (error) {
-                console.error("Ошибка при отправке примера:", error);
+                console.error(`Ошибка отправки медиафайлов: ${error.message}`);
+                await ctx.reply(`Не удалось отправить медиафайлы: ${error.message}`);
             }
         }
 
@@ -494,17 +588,35 @@ getTaskToModerateScene.action('back_to_task', async (ctx) => {
 // Обработчик для кнопки "back"
 getTaskToModerateScene.action('back', async (ctx) => {
     try {
-        const user = ctx.session.user;
+        // Получаем пользователя по Telegram ID напрямую
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        
         if (!user) {
             await ctx.answerCbQuery('Пользователь не найден');
             return;
         }
 
+        // Удаляем все медиа-сообщения, если есть
+        await deleteMediaMessages(ctx);
+
         // Если сообщение с описанием задачи было отправлено, редактируем его
         if (ctx.session.taskMessageId) {
-            await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
-            delete ctx.session.taskMessageId; // Очистить идентификатор сообщения после редактирования
+            try {
+                await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
+                delete ctx.session.taskMessageId; // Очистить идентификатор сообщения после редактирования
+            } catch (error) {
+                console.error('Ошибка при редактировании сообщения:', error);
+                // Если не удалось отредактировать, отправляем новое сообщение
+                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
+            }
+        } else {
+            // Если нет сохраненного ID сообщения, просто отправляем новое
+            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
         }
+        
+        // Сбрасываем выбранную задачу
+        ctx.session.selectedTask = null;
 
         await ctx.answerCbQuery();
     } catch (error) {

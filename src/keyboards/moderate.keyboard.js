@@ -4,12 +4,28 @@ const ruMessage = require('../lang/ru.json');
 function moderate(task) {
   const buttons = [];
   
-  const isMediaExample = task && task.example_creative && 
-    (task.example_creative.startsWith('AgAC') || task.example_creative.startsWith('BAAC')) &&
-    task.example_creative.length > 10;
+  // Проверяем, есть ли медиа-примеры
+  let hasMediaExample = false;
+  
+  if (task && task.example_creative) {
+    if (Array.isArray(task.example_creative) && task.example_creative.length > 0) {
+      // Если пример - это массив, проверяем, есть ли в нём медиафайлы
+      hasMediaExample = task.example_creative.some(example => 
+        example.startsWith('AgAC') || example.startsWith('BAA') || 
+        example.startsWith('BQA') || example.startsWith('CQA') || 
+        example.startsWith('DQA')
+      );
+    } else if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
+      // Если пример - это строка, проверяем, является ли она медиафайлом
+      hasMediaExample = task.example_creative.startsWith('AgAC') || 
+                        task.example_creative.startsWith('BAA') || 
+                        task.example_creative.startsWith('BQA');
+    }
+  }
   
   Object.entries(ruMessage.keyboards.moderate).forEach(([callbackData, buttonText]) => {
-    if (callbackData === 'show_example' && !isMediaExample) {
+    // Показываем кнопку "Показать пример" только если есть медиафайлы или текстовые примеры
+    if (callbackData === 'show_example' && !task.example_creative) {
       return;
     }
     
