@@ -125,6 +125,17 @@ class TaskService {
         }
     }
 
+    // Метод для подсчета количества уникальных креативов для конкретного базового имени задачи
+    static async getTaskSpecificUniqCount(baseName) {
+        try {
+            const pattern = `${baseName}_U_`;
+            const count = await Task.countDocuments({ name: { $regex: pattern } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете уникальных креативов для задачи ${baseName}: ${error.message}`);
+        }
+    }
+
     // Метод для подсчета глубоких уникальных креативов (с префиксом DU_)
     static async getDeepUniqCount() {
         try {
@@ -132,6 +143,17 @@ class TaskService {
             return count;
         } catch (error) {
             throw new Error(`Ошибка при подсчете глубоких уникальных креативов: ${error.message}`);
+        }
+    }
+
+    // Метод для подсчета количества глубоких уникальных креативов для конкретного базового имени задачи
+    static async getTaskSpecificDeepUniqCount(baseName) {
+        try {
+            const pattern = `DU_${baseName}_`;
+            const count = await Task.countDocuments({ name: { $regex: pattern } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете глубоких уникальных креативов для задачи ${baseName}: ${error.message}`);
         }
     }
 
@@ -144,6 +166,17 @@ class TaskService {
         }
     }
     
+    // Метод для подсчета количества адаптивных креативов для конкретного базового имени задачи
+    static async getTaskSpecificAdaptivCount(baseName) {
+        try {
+            const pattern = `${baseName}_A_`;
+            const count = await Task.countDocuments({ name: { $regex: pattern } });
+            return count;
+        } catch (error) {
+            throw new Error(`Ошибка при подсчете адаптивных креативов для задачи ${baseName}: ${error.message}`);
+        }
+    }
 }
 
 module.exports = TaskService;
+

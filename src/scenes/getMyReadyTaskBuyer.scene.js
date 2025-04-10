@@ -544,7 +544,7 @@ watchReadyTzScene.on('text', async (ctx) => {
         switch (replyType) {
             case 'uniq':
                 // Логика для "Уник"
-                const uniqCount = await taskService.getUniqCount(); // Функция для подсчета количества уникальных креативов
+                const uniqCount = await taskService.getTaskSpecificUniqCount(task.name); // Функция для подсчета количества уникальных креативов для этого конкретного задания
                 newName = `${task.name}_U_${uniqCount + 1}`;
 
                 const data = {
@@ -590,7 +590,7 @@ watchReadyTzScene.on('text', async (ctx) => {
 
             case 'deep_uniq':
                 // Логика для "Глубокий уник"
-                const deepUniqCount = await taskService.getDeepUniqCount(); // Функция для подсчета количества глубоких уникальных креативов
+                const deepUniqCount = await taskService.getTaskSpecificDeepUniqCount(task.name); // Функция для подсчета количества глубоких уникальных креативов для этого конкретного задания
                 newName = `DU_${task.name}_${deepUniqCount + 1}`;
 
                 const dataDU = {
@@ -620,7 +620,6 @@ watchReadyTzScene.on('text', async (ctx) => {
                 }
 
                 await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
                 ctx.session = {};
                 ctx.scene.leave();
                 break;
@@ -661,7 +660,7 @@ watchReadyTzScene.on('text', async (ctx) => {
         const newDescription = `${adaptivText} ${task.description}`;
 
         // Генерируем новое имя с префиксом "A_" и увеличением номера креатива
-        const adaptivCount = await taskService.getAdaptivCount(); // Функция для подсчета количества адаптивных креативов
+        const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name); // Функция для подсчета количества адаптивных креативов для этого конкретного задания
         const newName = `${task.name}_A_${adaptivCount + 1}`;
         const creator = await userService.findById(task.creator);
         // Создание нового задания с обновленным описанием
