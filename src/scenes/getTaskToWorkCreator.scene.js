@@ -26,13 +26,6 @@ getTTScene.enter(async (ctx) => {
 getTTScene.action("back", async (ctx) => {
     // Удаляем все отправленные медиасообщения
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.deleteMessage(messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
         ctx.session.exampleMediaMessageIds = [];
     }
 
@@ -65,7 +58,6 @@ getTTScene.action(/^date_.+$/, async (ctx) => { // Регулярное выра
 });
 
 getTTScene.action("cancel", async (ctx) => {
-    await ctx.deleteMessage();
 
     await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
 
@@ -75,7 +67,6 @@ getTTScene.action("cancel", async (ctx) => {
 })
 
 getTTScene.action("quit", async (ctx) => {
-    await ctx.deleteMessage();
     await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
     ctx.session = {};
     ctx.scene.leave();
@@ -97,17 +88,10 @@ getTTScene.action("done", async (ctx) => {
         
         // Удаляем медиа пример, если он есть
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.deleteMessage(messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
+
             ctx.session.exampleMediaMessageIds = [];
         }
         
-        await ctx.deleteMessage();
         await ctx.reply(
             ruMessage.messages.getTT.success_selected
                 .replace("{name}", ctx.session.taskname)
@@ -161,7 +145,6 @@ ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
 
-    await ctx.deleteMessage();
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
 
@@ -251,13 +234,6 @@ ${exampleLine}
 getTTScene.leave(async (ctx) => {
     // Удаляем все отправленные медиасообщения при выходе из сцены
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
         ctx.session.exampleMediaMessageIds = [];
     }
     

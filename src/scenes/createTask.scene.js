@@ -104,15 +104,6 @@ async function handleMedia(ctx) {
         // Текст сообщения с количеством файлов
         const messageText = `Медиафайл получен! Всего добавлено: ${ctx.session.mediaFiles.length}`;
 
-        // Удаляем предыдущее сообщение, если оно существует
-        if (ctx.session.lastMediaMessageId) {
-            try {
-                await ctx.deleteMessage(ctx.session.lastMediaMessageId);
-            } catch (error) {
-                console.error("Не удалось удалить предыдущее сообщение:", error);
-            }
-        }
-
         // Отправляем новое сообщение с кнопкой
         const sentMessage = await ctx.reply(
             messageText,
@@ -137,9 +128,6 @@ async function handleSaveTask(ctx) {
     if (!ctx.callbackQuery || !ctx.session.awaitingMedia) return;
 
     try {
-        if (ctx.session.lastMediaMessageId) {
-            await ctx.deleteMessage(ctx.session.lastMediaMessageId);
-        }
 
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);

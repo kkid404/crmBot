@@ -38,7 +38,6 @@ async function handlePoints(ctx) {
         ).catch(handleError);
     }
   
-    await ctx.deleteMessage();
     await ctx.reply(ruMessage.messages.ttToModerate.creative_success_send, await start(ctx.from.id));
     ctx.session = {};
     ctx.scene.leave();
@@ -60,13 +59,6 @@ async function handleBack(ctx) {
     try {
         // Удаляем все отправленные медиасообщения при выходе из сцены
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
             ctx.session.exampleMediaMessageIds = [];
         }
         
@@ -100,10 +92,8 @@ async function handleBack(ctx) {
 async function handleQuit(ctx) {
     // Если медиа было отправлено, удаляем его
     if (ctx.session.exampleMediaMessageId) {
-        await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
         delete ctx.session.exampleMediaMessageId;
     }
-    await ctx.deleteMessage();
     await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
     ctx.session = {};
     ctx.scene.leave();
@@ -114,18 +104,10 @@ async function handleDone(ctx) {
     try {
     // Удаляем все отправленные медиасообщения при выходе из сцены
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
         ctx.session.exampleMediaMessageIds = [];
     }
 
         // Отправляем новое сообщение вместо редактирования
-        await ctx.deleteMessage();
         await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nМаксимальный размер медиа файла 50 МБ.");
         ctx.session.awaitingMedia = true;
     } catch (error) {
@@ -175,7 +157,6 @@ ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
  `;
 
- await ctx.deleteMessage();
 
      // Инициализируем массив для хранения ID отправленных медиасообщений
      ctx.session.exampleMediaMessageIds = [];
@@ -368,13 +349,6 @@ ${exampleLine}
 ttToModerateScene.leave(async (ctx) => {
     // Удаляем все отправленные медиасообщения при выходе из сцены
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
         ctx.session.exampleMediaMessageIds = [];
     }
     

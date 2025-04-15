@@ -132,7 +132,6 @@ const deleteMediaMessages = async (ctx) => {
     // Удаляем сданное изображение
     if (ctx.session.mediaMessageId) {
         try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
             ctx.session.mediaMessageId = null;
         } catch (err) {
             console.error("Ошибка при удалении медиа:", err);
@@ -141,20 +140,13 @@ const deleteMediaMessages = async (ctx) => {
 
     // Удаляем примеры креативов (поддержка массива сообщений)
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении медиа сообщения: ${error.message}`);
-            }
-        }
+
         ctx.session.exampleMediaMessageIds = [];
     }
 
     // Для обратной совместимости проверяем и старое одиночное сообщение
     if (ctx.session.exampleMediaMessageId) {
         try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
             ctx.session.exampleMediaMessageId = null;
         } catch (err) {
             console.error("Ошибка при удалении примера:", err);
@@ -189,9 +181,6 @@ getTaskToModerateScene.enter(async (ctx) => {
 // Модифицируем обработчик выбора задачи
 getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     try {
-        // Удаляем все предыдущие медиа при выборе новой задачи
-        await deleteMediaMessages(ctx);
-        await ctx.deleteMessage();
 
         const taskId = ctx.callbackQuery.data;
         const task = await taskService.findTaskById(taskId);
@@ -289,12 +278,7 @@ getTaskToModerateScene.action('done', async (ctx) => {
         // Запускаем логику финализации (без изменения интерфейса для чекера)
         await checkAndFinalizeTask(ctx);
 
-        // После обработки ответа удаляем inline-сообщение с заданием
-        try {
-            await ctx.deleteMessage();
-        } catch (e) {
-            // Если не удаётся удалить сообщение — пропускаем
-        }
+
         // Отправляем сообщение, что ответ принят, и показываем стартовую клавиатуру
         await ctx.reply("Ответ принят", await start(ctx.from.id));
         ctx.scene.leave();
@@ -377,7 +361,6 @@ getTaskToModerateScene.on('text', async (ctx) => {
             
             // Удаляем inline-сообщение с заданием и отправляем стартовое меню с сообщением об успешном ответе
             try {
-                await ctx.deleteMessage();
             } catch (e) { }
             await ctx.reply("Ответ принят", await start(ctx.from.id));
             ctx.scene.leave();
@@ -424,7 +407,6 @@ getTaskToModerateScene.on('text', async (ctx) => {
 });
 
 getTaskToModerateScene.action("quit", async (ctx) => {
-    await ctx.deleteMessage();
     await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
     ctx.session = {};
     ctx.scene.leave();

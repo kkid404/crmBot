@@ -24,20 +24,12 @@ getMyTtCreatorScene.action("back", async (ctx) => {
     
     // Удаляем все медиа-примеры, если они есть
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
         ctx.session.exampleMediaMessageIds = [];
     }
     
     // Для обратной совместимости проверяем и старое одиночное сообщение
     if (ctx.session.exampleMediaMessageId) {
         try {
-            await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
             ctx.session.exampleMediaMessageId = null;
         } catch (deleteError) {
             console.error("Ошибка при удалении сообщения с медиа:", deleteError);
@@ -54,7 +46,6 @@ getMyTtCreatorScene.action("back", async (ctx) => {
 
 
 getMyTtCreatorScene.action("quit", async (ctx) => {
-    await ctx.deleteMessage();
     const keyboard = await start(ctx.from.id);
     await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), {
         ...keyboard,
@@ -243,24 +234,7 @@ getMyTtCreatorScene.action('show_examples', async (ctx) => {
         
         // Удаляем предыдущие медиа
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
             ctx.session.exampleMediaMessageIds = [];
-        }
-        
-        // Для обратной совместимости
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
-            } catch (deleteError) {
-                console.error("Ошибка при удалении старого медиа:", deleteError);
-            }
-            ctx.session.exampleMediaMessageId = null;
         }
         
         // Обеспечиваем обратную совместимость, преобразуя строку в массив

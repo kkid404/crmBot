@@ -60,16 +60,7 @@ MyTzBuyerScene.enter(async (ctx) => {
 
 MyTzBuyerScene.action('canceled_task', async (ctx) => {
     const updatedTask = await taskService.updateTask(ctx.session.selectedTask, {state: "canceled"});
-    await ctx.deleteMessage();
-    // Удаляем медиа, если оно было отправлено
-    if (ctx.session.exampleMediaMessageId) {
-        try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-        } catch (err) {
-            console.error("Ошибка при удалении медиа:", err);
-        }
-        ctx.session.exampleMediaMessageId = null;
-    }
+
     await ctx.reply(
         ruMessage.messages.start.replace('{name}', ctx.from.first_name),
         await start(ctx.from.id)
@@ -89,37 +80,11 @@ MyTzBuyerScene.action('back', async (ctx) => {
             return;
         }
         
-        // Удаляем все медиа-примеры, если они есть
-        if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
-            ctx.session.exampleMediaMessageIds = [];
-        }
+
         
-        // Удаляем обычное медиа, если оно было отправлено
-        if (ctx.session.mediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-                ctx.session.mediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа:", err);
-            }
-        }
+
         
-        // Удаляем пример креатива (одиночный медиа), если он был отправлен
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-                ctx.session.exampleMediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа примера:", err);
-            }
-        }
+
         
         // Используем состояние из сессии (progress или wait)
         // По умолчанию используем progress, если состояние не указано
@@ -142,40 +107,6 @@ MyTzBuyerScene.action('back', async (ctx) => {
 
 // Кнопка выйти (quit)
 MyTzBuyerScene.action('quit', async (ctx) => {
-    await ctx.deleteMessage();
-
-    // Удаляем все медиа-примеры, если они есть
-    if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        for (const messageId of ctx.session.exampleMediaMessageIds) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-            } catch (error) {
-                console.error(`Ошибка при удалении сообщения: ${error.message}`);
-            }
-        }
-        ctx.session.exampleMediaMessageIds = [];
-    }
-
-    // Удаляем медиа, если оно было отправлено
-    if (ctx.session.mediaMessageId) {
-        try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-            ctx.session.mediaMessageId = null;
-        } catch (err) {
-            console.error("Ошибка при удалении медиа:", err);
-        }
-    }
-    
-    // Удаляем пример креатива (одиночный медиа), если он был отправлен
-    if (ctx.session.exampleMediaMessageId) {
-        try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-            ctx.session.exampleMediaMessageId = null;
-        } catch (err) {
-            console.error("Ошибка при удалении медиа примера:", err);
-        }
-    }
-
     await ctx.reply(
         ruMessage.messages.start.replace('{name}', ctx.from.first_name),
         await start(ctx.from.id)
@@ -189,17 +120,6 @@ MyTzBuyerScene.action('show_example', async (ctx) => {
     try {
         const taskId = ctx.session.selectedTask; // Получаем ID выбранной задачи
         const task = await taskService.findTaskById(taskId); // Находим задачу по ID
-        // Удаляем медиа, если оно было отправлено
-        if (ctx.session.mediaMessageId) {
-            try {
-                // Удаляем медиа сообщение
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-
-            } catch (err) {
-                console.error("Ошибка при удалении медиа:", err);
-            }
-            ctx.session.mediaMessageId = null; // Сбрасываем message_id медиа
-        }
         if (!task) {
             await ctx.answerCbQuery(ruMessage.messages.taskNotFound); // Если задача не найдена
             return;
@@ -211,27 +131,6 @@ MyTzBuyerScene.action('show_example', async (ctx) => {
         // Формируем строку с информацией о задаче
         const taskInfo = buildTaskInfo(task);
 
-        // Если медиа (креативы) были отправлены ранее, удаляем их
-        if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
-            ctx.session.exampleMediaMessageIds = [];
-        }
-
-        // Для обратной совместимости
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.deleteMessage(ctx.session.exampleMediaMessageId);
-            } catch (deleteError) {
-                console.error("Ошибка при удалении старого креатива:", deleteError);
-            }
-            ctx.session.exampleMediaMessageId = null;
-        }
 
         // Отправляем информацию о задаче
         await ctx.editMessageText(taskInfo, back_to_task());
@@ -338,28 +237,6 @@ MyTzBuyerScene.action('back_to_task', async (ctx) => {
 
         const taskInfo = buildTaskInfo(task);
 
-        // Удаляем все медиа-примеры, если они есть
-        if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
-            ctx.session.exampleMediaMessageIds = [];
-        }
-
-        // Для обратной совместимости
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-                ctx.session.exampleMediaMessageId = null;
-            } catch (deleteError) {
-                console.error("Ошибка при удалении старого креатива:", deleteError);
-            }
-        }
-
         // Редактируем сообщение с описанием задания
         if (task.result) {
             // Если тип медиа сохранён, используем его
@@ -420,7 +297,6 @@ MyTzBuyerScene.action('edited_task', async (ctx) => {
 MyTzBuyerScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     const taskId = ctx.callbackQuery.data; // Получаем ID задачи из callback_data
     const task = await taskService.findTaskById(taskId); // Находим задачу по ID
-    await ctx.deleteMessage();
     ctx.session.selectedTask = taskId; // Сохраняем выбранную задачу в сессии
 
     if (!task) {
@@ -597,37 +473,11 @@ MyTzBuyerScene.on('text', async (ctx) => {
     if (userInput === ruMessage.keyboards.tzBuyers.tz_in_progress) {
         ctx.session.stateGetTask = 'progress';
         
-        // Удаляем все медиа-примеры, если они есть
-        if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
-            ctx.session.exampleMediaMessageIds = [];
-        }
+
         
-        // Удаляем медиа, если оно было отправлено
-        if (ctx.session.mediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-                ctx.session.mediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа:", err);
-            }
-        }
+
         
-        // Удаляем пример креатива (одиночный медиа), если он был отправлен
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-                ctx.session.exampleMediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа примера:", err);
-            }
-        }
+
         
         if (user) {
             const keyboard = await myTasks(user._id, 'buyer', ctx.session.stateGetTask);
@@ -647,37 +497,11 @@ MyTzBuyerScene.on('text', async (ctx) => {
     if (userInput === ruMessage.keyboards.tzBuyers.tz_in_line) {
         ctx.session.stateGetTask = 'active';
         
-        // Удаляем все медиа-примеры, если они есть
-        if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-            for (const messageId of ctx.session.exampleMediaMessageIds) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, messageId);
-                } catch (error) {
-                    console.error(`Ошибка при удалении сообщения: ${error.message}`);
-                }
-            }
-            ctx.session.exampleMediaMessageIds = [];
-        }
+
         
-        // Удаляем медиа, если оно было отправлено
-        if (ctx.session.mediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-                ctx.session.mediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа:", err);
-            }
-        }
+
         
-        // Удаляем пример креатива (одиночный медиа), если он был отправлен
-        if (ctx.session.exampleMediaMessageId) {
-            try {
-                await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-                ctx.session.exampleMediaMessageId = null;
-            } catch (err) {
-                console.error("Ошибка при удалении медиа примера:", err);
-            }
-        }
+
         
         if (user) {
             const keyboard = await myTasks(user._id, 'buyer', ctx.session.stateGetTask);
@@ -703,26 +527,6 @@ MyTzBuyerScene.on('text', async (ctx) => {
         if (ctx.session.stateGetTask) {
             currentState = `Просмотр задач в состоянии: ${ctx.session.stateGetTask}`;
             await ctx.reply(`Вы находитесь в режиме просмотра задач. Текущий статус: ${ctx.session.stateGetTask}`);
-            
-            // Удаляем медиа, если оно было отправлено
-            if (ctx.session.mediaMessageId) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.mediaMessageId);
-                } catch (err) {
-                    console.error("Ошибка при удалении медиа:", err);
-                }
-                ctx.session.mediaMessageId = null;
-            }
-            
-            // Удаляем пример креатива (медиа), если он был отправлен
-            if (ctx.session.exampleMediaMessageId) {
-                try {
-                    await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.exampleMediaMessageId);
-                } catch (err) {
-                    console.error("Ошибка при удалении медиа примера:", err);
-                }
-                ctx.session.exampleMediaMessageId = null;
-            }
             
             // Показываем список задач снова
             if (user) {
