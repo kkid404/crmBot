@@ -9,6 +9,7 @@ const { Markup } = require('telegraf');
 const { Mutex } = require('async-mutex');
 const mediaMutex = new Mutex();
 const taskService = require('../services/task.service');
+const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
 
 function handleError(error) {
     console.error(`Error occurred: ${error.message}`);
@@ -37,9 +38,18 @@ async function handleText(ctx) {
         return;
     }
 
+    let shouldIncrementStep = true; // Flag to track if we should increment the step
+
     switch (step) {
         case 1:
-            ctx.session.geo = userInput;
+            // Validate if the input is a valid alpha-2 country code
+            if (!isValidAlpha2CountryCode(userInput)) {
+                await ctx.reply("❌ Неверный формат ГЕО кода. Пожалуйста, введите корректный двузначный код страны (например: US, RU, GB).", back());
+                shouldIncrementStep = false; // Don't increment step
+                return;
+            }
+            
+            ctx.session.geo = userInput.trim().toUpperCase(); // Normalize the geo code
             const name = await createName(ctx.session.geo);
             ctx.session.name = name;
             await ctx.reply(ruMessage.messages.writeTT.send_app, back());
@@ -59,7 +69,9 @@ async function handleText(ctx) {
             ctx.scene.leave();
             return;
     }
-    if (step < 3) {
+    
+    // Only increment the step if we should
+    if (step < 3 && shouldIncrementStep) {
         ctx.session.step++;
     }
 }
