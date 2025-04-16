@@ -15,6 +15,8 @@ const taskSchema = new Schema({
     creator: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     points: { type: Number, default: null }, 
     expectedDate: { type: Date, default: null },
+    expectedTime: { type: String, default: null }, // Format: "HH:MM" (e.g. "21:12")
+    reminderTime: { type: Date, default: null }, // For future reminder functionality
     completionDate: { type: Date, default: null },
     CTR: { type: Number, default: null }, 
     bonus: { type: Number, default: null },

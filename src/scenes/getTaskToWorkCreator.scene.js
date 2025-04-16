@@ -17,6 +17,12 @@ function parseCustomDate(dateStr) {
     return new Date(year, month - 1, day); // Создаем объект Date (месяцы начинаются с 0)
 }
 
+// Валидация формата времени HH:MM
+function isValidTimeFormat(timeStr) {
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    return timeRegex.test(timeStr);
+}
+
 const getTTScene = new BaseScene('getTTScene');
 
 getTTScene.enter(async (ctx) => {
@@ -42,19 +48,51 @@ getTTScene.action(/^date_.+$/, async (ctx) => { // Регулярное выра
     // Извлекаем динамическую часть (например, "4.12" из "date_4.12")
     const date = ctx.callbackQuery.data.replace('date_', '');
 
-    ctx.session.completionDate = date
-
-    const readyDate = parseCustomDate(date)
-
-
-    ctx.session.readyDate = readyDate
+    ctx.session.completionDate = date;
+    const readyDate = parseCustomDate(date);
+    ctx.session.readyDate = readyDate;
     
-    const taskInfo = ctx.session.taskInfo + "\n📅Дата выполнения: " + date
-
-    // Редактируем сообщение с новой информацией
-    await ctx.editMessageText(taskInfo, done_or_cancel());
+    // Сохраняем дату и информацию о задаче
+    ctx.session.taskInfo = ctx.session.taskInfo + "\n📅Дата выполнения: " + date;
+    
+    // Сначала подтверждаем выбор даты
+    await ctx.editMessageText(ctx.session.taskInfo, { disable_web_page_preview: true });
+    
+    // Затем отправляем отдельное сообщение с запросом времени
+    await ctx.reply("⏰ Пожалуйста, введите время выполнения в формате ЧЧ:ММ (например, 12:30):");
+    
+    // Устанавливаем флаг, что ждем ввода времени
+    ctx.session.waitingForTime = true;
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
+});
+
+// Обработчик для ввода времени
+getTTScene.on('text', async (ctx) => {
+    // Проверяем, ожидаем ли мы ввод времени
+    if (ctx.session.waitingForTime) {
+        const timeStr = ctx.message.text.trim();
+        
+        // Проверяем формат времени
+        if (!isValidTimeFormat(timeStr)) {
+            await ctx.reply("⚠️ Неверный формат времени. Пожалуйста, введите время в формате ЧЧ:ММ (например, 12:30):");
+            return;
+        }
+        
+        // Сохраняем время в сессии
+        ctx.session.expectedTime = timeStr;
+        ctx.session.waitingForTime = false;
+        
+        // Обновляем информацию о задаче
+        const taskInfo = ctx.session.taskInfo + "\n⏰ Время выполнения: " + timeStr;
+        ctx.session.taskInfo = taskInfo;
+        
+        // Отправляем подтверждение выбора времени
+        await ctx.reply(`✅ Время выполнения установлено: ${timeStr}`);
+        
+        // Отображаем информацию о задаче с кнопками подтверждения/отмены
+        await ctx.reply(taskInfo, done_or_cancel());
+    }
 });
 
 getTTScene.action("cancel", async (ctx) => {
@@ -81,21 +119,26 @@ getTTScene.action("done", async (ctx) => {
         const taskInfo = {
             state: "progress",
             creator: user._id,
-            expectedDate: ctx.session.readyDate 
+            expectedDate: ctx.session.readyDate,
+            expectedTime: ctx.session.expectedTime // Добавляем время выполнения
         };
         
         await taskService.updateTask(ctx.session.selectedTask, taskInfo);
         
         // Удаляем медиа пример, если он есть
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-
             ctx.session.exampleMediaMessageIds = [];
         }
+        
+        // Включаем время в сообщение об успешном выборе задачи
+        const dateFormatted = ctx.session.completionDate;
+        const timeInfo = ctx.session.expectedTime ? ` к ${ctx.session.expectedTime}` : '';
+        const fullDateInfo = `${dateFormatted}${timeInfo}`;
         
         await ctx.reply(
             ruMessage.messages.getTT.success_selected
                 .replace("{name}", ctx.session.taskname)
-                .replace("{date}", ctx.session.completionDate), 
+                .replace("{date}", fullDateInfo), 
             await start(tgId)
         );
     } catch (error) {
@@ -241,6 +284,8 @@ getTTScene.leave(async (ctx) => {
     ctx.session.selectedTask = null;
     ctx.session.taskname = null;
     ctx.session.taskInfo = null;
+    ctx.session.expectedTime = null;
+    ctx.session.waitingForTime = false;
 });
 
 module.exports = getTTScene

@@ -85,18 +85,33 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
     }
     
     // Формируем строку для отображения информации о примерах креатива
-    const exampleLine = hasMedia
-        ? `🎨 Примеры креатива: ${task.example_creative.length}`
-        : "🎨 Примеры креатива: отсутствуют";
+    const exampleLine = task.example_creative && task.example_creative.length ? 
+        `🎨 Примеры креатива: ${task.example_creative.length}` : 
+        "🎨 Примеры креатива: отсутствуют";
 
     // Формируем текст сообщения с информацией о задаче
-    const taskInfo = `
+    const formatTaskInfo = (task, exampleLine) => {
+        // Форматируем ожидаемую дату выполнения
+        const expectedDateStr = task.expectedDate ? 
+            new Date(task.expectedDate).toLocaleDateString() : 
+            'не указана';
+        
+        // Добавляем время выполнения, если оно указано
+        const expectedTimeStr = task.expectedTime ? 
+            ` к ${task.expectedTime}` : 
+            '';
+        
+        return `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}
     `;
+    }
+
+    const taskInfo = formatTaskInfo(task, exampleLine);
 
     // Редактируем сообщение с информацией о задаче
     await ctx.editMessageText(taskInfo, backInline());

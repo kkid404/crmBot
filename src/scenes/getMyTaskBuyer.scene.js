@@ -129,7 +129,11 @@ MyTzBuyerScene.action('show_example', async (ctx) => {
         ctx.session.exampleMediaMessageIds = [];
 
         // Формируем строку с информацией о задаче
-        const taskInfo = buildTaskInfo(task);
+        const creatorName = task.creator 
+            ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
+            : 'не назначен';
+
+        const taskInfo = formatTaskInfo(task, creatorName);
 
 
         // Отправляем информацию о задаче
@@ -235,7 +239,11 @@ MyTzBuyerScene.action('back_to_task', async (ctx) => {
             return;
         }
 
-        const taskInfo = buildTaskInfo(task);
+        const creatorName = task.creator 
+            ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
+            : 'не назначен';
+
+        const taskInfo = formatTaskInfo(task, creatorName);
 
         // Редактируем сообщение с описанием задания
         if (task.result) {
@@ -322,13 +330,11 @@ MyTzBuyerScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         : "🎨 Примеры креатива: отсутствуют";
 
     // Формируем текст сообщения с информацией о задаче
-    const taskInfo = `
-🎯 Название: ${task.name}
-🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
-${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
-    `;
+    const creatorName = task.creator 
+        ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
+        : 'не назначен';
+
+    const taskInfo = formatTaskInfo(task, creatorName);
 
     let keyboard;
     const currentState = ctx.session.stateGetTask;
@@ -601,5 +607,25 @@ MyTzBuyerScene.on('text', async (ctx) => {
         await ctx.reply('Произошла ошибка при обновлении задачи. Попробуйте снова.');
     }
 });
+
+// Функция форматирования информации о задаче с учетом времени выполнения
+const formatTaskInfo = (task, creatorName) => {
+    // Ожидаемая дата выполнения
+    let dateInfo = '';
+    if (task.expectedDate) {
+        const expectedDateStr = new Date(task.expectedDate).toLocaleDateString();
+        const expectedTimeStr = task.expectedTime ? ` к ${task.expectedTime}` : '';
+        dateInfo = `⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}\n`;
+    }
+    
+    // Формируем всю строку информации о задаче
+    return `
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
+📝 Описание: ${task.description}
+👤 Исполнитель: ${creatorName || 'не назначен'}
+${dateInfo}📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+    `;
+}
 
 module.exports = MyTzBuyerScene;
