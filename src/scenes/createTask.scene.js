@@ -38,6 +38,29 @@ async function handleText(ctx) {
         return;
     }
 
+    // Обработка текстового примера, когда ждем медиа
+    if (ctx.session.awaitingMedia && step === 3) {
+        // Инициализация массива медиафайлов
+        if (!ctx.session.mediaFiles) {
+            ctx.session.mediaFiles = [];
+        }
+
+        // Добавляем текст как пример
+        ctx.session.mediaFiles.push(userInput);
+
+        // Отправляем сообщение с кнопкой завершения
+        const sentMessage = await ctx.reply(
+            `Текстовый пример получен! Всего добавлено: ${ctx.session.mediaFiles.length}`,
+            Markup.inlineKeyboard([
+                Markup.button.callback('✅ Сохранить и завершить', 'save_task')
+            ])
+        );
+
+        // Сохраняем ID нового сообщения
+        ctx.session.lastMediaMessageId = sentMessage.message_id;
+        return;
+    }
+
     let shouldIncrementStep = true; // Flag to track if we should increment the step
 
     switch (step) {
@@ -191,6 +214,37 @@ writeTTScene.on('text', handleText)
 writeTTScene.on('photo', handleMedia);
 writeTTScene.on('video', handleMedia);
 writeTTScene.action('save_task', handleSaveTask);
+
+// Обработчик нажатия на кнопку "Нет примера"
+writeTTScene.action('no_example', async (ctx) => {
+    try {
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        
+        // Устанавливаем пустой массив примеров
+        ctx.session.mediaFiles = [];
+        
+        const taskData = {
+            name: ctx.session.name,
+            link_app: ctx.session.app,
+            description: ctx.session.description,
+            example_creative: [],
+            buyer: user._id
+        };
+
+        await taskService.createTask(taskData);
+        await ctx.reply(
+            ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
+            await start(tgId)
+        );
+    } catch (error) {
+        console.error("Ошибка создания задачи:", error);
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(tgId));
+    } finally {
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
 
 module.exports = writeTTScene;
 
