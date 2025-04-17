@@ -135,6 +135,33 @@ getTTScene.action("done", async (ctx) => {
         const timeInfo = ctx.session.expectedTime ? ` к ${ctx.session.expectedTime}` : '';
         const fullDateInfo = `${dateFormatted}${timeInfo}`;
         
+        // Отправляем уведомления админам
+        try {
+            // Находим всех админов
+            const admins = await userService.getAll();
+            const adminUsers = admins.filter(admin => admin.role === 'admin');
+            
+            // Получаем имя пользователя
+            const username = ctx.from.username 
+                ? `@${ctx.from.username}` 
+                : `${ctx.from.first_name} ${ctx.from.last_name || ''}`.trim();
+            
+            // Формируем текст уведомления
+            const notificationText = `🔔 Креативщик ${username} взял задание "${ctx.session.taskname}"`;
+            
+            // Отправляем уведомление каждому админу
+            for (const admin of adminUsers) {
+                try {
+                    await ctx.telegram.sendMessage(admin.tg_id, notificationText);
+                } catch (err) {
+                    console.error(`Ошибка отправки уведомления админу ${admin.tg_id}:`, err);
+                }
+            }
+        } catch (err) {
+            console.error("Ошибка при отправке уведомлений админам:", err);
+            // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
+        }
+        
         await ctx.reply(
             ruMessage.messages.getTT.success_selected
                 .replace("{name}", ctx.session.taskname)
