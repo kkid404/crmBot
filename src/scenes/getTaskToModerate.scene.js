@@ -23,6 +23,14 @@ const formatTaskInfo = (task) => {
         ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
         : "🎨 Примеры креатива: отсутствуют";
 
+    // Подсчитываем количество результатов для отображения
+    let resultCount = 0;
+    if (Array.isArray(task.result)) {
+        resultCount = task.result.length;
+    } else if (task.result) {
+        resultCount = 1;
+    }
+
     // Формируем текст с информацией о задании
     const taskInfo = `
 🎯 Название: ${task.name}
@@ -30,7 +38,7 @@ const formatTaskInfo = (task) => {
 📝 Описание: ${task.description}
 ${exampleLine}
 👨‍💻 Креатор: ${task.creator?.username || 'Не назначен'}
-📝 Результат: ${task.result ? "✅ Загружен" : "❌ Отсутствует"}
+📝 Результат: ${resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
     
@@ -129,18 +137,22 @@ ${corrections}
 
 // В начале файла добавим функцию для удаления медиа
 const deleteMediaMessages = async (ctx) => {
-    // Удаляем сданное изображение
+    // Удаляем сданное изображение (одиночное сообщение)
     if (ctx.session.mediaMessageId) {
         try {
             ctx.session.mediaMessageId = null;
         } catch (err) {
-            console.error("Ошибка при удалении медиа:", err);
+            console.error("Ошибка при удалении одиночного медиа:", err);
         }
     }
+    
+    // Удаляем массив медиа сообщений результата работы
+    if (ctx.session.mediaMessageIds && ctx.session.mediaMessageIds.length > 0) {
+        ctx.session.mediaMessageIds = [];
+    }
 
-    // Удаляем примеры креативов (поддержка массива сообщений)
+    // Удаляем примеры креативов (массив сообщений)
     if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-
         ctx.session.exampleMediaMessageIds = [];
     }
 
@@ -195,24 +207,82 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         // Отправляем результат креатива
         if (task.result) {
             try {
-                let mediaResponse;
-                if (task.mediaType === 'photo') {
-                    mediaResponse = await ctx.replyWithPhoto(task.result);
-                } else if (task.mediaType === 'video') {
-                    mediaResponse = await ctx.replyWithVideo(task.result);
-                } else {
-                    try {
-                        mediaResponse = await ctx.replyWithPhoto(task.result);
-                    } catch {
-                        mediaResponse = await ctx.replyWithVideo(task.result);
+                // Обрабатываем случай, когда result является массивом (новый формат)
+                if (Array.isArray(task.result) && task.result.length > 0) {
+                    // Разделяем медиафайлы по типам
+                    const mediaGroup = task.result.map(fileId => {
+                        // Определяем тип медиа по первым символам file_id
+                        const isVideo = fileId.startsWith('BAA');
+                        const isDocument = fileId.startsWith('BQA');
+                        const isAudio = fileId.startsWith('CQA');
+                        const isAnimation = fileId.startsWith('DQA');
+                        
+                        // Определяем тип медиа
+                        let type = 'photo'; // По умолчанию фото
+                        if (isVideo) type = 'video';
+                        else if (isDocument) type = 'document';
+                        else if (isAudio) type = 'audio';
+                        else if (isAnimation) type = 'animation';
+                        
+                        return {
+                            type: type,
+                            media: fileId
+                        };
+                    });
+                    
+                    // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+                    if (mediaGroup.length > 0) {
+                        // Telegram поддерживает до 10 файлов в одной группе
+                        const chunks = [];
+                        for (let i = 0; i < mediaGroup.length; i += 10) {
+                            chunks.push(mediaGroup.slice(i, i + 10));
+                        }
+                        
+                        // Отправляем каждую группу отдельно
+                        for (const chunk of chunks) {
+                            if (chunk.length > 0) {
+                                const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
+                                
+                                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
+                                if (sentMessages && sentMessages.length > 0) {
+                                    if (!ctx.session.mediaMessageIds) {
+                                        ctx.session.mediaMessageIds = [];
+                                    }
+                                    sentMessages.forEach(msg => {
+                                        ctx.session.mediaMessageIds.push(msg.message_id);
+                                    });
+                                }
+                            }
+                        }
                     }
-                }
+                } 
+                // Обрабатываем случай, когда result является строкой (старый формат)
+                else if (typeof task.result === 'string') {
+                    let mediaResponse;
+                    if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
+                        mediaResponse = await ctx.replyWithPhoto(task.result);
+                    } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
+                        mediaResponse = await ctx.replyWithVideo(task.result);
+                    } else {
+                        try {
+                            mediaResponse = await ctx.replyWithPhoto(task.result);
+                        } catch {
+                            try {
+                                mediaResponse = await ctx.replyWithVideo(task.result);
+                            } catch (innerError) {
+                                console.error("Не удалось определить тип медиа:", innerError);
+                                await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
+                            }
+                        }
+                    }
 
-                if (mediaResponse?.message_id) {
-                    ctx.session.mediaMessageId = mediaResponse.message_id;
+                    if (mediaResponse?.message_id) {
+                        ctx.session.mediaMessageId = mediaResponse.message_id;
+                    }
                 }
             } catch (error) {
                 console.error("Ошибка при отправке результата:", error);
+                await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
             }
         }
 
@@ -539,24 +609,82 @@ getTaskToModerateScene.action('back_to_task', async (ctx) => {
         // Отправляем результат креатива
         if (task.result) {
             try {
-                let mediaResponse;
-                if (task.mediaType === 'photo') {
-                    mediaResponse = await ctx.replyWithPhoto(task.result);
-                } else if (task.mediaType === 'video') {
-                    mediaResponse = await ctx.replyWithVideo(task.result);
-                } else {
-                    try {
-                        mediaResponse = await ctx.replyWithPhoto(task.result);
-                    } catch {
-                        mediaResponse = await ctx.replyWithVideo(task.result);
+                // Обрабатываем случай, когда result является массивом (новый формат)
+                if (Array.isArray(task.result) && task.result.length > 0) {
+                    // Разделяем медиафайлы по типам
+                    const mediaGroup = task.result.map(fileId => {
+                        // Определяем тип медиа по первым символам file_id
+                        const isVideo = fileId.startsWith('BAA');
+                        const isDocument = fileId.startsWith('BQA');
+                        const isAudio = fileId.startsWith('CQA');
+                        const isAnimation = fileId.startsWith('DQA');
+                        
+                        // Определяем тип медиа
+                        let type = 'photo'; // По умолчанию фото
+                        if (isVideo) type = 'video';
+                        else if (isDocument) type = 'document';
+                        else if (isAudio) type = 'audio';
+                        else if (isAnimation) type = 'animation';
+                        
+                        return {
+                            type: type,
+                            media: fileId
+                        };
+                    });
+                    
+                    // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+                    if (mediaGroup.length > 0) {
+                        // Telegram поддерживает до 10 файлов в одной группе
+                        const chunks = [];
+                        for (let i = 0; i < mediaGroup.length; i += 10) {
+                            chunks.push(mediaGroup.slice(i, i + 10));
+                        }
+                        
+                        // Отправляем каждую группу отдельно
+                        for (const chunk of chunks) {
+                            if (chunk.length > 0) {
+                                const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
+                                
+                                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
+                                if (sentMessages && sentMessages.length > 0) {
+                                    if (!ctx.session.mediaMessageIds) {
+                                        ctx.session.mediaMessageIds = [];
+                                    }
+                                    sentMessages.forEach(msg => {
+                                        ctx.session.mediaMessageIds.push(msg.message_id);
+                                    });
+                                }
+                            }
+                        }
                     }
-                }
+                } 
+                // Обрабатываем случай, когда result является строкой (старый формат)
+                else if (typeof task.result === 'string') {
+                    let mediaResponse;
+                    if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
+                        mediaResponse = await ctx.replyWithPhoto(task.result);
+                    } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
+                        mediaResponse = await ctx.replyWithVideo(task.result);
+                    } else {
+                        try {
+                            mediaResponse = await ctx.replyWithPhoto(task.result);
+                        } catch {
+                            try {
+                                mediaResponse = await ctx.replyWithVideo(task.result);
+                            } catch (innerError) {
+                                console.error("Не удалось определить тип медиа:", innerError);
+                                await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
+                            }
+                        }
+                    }
 
-                if (mediaResponse?.message_id) {
-                    ctx.session.mediaMessageId = mediaResponse.message_id;
+                    if (mediaResponse?.message_id) {
+                        ctx.session.mediaMessageId = mediaResponse.message_id;
+                    }
                 }
             } catch (error) {
                 console.error("Ошибка при отправке результата:", error);
+                await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
             }
         }
 

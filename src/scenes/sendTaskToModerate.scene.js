@@ -25,7 +25,7 @@ async function handlePoints(ctx) {
         state: "wait",
         completionDate: today,
         points: Number(points),
-        result: ctx.session.mediaFileId,
+        result: ctx.session.mediaFiles, // Теперь используем массив файлов вместо одного
         workType: workType // Добавляем тип работы
     };
     
@@ -107,18 +107,33 @@ async function handleDone(ctx) {
         ctx.session.exampleMediaMessageIds = [];
     }
 
+        // Инициализируем массив для хранения ID медиафайлов
+        ctx.session.mediaFiles = [];
+        
         // Отправляем новое сообщение вместо редактирования
-        await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nМаксимальный размер медиа файла 50 МБ.");
+        await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nВы можете отправить несколько файлов последовательно.\nМаксимальный размер медиа файла 50 МБ.");
         ctx.session.awaitingMedia = true;
     } catch (error) {
         console.error("Ошибка в handleDone:", error);
         // Если произошла ошибка, все равно устанавливаем флаг ожидания медиа
+        ctx.session.mediaFiles = [];
         ctx.session.awaitingMedia = true;
         try {
-            await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nМаксимальный размер медиа файла 50 МБ.");
+            await ctx.reply("Пожалуйста, отправьте ваш креатив (фото или видео).\nВы можете отправить несколько файлов последовательно.\nМаксимальный размер медиа файла 50 МБ.");
         } catch (err) {
             console.error("Ошибка при отправке сообщения:", err);
         }
+    }
+}
+
+// Обработчик завершения добавления файлов
+async function handleFinishAdding(ctx) {
+    if (ctx.session.mediaFiles && ctx.session.mediaFiles.length > 0) {
+        // Показываем клавиатуру с выбором типа работы
+        await ctx.reply(ruMessage.messages.ttToModerate.select_points, points_for_creatives());
+        ctx.session.awaitingMedia = false; // Сбрасываем флаг ожидания медиафайла
+    } else {
+        await ctx.reply("Вы не отправили ни одного файла. Пожалуйста, отправьте как минимум один файл.");
     }
 }
 
@@ -255,21 +270,47 @@ async function handleMedia(ctx) {
         return; // Если не ожидаем медиафайл, ничего не делаем
     }
 
-    const fileId = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : ctx.message.video.file_id;
+    // Проверяем тип медиа и получаем fileId
+    let fileId;
+    let mediaType;
+    
+    if (ctx.message.photo) {
+        fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        mediaType = 'фото';
+    } else if (ctx.message.video) {
+        fileId = ctx.message.video.file_id;
+        mediaType = 'видео';
+    } else {
+        return; // Если другой тип медиа, игнорируем
+    }
+    
     if (!fileId) return;
 
-    ctx.session.mediaFileId = fileId;
-
-    const taskId = ctx.session.selectedTask;
-    const task = await taskService.findTaskById(taskId).catch(handleError);
-
-    if (task) {
-        task.mediaFileId = fileId; // Добавляем ID медиафайла в задание
-        await ctx.reply(ruMessage.messages.ttToModerate.select_points, points_for_creatives());
-        ctx.session.awaitingMedia = false; // Сбрасываем флаг ожидания медиафайла
-    } else {
-        await ctx.reply(ruMessage.messages.ttToModerate.taskNotFound);
+    // Инициализируем массив, если он еще не создан
+    if (!ctx.session.mediaFiles) {
+        ctx.session.mediaFiles = [];
     }
+    
+    // Добавляем fileId в массив
+    ctx.session.mediaFiles.push(fileId);
+    
+    // Создаем инлайн-клавиатуру с опциями
+    const keyboard = {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '➕ Добавить еще файл', callback_data: 'add_more' },
+                    { text: '✅ Завершить', callback_data: 'finish_adding' }
+                ]
+            ]
+        }
+    };
+    
+    // Отправляем сообщение с подтверждением и кнопками
+    await ctx.reply(
+        `${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} успешно добавлен! Всего файлов: ${ctx.session.mediaFiles.length}\n\nВы можете добавить еще файлы или завершить добавление.`,
+        keyboard
+    );
 }
 
 function handleError(error) {
@@ -281,6 +322,11 @@ ttToModerateScene.enter(handleEnter);
 ttToModerateScene.action("back", handleBack);
 ttToModerateScene.action("quit", handleQuit);
 ttToModerateScene.action("done", handleDone);
+ttToModerateScene.action("add_more", async (ctx) => {
+    await ctx.reply("Отправьте следующий файл (фото или видео).");
+    await ctx.answerCbQuery();
+});
+ttToModerateScene.action("finish_adding", handleFinishAdding);
 ttToModerateScene.action(/^count_.+$/, handlePoints);
 ttToModerateScene.action(/^[a-f0-9]{24}$/, handleTaskSelect);
 
