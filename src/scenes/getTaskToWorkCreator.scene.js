@@ -137,9 +137,14 @@ getTTScene.action("done", async (ctx) => {
         
         // Отправляем уведомления админам
         try {
-            // Находим всех админов
-            const admins = await userService.getAll();
-            const adminUsers = admins.filter(admin => admin.role === 'admin');
+            // Находим всех пользователей с cheker: true
+            const checkers = await userService.findAllCheckers();
+            console.log(`Найдено чекеров: ${checkers.length}`);
+            
+            // Выводим информацию о каждом чекере для отладки
+            checkers.forEach((checker, index) => {
+                console.log(`Чекер ${index + 1}: ID=${checker._id}, TG_ID=${checker.tg_id}, Username=${checker.username}`);
+            });
             
             // Получаем имя пользователя
             const username = ctx.from.username 
@@ -149,16 +154,18 @@ getTTScene.action("done", async (ctx) => {
             // Формируем текст уведомления
             const notificationText = `🔔 Креативщик ${username} взял задание "${ctx.session.taskname}"`;
             
-            // Отправляем уведомление каждому админу
-            for (const admin of adminUsers) {
+            // Отправляем уведомление каждому чекеру
+            for (const checker of checkers) {
                 try {
-                    await ctx.telegram.sendMessage(admin.tg_id, notificationText);
+                    console.log(`Отправка уведомления чекеру: ${checker.tg_id}`);
+                    const sent = await ctx.telegram.sendMessage(checker.tg_id, notificationText);
+                    console.log(`Уведомление успешно отправлено чекеру: ${checker.tg_id}, message_id: ${sent.message_id}`);
                 } catch (err) {
-                    console.error(`Ошибка отправки уведомления админу ${admin.tg_id}:`, err);
+                    console.error(`Ошибка отправки уведомления чекеру ${checker.tg_id}:`, err);
                 }
             }
         } catch (err) {
-            console.error("Ошибка при отправке уведомлений админам:", err);
+            console.error("Ошибка при отправке уведомлений чекерам:", err);
             // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
         }
         
