@@ -165,10 +165,11 @@ async function handleSaveTask(ctx) {
         let maxRetries = 5;
         let retryCount = 0;
         let success = false;
+        let createdTask;
 
         while (!success && retryCount < maxRetries) {
             try {
-                await taskService.createTask(taskData);
+                createdTask = await taskService.createTask(taskData);
                 success = true;
                 await ctx.reply(
                     ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
@@ -190,6 +191,38 @@ async function handleSaveTask(ctx) {
         if (!success) {
             console.error("Не удалось создать задачу после нескольких попыток");
             await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+        } else {
+            // Отправляем уведомления всем креативщикам о новом задании
+            try {
+                // Находим всех пользователей с ролью creator
+                const allUsers = await userService.getAll();
+                const creators = allUsers.filter(user => user.position === 'creator');
+                console.log(`Найдено креативщиков: ${creators.length}`);
+                
+                // Выводим информацию о каждом креативщике для отладки
+                creators.forEach((creator, index) => {
+                    console.log(`Креативщик ${index + 1}: ID=${creator._id}, TG_ID=${creator.tg_id}, Username=${creator.username}`);
+                });
+                
+                if (creators.length > 0) {
+                    // Формируем текст уведомления
+                    const notificationText = `🎯 Новое задание доступно: "${taskData.name}"`;
+                    
+                    // Отправляем уведомление каждому креативщику
+                    for (const creator of creators) {
+                        try {
+                            console.log(`Отправка уведомления креативщику: ${creator.tg_id}`);
+                            const sent = await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                            console.log(`Уведомление успешно отправлено креативщику: ${creator.tg_id}, message_id: ${sent.message_id}`);
+                        } catch (err) {
+                            console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Ошибка при отправке уведомлений креативщикам:", err);
+                // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
+            }
         }
     } catch (error) {
         console.error("Ошибка создания задачи:", error);
@@ -232,11 +265,43 @@ writeTTScene.action('no_example', async (ctx) => {
             buyer: user._id
         };
 
-        await taskService.createTask(taskData);
+        const createdTask = await taskService.createTask(taskData);
         await ctx.reply(
             ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
             await start(tgId)
         );
+        
+        // Отправляем уведомления всем креативщикам о новом задании
+        try {
+            // Находим всех пользователей с ролью creator
+            const allUsers = await userService.getAll();
+            const creators = allUsers.filter(user => user.position === 'creator');
+            console.log(`Найдено креативщиков: ${creators.length}`);
+            
+            // Выводим информацию о каждом креативщике для отладки
+            creators.forEach((creator, index) => {
+                console.log(`Креативщик ${index + 1}: ID=${creator._id}, TG_ID=${creator.tg_id}, Username=${creator.username}`);
+            });
+            
+            if (creators.length > 0) {
+                // Формируем текст уведомления
+                const notificationText = `🎯 Новое задание доступно: "${taskData.name}"`;
+                
+                // Отправляем уведомление каждому креативщику
+                for (const creator of creators) {
+                    try {
+                        console.log(`Отправка уведомления креативщику: ${creator.tg_id}`);
+                        const sent = await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                        console.log(`Уведомление успешно отправлено креативщику: ${creator.tg_id}, message_id: ${sent.message_id}`);
+                    } catch (err) {
+                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Ошибка при отправке уведомлений креативщикам:", err);
+            // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
+        }
     } catch (error) {
         console.error("Ошибка создания задачи:", error);
         await ctx.reply(ruMessage.messages.errors.writeTT, await start(tgId));
