@@ -38,6 +38,89 @@ async function handleText(ctx) {
         return;
     }
 
+    // Обработка ввода имени креативщика
+    if (ctx.session.awaitingCreatorUsername) {
+        try {
+            const username = userInput.trim().replace('@', ''); // Удаляем @ если он есть
+            
+            // Ищем пользователя по username
+            const allUsers = await userService.getAll();
+            const creator = allUsers.find(user => 
+                user.username === username && user.position === 'creator'
+            );
+            
+            if (!creator) {
+                await ctx.reply("⚠️ Креативщик с таким username не найден или это не креативщик. Пожалуйста, проверьте имя и попробуйте снова.");
+                return;
+            }
+            
+            // Создаем задачу с указанным креативщиком
+            const user = await userService.findUserByTelegramId(tgId);
+            
+            const taskData = {
+                name: ctx.session.name,
+                link_app: ctx.session.app,
+                description: ctx.session.description,
+                example_creative: ctx.session.mediaFiles || [],
+                buyer: user._id,
+                creator: creator._id,
+                state: 'progress' // Устанавливаем статус "в работе"
+            };
+            
+            let createdTask;
+            let maxRetries = 5;
+            let retryCount = 0;
+            let success = false;
+            
+            while (!success && retryCount < maxRetries) {
+                try {
+                    createdTask = await taskService.createTask(taskData);
+                    success = true;
+                    
+                    // Отправляем уведомление креативщику
+                    try {
+                        const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
+                        await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                        console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                    } catch (err) {
+                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                    }
+                    
+                    await ctx.reply(
+                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
+                        await start(ctx.from.id)
+                    );
+                } catch (error) {
+                    if (error.message.includes('duplicate key error') && error.message.includes('name')) {
+                        retryCount++;
+                        const nameParts = taskData.name.split('_');
+                        const currentCounter = parseInt(nameParts.pop()) || 0;
+                        nameParts.push((currentCounter + retryCount).toString());
+                        taskData.name = nameParts.join('_');
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+            
+            if (!success) {
+                console.error("Не удалось создать задачу после нескольких попыток");
+                await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+            }
+            
+            // Очищаем сессию и выходим из сцены
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        } catch (error) {
+            console.error("Ошибка при назначении креативщика:", error);
+            await ctx.reply("⚠️ Произошла ошибка при назначении креативщика. Пожалуйста, попробуйте позже.");
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+    }
+
     // Обработка текстового примера, когда ждем медиа
     if (ctx.session.awaitingMedia && step === 3) {
         // Инициализация массива медиафайлов
@@ -151,88 +234,20 @@ async function handleSaveTask(ctx) {
     if (!ctx.callbackQuery || !ctx.session.awaitingMedia) return;
 
     try {
-
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        const taskData = {
-            name: ctx.session.name,
-            link_app: ctx.session.app,
-            description: ctx.session.description,
-            example_creative: ctx.session.mediaFiles || [], 
-            buyer: user._id
-        };
-
-        let maxRetries = 5;
-        let retryCount = 0;
-        let success = false;
-        let createdTask;
-
-        while (!success && retryCount < maxRetries) {
-            try {
-                createdTask = await taskService.createTask(taskData);
-                success = true;
-                await ctx.reply(
-                    ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
-                    await start(ctx.from.id)
-                );
-            } catch (error) {
-                if (error.message.includes('duplicate key error') && error.message.includes('name')) {
-                    retryCount++;
-                    const nameParts = taskData.name.split('_');
-                    const currentCounter = parseInt(nameParts.pop()) || 0;
-                    nameParts.push((currentCounter + retryCount).toString());
-                    taskData.name = nameParts.join('_');
-                } else {
-                    throw error;
-                }
-            }
-        }
-
-        if (!success) {
-            console.error("Не удалось создать задачу после нескольких попыток");
-            await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-        } else {
-            // Отправляем уведомления всем креативщикам о новом задании
-            try {
-                // Находим всех пользователей с ролью creator
-                const allUsers = await userService.getAll();
-                const creators = allUsers.filter(user => user.position === 'creator');
-                console.log(`Найдено креативщиков: ${creators.length}`);
-                
-                // Выводим информацию о каждом креативщике для отладки
-                creators.forEach((creator, index) => {
-                    console.log(`Креативщик ${index + 1}: ID=${creator._id}, TG_ID=${creator.tg_id}, Username=${creator.username}`);
-                });
-                
-                if (creators.length > 0) {
-                    // Формируем текст уведомления
-                    const notificationText = `🎯 Новое задание доступно: "${taskData.name}"`;
-                    
-                    // Отправляем уведомление каждому креативщику
-                    for (const creator of creators) {
-                        try {
-                            console.log(`Отправка уведомления креативщику: ${creator.tg_id}`);
-                            const sent = await ctx.telegram.sendMessage(creator.tg_id, notificationText);
-                            console.log(`Уведомление успешно отправлено креативщику: ${creator.tg_id}, message_id: ${sent.message_id}`);
-                        } catch (err) {
-                            console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error("Ошибка при отправке уведомлений креативщикам:", err);
-                // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
-            }
-        }
+        // Спрашиваем, хочет ли пользователь назначить задание креативщику
+        await ctx.reply("Хотите назначить задание креативщику?", 
+            Markup.inlineKeyboard([
+                Markup.button.callback('Да', 'assign_yes'),
+                Markup.button.callback('Нет', 'assign_no')
+            ])
+        );
     } catch (error) {
-        console.error("Ошибка создания задачи:", error);
+        console.error("Ошибка:", error);
         await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-    } finally {
         ctx.session = {};
         ctx.scene.leave();
     }
 }
-
 
 const writeTTScene = new BaseScene('writeTTScene');
 
@@ -242,7 +257,6 @@ writeTTScene.enter(async (ctx) => {
     await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
 });
 
-
 writeTTScene.on('text', handleText)
 writeTTScene.on('photo', handleMedia);
 writeTTScene.on('video', handleMedia);
@@ -251,37 +265,96 @@ writeTTScene.action('save_task', handleSaveTask);
 // Обработчик нажатия на кнопку "Нет примера"
 writeTTScene.action('no_example', async (ctx) => {
     try {
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        
-        // Устанавливаем пустой массив примеров
         ctx.session.mediaFiles = [];
-        
-        const taskData = {
-            name: ctx.session.name,
-            link_app: ctx.session.app,
-            description: ctx.session.description,
-            example_creative: [],
-            buyer: user._id
-        };
-
-        const createdTask = await taskService.createTask(taskData);
-        await ctx.reply(
-            ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
-            await start(tgId)
+        // Спрашиваем, хочет ли пользователь назначить задание креативщику
+        await ctx.reply("Хотите назначить задание креативщику?", 
+            Markup.inlineKeyboard([
+                Markup.button.callback('Да', 'assign_yes'),
+                Markup.button.callback('Нет', 'assign_no')
+            ])
         );
-        
+    } catch (error) {
+        console.error("Ошибка:", error);
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик для ответа "Да" на вопрос о назначении креативщика
+writeTTScene.action('assign_yes', async (ctx) => {
+    try {
+        ctx.session.awaitingCreatorUsername = true;
+        await ctx.reply("Введите username креативщика (без символа @):");
+    } catch (error) {
+        console.error("Ошибка:", error);
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик для ответа "Нет" на вопрос о назначении креативщика
+writeTTScene.action('assign_no', async (ctx) => {
+    try {
+        await createTaskWithoutCreator(ctx);
+    } catch (error) {
+        console.error("Ошибка создания задачи:", error);
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Функция для создания задачи без креативщика
+async function createTaskWithoutCreator(ctx) {
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    
+    const taskData = {
+        name: ctx.session.name,
+        link_app: ctx.session.app,
+        description: ctx.session.description,
+        example_creative: ctx.session.mediaFiles || [],
+        buyer: user._id
+    };
+
+    let maxRetries = 5;
+    let retryCount = 0;
+    let success = false;
+    let createdTask;
+
+    while (!success && retryCount < maxRetries) {
+        try {
+            createdTask = await taskService.createTask(taskData);
+            success = true;
+            await ctx.reply(
+                ruMessage.messages.writeTT.queued.replace("{name}", taskData.name),
+                await start(ctx.from.id)
+            );
+        } catch (error) {
+            if (error.message.includes('duplicate key error') && error.message.includes('name')) {
+                retryCount++;
+                const nameParts = taskData.name.split('_');
+                const currentCounter = parseInt(nameParts.pop()) || 0;
+                nameParts.push((currentCounter + retryCount).toString());
+                taskData.name = nameParts.join('_');
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    if (!success) {
+        console.error("Не удалось создать задачу после нескольких попыток");
+        await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
+    } else {
         // Отправляем уведомления всем креативщикам о новом задании
         try {
             // Находим всех пользователей с ролью creator
             const allUsers = await userService.getAll();
             const creators = allUsers.filter(user => user.position === 'creator');
             console.log(`Найдено креативщиков: ${creators.length}`);
-            
-            // Выводим информацию о каждом креативщике для отладки
-            creators.forEach((creator, index) => {
-                console.log(`Креативщик ${index + 1}: ID=${creator._id}, TG_ID=${creator.tg_id}, Username=${creator.username}`);
-            });
             
             if (creators.length > 0) {
                 // Формируем текст уведомления
@@ -300,16 +373,13 @@ writeTTScene.action('no_example', async (ctx) => {
             }
         } catch (err) {
             console.error("Ошибка при отправке уведомлений креативщикам:", err);
-            // Не прерываем выполнение основного кода, если с уведомлениями возникла проблема
         }
-    } catch (error) {
-        console.error("Ошибка создания задачи:", error);
-        await ctx.reply(ruMessage.messages.errors.writeTT, await start(tgId));
-    } finally {
-        ctx.session = {};
-        ctx.scene.leave();
     }
-});
+    
+    // Очищаем сессию и выходим из сцены
+    ctx.session = {};
+    ctx.scene.leave();
+}
 
 module.exports = writeTTScene;
 
