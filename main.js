@@ -74,6 +74,23 @@ fs.readdirSync(actionsPath).forEach(file => {
   }
 });
 
+// Add handler for moderate_task callback
+bot.action(/^moderate_task:(.+)$/, async (ctx) => {
+  try {
+    // Extract task ID from callback data
+    const taskId = ctx.match[1];
+    
+    // Store the task ID in session
+    ctx.session.selectedTask = taskId;
+    
+    // Enter the moderation scene
+    await ctx.scene.enter('getTaskToModerateScene');
+  } catch (error) {
+    console.error('Error handling moderate_task action:', error);
+    await ctx.reply(ruMessage.messages.errors.general);
+  }
+});
+
 // Запуск бота
 
 bot.launch();

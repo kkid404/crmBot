@@ -175,13 +175,112 @@ getTaskToModerateScene.enter(async (ctx) => {
             return;
         }
         
-        // Очищаем сессию при входе в сцену
-        ctx.session.selectedTask = null;
+        // Save previous task ID if it exists
+        const preselectedTaskId = ctx.session.selectedTask;
+        
+        // Очищаем сессию при входе в сцену, но сохраняем ID задачи если он был
         ctx.session.mediaMessageId = null;
         ctx.session.exampleMediaMessageId = null;
         ctx.session.exampleMediaMessageIds = [];
         ctx.session.taskMessageId = null;
         
+        // If we have a task ID from a direct link (like moderate_task:xxx), load it immediately
+        if (preselectedTaskId) {
+            ctx.session.selectedTask = preselectedTaskId;
+            const task = await taskService.findTaskById(preselectedTaskId);
+            
+            if (task) {
+                // Directly use the task information to display it
+                const taskInfo = formatTaskInfo(task);
+                
+                // Display the task results (media)
+                if (task.result) {
+                    try {
+                        // Handle result display (media files)
+                        if (Array.isArray(task.result) && task.result.length > 0) {
+                            // Code to display media group here (similar to the action handler)
+                            const mediaGroup = task.result.map(fileId => {
+                                const isVideo = fileId.startsWith('BAA');
+                                const isDocument = fileId.startsWith('BQA');
+                                const isAudio = fileId.startsWith('CQA');
+                                const isAnimation = fileId.startsWith('DQA');
+                                
+                                let type = 'photo';
+                                if (isVideo) type = 'video';
+                                else if (isDocument) type = 'document';
+                                else if (isAudio) type = 'audio';
+                                else if (isAnimation) type = 'animation';
+                                
+                                return { type, media: fileId };
+                            });
+                            
+                            if (mediaGroup.length > 0) {
+                                const chunks = [];
+                                for (let i = 0; i < mediaGroup.length; i += 10) {
+                                    chunks.push(mediaGroup.slice(i, i + 10));
+                                }
+                                
+                                for (const chunk of chunks) {
+                                    if (chunk.length > 0) {
+                                        const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
+                                        
+                                        if (sentMessages && sentMessages.length > 0) {
+                                            if (!ctx.session.mediaMessageIds) {
+                                                ctx.session.mediaMessageIds = [];
+                                            }
+                                            sentMessages.forEach(msg => {
+                                                ctx.session.mediaMessageIds.push(msg.message_id);
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (typeof task.result === 'string') {
+                            // Handle single media file
+                            let mediaResponse;
+                            if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
+                                mediaResponse = await ctx.replyWithPhoto(task.result);
+                            } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
+                                mediaResponse = await ctx.replyWithVideo(task.result);
+                            } else {
+                                try {
+                                    mediaResponse = await ctx.replyWithPhoto(task.result);
+                                } catch {
+                                    try {
+                                        mediaResponse = await ctx.replyWithVideo(task.result);
+                                    } catch (innerError) {
+                                        console.error("Не удалось определить тип медиа:", innerError);
+                                        await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
+                                    }
+                                }
+                            }
+
+                            if (mediaResponse?.message_id) {
+                                ctx.session.mediaMessageId = mediaResponse.message_id;
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Ошибка при отправке результата:", error);
+                        await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
+                    }
+                }
+                
+                // Display task info and moderation controls
+                const moderateKeyboard = moderate(task);
+                const taskMessage = await ctx.reply(taskInfo, {
+                    ...moderateKeyboard,
+                    reply_markup: {
+                        ...moderateKeyboard.reply_markup,
+                        remove_keyboard: true
+                    }
+                });
+                ctx.session.taskMessageId = taskMessage.message_id;
+                
+                return;
+            }
+        }
+        
+        // If no preselected task or task not found, show the task selection menu
         const keyboard = await myTasks(user._id, '', "wait");
         await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {

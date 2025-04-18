@@ -8,6 +8,7 @@ const taskService = require('../services/task.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
 const { back_or_done_Creator } = require('../keyboards/back_or_done_Creator.keyboard');
 const { points_for_creatives } = require('../keyboards/points_for_creatives.keyboard');
+const { Markup } = require('telegraf');
 
 const ttToModerateScene = new BaseScene('ttToModerateScene');
 
@@ -34,7 +35,10 @@ async function handlePoints(ctx) {
     for (const checker of checkers) {
         await ctx.telegram.sendMessage(
             checker.tg_id, 
-            `Креатив ${ctx.session.taskname} поступил на проверку`
+            `Креатив ${ctx.session.taskname} поступил на проверку`,
+            Markup.inlineKeyboard([
+                Markup.button.callback('Проверить задание', `moderate_task:${ctx.session.selectedTask}`)
+            ])
         ).catch(handleError);
     }
   
