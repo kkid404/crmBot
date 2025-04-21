@@ -75,9 +75,73 @@ class GoogleSheetsService {
         }
     }
 
+    async getOrCreateSpreadsheet(title, envSpreadsheetId) {
+        try {
+            // Check if we have a spreadsheet ID in environment variables
+            if (envSpreadsheetId) {
+                console.log(`Использование существующей таблицы с ID: ${envSpreadsheetId}`);
+                try {
+                    // Verify that the spreadsheet exists and is accessible
+                    await this.sheets.spreadsheets.get({
+                        spreadsheetId: envSpreadsheetId
+                    });
+                    
+                    // Optional: Update title if it's different
+                    await this.sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: envSpreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                updateSpreadsheetProperties: {
+                                    properties: {
+                                        title: title
+                                    },
+                                    fields: 'title'
+                                }
+                            }]
+                        }
+                    });
+                    
+                    return envSpreadsheetId;
+                } catch (error) {
+                    console.warn(`Не удалось получить доступ к существующей таблице: ${error.message}. Создание новой таблицы...`);
+                    // If we can't access the spreadsheet, create a new one
+                    return await this.createSpreadsheet(title);
+                }
+            } else {
+                // If no spreadsheet ID is provided, create a new one
+                return await this.createSpreadsheet(title);
+            }
+        } catch (error) {
+            console.error('Ошибка при получении/создании таблицы:', error);
+            throw new Error(`Ошибка при получении/создании таблицы: ${error.message}`);
+        }
+    }
+
     async addSheet(spreadsheetId, title) {
         try {
             console.log(`Добавление листа "${title}"...`);
+            
+            // First check if sheet already exists
+            const spreadsheet = await this.sheets.spreadsheets.get({
+                spreadsheetId
+            });
+            
+            // Debug: List all existing sheets
+            const existingSheets = spreadsheet.data.sheets.map(sheet => sheet.properties.title);
+            console.log(`Существующие листы: ${JSON.stringify(existingSheets)}`);
+            
+            // If sheet with this name already exists, skip creation
+            const sheetExists = spreadsheet.data.sheets.some(sheet => 
+                sheet.properties.title === title
+            );
+            
+            if (sheetExists) {
+                console.log(`Лист "${title}" уже существует, пропускаем создание`);
+                return;
+            } else {
+                console.log(`Лист "${title}" не найден, создаем новый`);
+            }
+            
             await this.sheets.spreadsheets.batchUpdate({
                 spreadsheetId,
                 requestBody: {
@@ -94,8 +158,13 @@ class GoogleSheetsService {
                     }]
                 }
             });
-            console.log('Лист добавлен');
+            console.log(`Лист "${title}" успешно добавлен`);
         } catch (error) {
+            if (error.message && error.message.includes('already exists')) {
+                // Handle the case where the sheet exists even though our check didn't catch it
+                console.log(`Лист "${title}" уже существует (обнаружено через ошибку API), пропускаем создание`);
+                return;
+            }
             console.error(`Ошибка при добавлении листа "${title}":`, error);
             throw new Error(`Ошибка при добавлении листа: ${error.message}`);
         }

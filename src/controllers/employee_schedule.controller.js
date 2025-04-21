@@ -85,16 +85,58 @@ const exportEmployeeScheduleToGoogleSheets = async () => {
             throw new Error('Не найдены пользователи с ролью creator');
         }
 
-        // Создаем новую таблицу
-        const spreadsheetId = await googleSheets.createSpreadsheet('Расписание сотрудников');
+        // Use environment variable if exists or create a new spreadsheet
+        const spreadsheetId = await googleSheets.getOrCreateSpreadsheet(
+            'Расписание сотрудников', 
+            process.env.EMPLOYEE_SCHEDULE_SPREADSHEET_ID
+        );
         
-        // Получаем информацию о первом листе
+        // Получаем информацию о листах
         const spreadsheet = await googleSheets.sheets.spreadsheets.get({
             spreadsheetId
         });
-        const firstSheetId = spreadsheet.data.sheets[0].properties.sheetId;
         
-        // Заголовки для таблицы
+        // Get list of sheet titles
+        const existingSheetTitles = spreadsheet.data.sheets.map(sheet => sheet.properties.title);
+        console.log(`Все листы в таблице: ${JSON.stringify(existingSheetTitles)}`);
+        
+        // Create or update summary sheet
+        const summarySheetName = "Сводная таблица";
+        let summarySheetId = 0;
+        
+        if (!existingSheetTitles.includes(summarySheetName)) {
+            console.log(`Создание сводного листа "${summarySheetName}"...`);
+            await googleSheets.addSheet(spreadsheetId, summarySheetName);
+            
+            // Get updated spreadsheet for sheet ID
+            const updatedSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+                spreadsheetId
+            });
+            
+            const summarySheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === summarySheetName);
+            if (summarySheet) {
+                summarySheetId = summarySheet.properties.sheetId;
+            }
+        } else {
+            // Find existing summary sheet ID
+            const summarySheet = spreadsheet.data.sheets.find(s => s.properties.title === summarySheetName);
+            if (summarySheet) {
+                summarySheetId = summarySheet.properties.sheetId;
+            }
+            console.log(`Сводный лист "${summarySheetName}" уже существует, обновляем данные`);
+        }
+        
+        // Prepare summary data
+        const summaryHeaders = [
+            'Сотрудник',
+            'Общее время работы (часы)',
+            'Количество смен',
+            'Средняя продолжительность смены'
+        ];
+        
+        const summaryData = [summaryHeaders];
+        
+        // Заголовки для таблицы пользователей
         const headers = [
             'Дата',
             'Первый вход',
@@ -103,16 +145,34 @@ const exportEmployeeScheduleToGoogleSheets = async () => {
             'Все входы и выходы'
         ];
 
-        // Для каждого пользователя создаем отдельный лист
+        // Для каждого пользователя создаем или обновляем отдельный лист
         for (const user of users) {
             // Получаем все записи о сменах для данного пользователя
             const shifts = await EmployeeSchedule.find({ creativeId: user._id }).sort({ shiftStart: 1 });
             
+            // Определяем имя листа для пользователя
+            const sheetTitle = user.username || `User_${user.tg_id}`;
+            
             if (!shifts || shifts.length === 0) {
-                console.log(`Для пользователя ${user.username || user.tg_id} не найдены записи о сменах`);
+                console.log(`Для пользователя ${sheetTitle} не найдены записи о сменах`);
+                // Add to summary with zeros
+                summaryData.push([
+                    sheetTitle,
+                    '0',
+                    '0',
+                    '0'
+                ]);
                 continue;
             }
 
+            // Проверяем, существует ли лист для пользователя
+            if (!existingSheetTitles.includes(sheetTitle)) {
+                console.log(`Создание листа для пользователя "${sheetTitle}"...`);
+                await googleSheets.addSheet(spreadsheetId, sheetTitle);
+            } else {
+                console.log(`Лист "${sheetTitle}" уже существует, обновляем данные`);
+            }
+            
             // Группируем смены по дням
             const shiftsByDay = {};
             
@@ -127,12 +187,12 @@ const exportEmployeeScheduleToGoogleSheets = async () => {
                 shiftsByDay[dateKey].push(shift);
             }
 
-            // Создаем новый лист для пользователя
-            const sheetTitle = user.username || `User_${user.tg_id}`;
-            await googleSheets.addSheet(spreadsheetId, sheetTitle);
-
             // Подготавливаем данные для листа
             const values = [headers];
+            
+            // Calculate total work hours for summary
+            let totalWorkHoursForUser = 0;
+            let totalCompletedShifts = 0;
             
             for (const [dateKey, dayShifts] of Object.entries(shiftsByDay)) {
                 // Находим самый ранний вход
@@ -157,6 +217,8 @@ const exportEmployeeScheduleToGoogleSheets = async () => {
                     if (shift.shiftEnd) {
                         const shiftDuration = calculateDuration(shift.shiftStart, shift.shiftEnd);
                         totalWorkHours += shiftDuration;
+                        totalWorkHoursForUser += shiftDuration;
+                        totalCompletedShifts++;
                         
                         // Формируем строку с информацией о входе и выходе
                         allShiftsInfo += `${formatTime(shift.shiftStart)} - ${formatTime(shift.shiftEnd)} (${formatDuration(shiftDuration)})\n`;
@@ -180,22 +242,26 @@ const exportEmployeeScheduleToGoogleSheets = async () => {
 
             // Записываем данные на лист
             await googleSheets.writeData(spreadsheetId, `${sheetTitle}!A1:E${values.length}`, values);
+            console.log(`Данные обновлены в листе "${sheetTitle}"`);
+            
+            // Add to summary
+            const avgShiftDuration = totalCompletedShifts > 0 
+                ? totalWorkHoursForUser / totalCompletedShifts 
+                : 0;
+                
+            summaryData.push([
+                sheetTitle,
+                totalWorkHoursForUser.toFixed(2),
+                totalCompletedShifts.toString(),
+                avgShiftDuration.toFixed(2)
+            ]);
         }
+        
+        // Write summary data
+        await googleSheets.writeData(spreadsheetId, `${summarySheetName}!A1:D${summaryData.length}`, summaryData);
+        console.log(`Данные обновлены в сводном листе "${summarySheetName}"`);
 
-        // Удаляем первый пустой лист
-        await googleSheets.deleteSheet(spreadsheetId, firstSheetId);
-
-        // Проверяем доступность таблицы
-        try {
-            await googleSheets.sheets.spreadsheets.get({
-                spreadsheetId,
-                fields: 'spreadsheetUrl'
-            });
-        } catch (error) {
-            throw new Error('Не удалось получить доступ к созданной таблице');
-        }
-
-        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/view`;
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${summarySheetId}`;
     } catch (error) {
         console.error('Ошибка при экспорте расписания сотрудников:', error);
         throw new Error(`Ошибка при экспорте расписания сотрудников: ${error.message}`);
