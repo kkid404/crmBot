@@ -534,8 +534,104 @@ watchReadyTzScene.action(/^reply_/, async (ctx) => {
     await ctx.answerCbQuery();
 });
 
-// Объединенный обработчик для всех текстовых сообщений
+// Обработчик для кнопки "❌ Отклонить" (reject_task)
+watchReadyTzScene.action('reject_task', async (ctx) => {
+    try {
+        const taskId = ctx.session.selectedTask;
+        if (!taskId) {
+            await ctx.answerCbQuery('Задание не выбрано');
+            return;
+        }
+        
+        const task = await taskService.findTaskById(taskId);
+        if (!task) {
+            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+            return;
+        }
+        
+        if (task.state !== 'done') {
+            await ctx.answerCbQuery('Это задание не находится в статусе "Выполнено"');
+            return;
+        }
+        
+        // Запрашиваем у пользователя сообщение с правками
+        ctx.session.waitingForRejectionMessage = true;
+        await ctx.reply("❌ Введите сообщение с правками для креативщика:");
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in "reject_task" action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при отклонении задания');
+    }
+});
+
+// Модифицируем обработчик текстовых сообщений, чтобы добавить обработку сообщений с правками
 watchReadyTzScene.on('text', async (ctx) => {
+    // Проверяем, ожидаем ли мы сообщение с правками для отклонения задания
+    if (ctx.session.waitingForRejectionMessage) {
+        try {
+            const taskId = ctx.session.selectedTask;
+            const task = await taskService.findTaskById(taskId);
+            
+            if (!task) {
+                await ctx.reply('Задание не найдено');
+                ctx.session.waitingForRejectionMessage = false;
+                return;
+            }
+            
+            const rejectionMessage = ctx.message.text;
+            const creator = await userService.findById(task.creator);
+            
+            if (!creator) {
+                await ctx.reply('Креативщик не найден');
+                ctx.session.waitingForRejectionMessage = false;
+                return;
+            }
+            
+            // Обновляем задание: возвращаем в статус "progress" и увеличиваем версию
+            await taskService.updateTask(taskId, { 
+                state: 'progress', 
+                version: (task.version || 1) + 1 
+            });
+            
+            // Формируем сообщение для креативщика
+            const taskInfo = buildTaskInfo(task);
+            const creativeMessage = `
+❌ Задание "${task.name}" отклонено заказчиком и требует доработки:
+
+${taskInfo}
+
+🔴 Правки от заказчика:
+${rejectionMessage}
+            `;
+            
+            // Отправляем сообщение креативщику
+            await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
+            
+            // Сообщаем пользователю об успешном отклонении
+            await ctx.reply(`✅ Задание "${task.name}" отклонено и возвращено креативщику на доработку.`);
+            
+            // Возвращаемся к списку заданий
+            const tgId = String(ctx.from.id);
+            const user = await userService.findUserByTelegramId(tgId);
+            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
+            
+            // Сбрасываем флаг ожидания
+            ctx.session.waitingForRejectionMessage = false;
+            
+            // Очищаем сохраненные ID медиафайлов
+            ctx.session.exampleMediaMessageIds = [];
+            ctx.session.mediaMessageId = null;
+            ctx.session.mediaMessageIds = [];
+            
+            return;
+        } catch (error) {
+            console.error('Error processing rejection message:', error);
+            await ctx.reply('Произошла ошибка при обработке отклонения задания. Попробуйте позже.');
+            ctx.session.waitingForRejectionMessage = false;
+            return;
+        }
+    }
+    
     // Проверяем, ожидаем ли мы ссылку на приложение
     if (ctx.session.awaitingAppLink) {
         // Получаем новую ссылку из сообщения пользователя

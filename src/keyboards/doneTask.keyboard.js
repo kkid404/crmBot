@@ -34,15 +34,38 @@ function doneTask(task) {
     }
   }
   
+  // Create a flat array of button objects first
+  const buttonsList = [];
+  
   Object.entries(ruMessage.keyboards.doneTask).forEach(([callbackData, buttonText]) => {
     if (callbackData === 'show_example' && !isMediaExample) {
       return;
     }
     
-    buttons.push([Markup.button.callback(buttonText, callbackData)]);
+    buttonsList.push(Markup.button.callback(buttonText, callbackData));
   });
   
-  return Markup.inlineKeyboard(buttons);
+  // В зависимости от роли и статуса задачи будем показывать разные кнопки
+  if (task.state === 'done') {
+    // Add reject button for buyers to send tasks back to creators
+    buttonsList.push(Markup.button.callback('❌ Отклонить', 'reject_task'));
+  }
+  
+  // Добавляем кнопки назад и выйти
+  buttonsList.push(Markup.button.callback('◀️ Назад', 'back'));
+  buttonsList.push(Markup.button.callback('🚪 Выйти', 'quit'));
+  
+  // Группируем кнопки по 2 в ряд, кроме последней строки
+  const keyboard = [];
+  for (let i = 0; i < buttonsList.length; i += 2) {
+    if (i + 1 < buttonsList.length) {
+      keyboard.push([buttonsList[i], buttonsList[i + 1]]);
+    } else {
+      keyboard.push([buttonsList[i]]);
+    }
+  }
+  
+  return Markup.inlineKeyboard(keyboard);
 }
 
 module.exports = { doneTask };
