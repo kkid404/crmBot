@@ -5,12 +5,12 @@ const { Markup } = require('telegraf');
 const myTasks = async (id, role = '', state) => {
     const tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
 
-
     // Создаем массив кнопок для задач
     const inlineKeyboard = tasks.map(task => {
-        return [Markup.button.callback(task.name, task._id.toString())]; // Оборачиваем каждую кнопку в массив
+        // Add 💰 emoji for tasks with bonus
+        const bonusIndicator = task.bonus ? '💰 ' : '';
+        return [Markup.button.callback(`${bonusIndicator}${task.name}`, task._id.toString())]; // Оборачиваем каждую кнопку в массив
     });
-
 
     inlineKeyboard.push([Markup.button.callback('Выйти', 'quit')]);
 
@@ -35,7 +35,11 @@ const creatorTasks = async (id) => {
     const inlineKeyboard = tasks.map(task => {
         // Получаем подпись для статуса или используем сам статус, если нет соответствия
         const stateLabel = stateLabels[task.state] || task.state;
-        const buttonText = `${task.name} (${stateLabel})`;
+        
+        // Add 💰 emoji for tasks with bonus
+        const bonusIndicator = task.bonus ? '💰 ' : '';
+        
+        const buttonText = `${bonusIndicator}${task.name} (${stateLabel})`;
         return [Markup.button.callback(buttonText, task._id.toString())];
     });
 
