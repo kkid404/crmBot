@@ -176,6 +176,40 @@ class TaskService {
             throw new Error(`Ошибка при подсчете адаптивных креативов для задачи ${baseName}: ${error.message}`);
         }
     }
+
+    // Метод для установки бонуса по умолчанию для задач без бонуса
+    static async setDefaultBonus(defaultBonus = 500, timeFrame = 30) {
+        try {
+            // Вычисляем дату, раньше которой будем искать задачи (например, старше 30 дней)
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - timeFrame);
+            
+            // Находим все задачи со статусом "done", у которых нет бонуса (bonus === null)
+            // и которые были выполнены раньше указанной даты (т.е. старше чем timeFrame дней)
+            const result = await Task.updateMany(
+                { 
+                    state: 'done',
+                    bonus: null,
+                    completionDate: { $lt: cutoffDate }
+                },
+                { $set: { bonus: defaultBonus } }
+            );
+            
+            return {
+                success: true,
+                message: `Бонус ${defaultBonus} установлен для ${result.modifiedCount} задач`,
+                modifiedCount: result.modifiedCount,
+                matchedCount: result.matchedCount
+            };
+        } catch (error) {
+            console.error('Ошибка при установке бонуса по умолчанию:', error);
+            return {
+                success: false,
+                message: `Ошибка при установке бонуса: ${error.message}`,
+                error: error
+            };
+        }
+    }
 }
 
 module.exports = TaskService;
