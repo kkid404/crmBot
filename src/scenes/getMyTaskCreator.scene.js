@@ -100,6 +100,16 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
         const expectedTimeStr = task.expectedTime ? 
             ` к ${task.expectedTime}` : 
             '';
+            
+        // Добавляем бонус, если он указан
+        const bonusStr = task.bonus !== null && task.bonus !== undefined ? 
+            `💰 Бонус: ${task.bonus}\n` : 
+            '';
+            
+        // Добавляем CTR, если он указан
+        const ctrStr = task.CTR !== null && task.CTR !== undefined ? 
+            `📊 CTR: ${task.CTR}\n` : 
+            '';
         
         return `
 🎯 Название: ${task.name}
@@ -108,7 +118,7 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}
-    `;
+${bonusStr}${ctrStr}    `;
     }
 
     const taskInfo = formatTaskInfo(task, exampleLine);
