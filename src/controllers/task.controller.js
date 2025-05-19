@@ -30,23 +30,38 @@ const prepareTasksSpreadsheet = async () => {
 
 const exportTasksInProgressCsv = async () => {
     try {
+        console.log('Начало экспорта задач в работе...');
+        
+        // Получаем задачи из базы данных
         const tasks = await Task.find({ 
             state: { $in: ['progress', 'active'] } 
         })
             .populate('buyer')
             .populate('creator')
             .sort({ createdAt: 1 });
+            
+        console.log(`Найдено ${tasks.length} задач в работе`);
 
-        // Get or create the spreadsheet
+        // Получаем или создаем таблицу
         const { spreadsheetId, spreadsheet } = await prepareTasksSpreadsheet();
         
-        // Check if "Креативы в работе" sheet exists, otherwise add it
+        // Проверяем и создаем лист, если нужно
         const sheetName = "Креативы в работе";
-        const existingSheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+        await googleSheets.addSheet(spreadsheetId, sheetName);
         
-        if (!existingSheet) {
-            await googleSheets.addSheet(spreadsheetId, sheetName);
+        // Получаем обновленную информацию о таблице, чтобы получить ID листа
+        const updatedSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+            spreadsheetId,
+            fields: 'sheets(properties(sheetId,title))',
+        });
+        
+        const sheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+        if (!sheet) {
+            throw new Error(`Не удалось создать или найти лист "${sheetName}"`);
         }
+        
+        const sheetId = sheet.properties.sheetId;
+        console.log(`Используем лист: ${sheetName} (ID: ${sheetId})`);
         
         // Заголовки для таблицы
         const headers = [
@@ -59,24 +74,68 @@ const exportTasksInProgressCsv = async () => {
             'Статус'
         ];
 
-        // Подготавливаем данные
+        // Подготавливаем данные с валидацией
         const values = [
             headers,
-            ...tasks.map(task => [
-                formatDate(task.createdAt),
-                task.name,
-                task.workType || 'Не указан',
-                task.buyer?.username || 'Не указан',
-                formatDate(task.expectedDate),
-                task.creator?.username || 'Не указан',
-                task.state === 'progress' ? 'В работе' : 'Активно'
-            ])
+            ...tasks.map(task => {
+                try {
+                    return [
+                        formatDate(task.createdAt) || '',
+                        task.name?.toString() || 'Без названия',
+                        task.workType?.toString() || 'Не указан',
+                        task.buyer?.username?.toString() || 'Не указан',
+                        formatDate(task.expectedDate) || '',
+                        task.creator?.username?.toString() || 'Не указан',
+                        task.state === 'progress' ? 'В работе' : 'Активно'
+                    ];
+                } catch (error) {
+                    console.error('Ошибка при обработке задачи:', task._id, error);
+                    return [];
+                }
+            }).filter(row => row.length > 0) // Удаляем пустые строки
         ];
 
-        // Записываем данные
-        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1:G${values.length}`, values);
+        console.log(`Подготовлено ${values.length - 1} строк для записи`);
 
-        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${existingSheet?.properties?.sheetId || '0'}`;
+        // Очищаем лист перед записью новых данных
+        await googleSheets.sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `${sheetName}!A:Z`,
+        });
+
+        // Записываем данные
+        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+        console.log('Данные успешно записаны');
+
+        // Форматируем заголовки (жирный шрифт)
+        try {
+            await googleSheets.sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        repeatCell: {
+                            range: {
+                                sheetId,
+                                startRowIndex: 0,
+                                endRowIndex: 1
+                            },
+                            cell: {
+                                userEnteredFormat: {
+                                    textFormat: {
+                                        bold: true
+                                    }
+                                }
+                            },
+                            fields: 'userEnteredFormat.textFormat.bold'
+                        }
+                    }]
+                }
+            });
+        } catch (formatError) {
+            console.warn('Не удалось применить форматирование к заголовкам:', formatError);
+        }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте задач в работе: ${error.message}`);
     }
@@ -84,13 +143,36 @@ const exportTasksInProgressCsv = async () => {
 
 const exportTasksDoneCsv = async () => {
     try {
+        console.log('Начало экспорта выполненных задач...');
+        
+        // Получаем выполненные задачи
         const tasks = await Task.find({ state: 'done' })
             .populate('buyer')
             .populate('creator')
             .sort({ creator: 1, createdAt: 1 });
+            
+        console.log(`Найдено ${tasks.length} выполненных задач`);
 
-        // Get or create the spreadsheet
+        // Получаем или создаем таблицу
         const { spreadsheetId, spreadsheet } = await prepareTasksSpreadsheet();
+        
+        // Создаем или получаем основной лист
+        const mainSheetName = "Выполненные креативы";
+        await googleSheets.addSheet(spreadsheetId, mainSheetName);
+        
+        // Получаем обновленную информацию о таблице, чтобы получить ID листа
+        const updatedSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+            spreadsheetId,
+            fields: 'sheets(properties(sheetId,title))',
+        });
+        
+        const mainSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === mainSheetName);
+        if (!mainSheet) {
+            throw new Error(`Не удалось создать или найти лист "${mainSheetName}"`);
+        }
+        
+        const mainSheetId = mainSheet.properties.sheetId;
+        console.log(`Используем лист: ${mainSheetName} (ID: ${mainSheetId})`);
         
         // Группируем задачи по креативщикам
         const tasksByCreator = tasks.reduce((acc, task) => {
@@ -116,99 +198,152 @@ const exportTasksDoneCsv = async () => {
             'Исполнитель'
         ];
 
-        // Check if "Выполненные креативы" section exists
-        const mainSheetName = "Выполненные креативы";
-
-        // Get list of all current sheets
-        const allSheetTitles = spreadsheet.data.sheets.map(s => s.properties.title);
-        console.log(`Все листы в таблице: ${JSON.stringify(allSheetTitles)}`);
-        
-        // Check if main sheet exists
-        let mainSheetId = 0;
-        const mainSheetExists = allSheetTitles.includes(mainSheetName);
-        
-        if (!mainSheetExists) {
-            // Create main sheet for completed tasks if it doesn't exist
-            console.log(`Создание основного листа "${mainSheetName}"...`);
-            await googleSheets.addSheet(spreadsheetId, mainSheetName);
-            
-            // Get updated spreadsheet to get the sheet ID
-            const updatedSpreadsheet = await googleSheets.sheets.spreadsheets.get({
-                spreadsheetId
-            });
-            
-            const mainSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === mainSheetName);
-            if (mainSheet) {
-                mainSheetId = mainSheet.properties.sheetId;
-            }
-        } else {
-            // Find existing main sheet ID
-            const mainSheet = spreadsheet.data.sheets.find(s => s.properties.title === mainSheetName);
-            if (mainSheet) {
-                mainSheetId = mainSheet.properties.sheetId;
-            }
-            console.log(`Лист "${mainSheetName}" уже существует, обновляем данные`);
-        }
-
-        // Write all tasks to the main sheet
+        // Подготавливаем данные для основного листа с валидацией
         const allTasksValues = [
             headers,
-            ...tasks.map(task => [
-                formatDate(task.createdAt),
-                task.name,
-                task.workType || 'Не указан',
-                task.points,
-                task.bonus,
-                task.CTR,
-                formatDate(task.expectedDate),
-                formatDate(task.completionDate),
-                task.buyer?.username || 'Не указан',
-                task.creator?.username || 'Не указан'
-            ])
+            ...tasks.map(task => {
+                try {
+                    return [
+                        formatDate(task.createdAt) || '',
+                        task.name?.toString() || 'Без названия',
+                        task.workType?.toString() || 'Не указан',
+                        task.points || 0,
+                        task.bonus || 0,
+                        task.CTR || 0,
+                        formatDate(task.expectedDate) || '',
+                        formatDate(task.completionDate) || '',
+                        task.buyer?.username?.toString() || 'Не указан',
+                        task.creator?.username?.toString() || 'Не указан'
+                    ];
+                } catch (error) {
+                    console.error('Ошибка при обработке задачи:', task._id, error);
+                    return [];
+                }
+            }).filter(row => row.length > 0) // Удаляем пустые строки
         ];
 
-        // Write data to the main sheet
-        await googleSheets.writeData(spreadsheetId, `${mainSheetName}!A1:J${allTasksValues.length}`, allTasksValues);
-        console.log(`Данные обновлены в листе "${mainSheetName}"`);
+        console.log(`Подготовлено ${allTasksValues.length - 1} строк для основного листа`);
 
-        // Для каждого креативщика обновляем или создаем отдельный лист
-        for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
-            // Создаем имя листа с префиксом
-            const creatorSheetName = `${mainSheetName} - ${creatorName}`;
-            
-            // Check if sheet already exists
-            const creatorSheetExists = allSheetTitles.includes(creatorSheetName);
-            
-            if (!creatorSheetExists) {
-                console.log(`Создание листа для креативщика "${creatorSheetName}"...`);
-                await googleSheets.addSheet(spreadsheetId, creatorSheetName);
-            } else {
-                console.log(`Лист "${creatorSheetName}" уже существует, обновляем данные`);
-            }
+        // Очищаем основной лист перед записью новых данных
+        await googleSheets.sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `${mainSheetName}!A:Z`,
+        });
 
-            // Подготавливаем данные
-            const values = [
-                headers,
-                ...creatorTasks.map(task => [
-                    formatDate(task.createdAt),
-                    task.name,
-                    task.workType || 'Не указан',
-                    task.points,
-                    task.bonus,
-                    task.CTR,
-                    formatDate(task.expectedDate),
-                    formatDate(task.completionDate),
-                    task.buyer?.username || 'Не указан',
-                    task.creator?.username || 'Не указан'
-                ])
-            ];
+        // Записываем данные в основной лист
+        await googleSheets.writeData(spreadsheetId, `${mainSheetName}!A1`, allTasksValues);
+        console.log(`Данные успешно записаны в лист "${mainSheetName}"`);
 
-            // Записываем данные
-            await googleSheets.writeData(spreadsheetId, `${creatorSheetName}!A1:J${values.length}`, values);
-            console.log(`Данные обновлены в листе "${creatorSheetName}"`);
+        // Форматируем заголовки (жирный шрифт) в основном листе
+        try {
+            await googleSheets.sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        repeatCell: {
+                            range: {
+                                sheetId: mainSheetId,
+                                startRowIndex: 0,
+                                endRowIndex: 1
+                            },
+                            cell: {
+                                userEnteredFormat: {
+                                    textFormat: {
+                                        bold: true
+                                    }
+                                }
+                            },
+                            fields: 'userEnteredFormat.textFormat.bold'
+                        }
+                    }]
+                }
+            });
+        } catch (formatError) {
+            console.warn('Не удалось применить форматирование к заголовкам:', formatError);
         }
 
-        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${mainSheetId}`;
+        // Для каждого креативщика создаем или обновляем отдельный лист
+        for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
+            // Создаем имя листа с префиксом (убираем недопустимые символы)
+            const safeCreatorName = creatorName.replace(/[\[\]\/\?]/g, '_');
+            const creatorSheetName = `${mainSheetName} - ${safeCreatorName}`;
+            
+            try {
+                // Создаем лист для креативщика
+                await googleSheets.addSheet(spreadsheetId, creatorSheetName);
+                
+                // Получаем ID созданного листа
+                const creatorSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+                    spreadsheetId,
+                    fields: 'sheets(properties(sheetId,title))',
+                });
+                
+                const creatorSheet = creatorSpreadsheet.data.sheets.find(s => s.properties.title === creatorSheetName);
+                if (!creatorSheet) {
+                    console.warn(`Не удалось получить ID листа для ${creatorName}, пропускаем`);
+                    continue;
+                }
+                
+                const creatorSheetId = creatorSheet.properties.sheetId;
+                
+                // Подготавливаем данные для листа креативщика с валидацией
+                const creatorValues = [
+                    headers,
+                    ...creatorTasks.map(task => {
+                        try {
+                            return [
+                                formatDate(task.createdAt) || '',
+                                task.name?.toString() || 'Без названия',
+                                task.workType?.toString() || 'Не указан',
+                                task.points || 0,
+                                task.bonus || 0,
+                                task.CTR || 0,
+                                formatDate(task.expectedDate) || '',
+                                formatDate(task.completionDate) || '',
+                                task.buyer?.username?.toString() || 'Не указан',
+                                task.creator?.username?.toString() || 'Не указан'
+                            ];
+                        } catch (error) {
+                            console.error('Ошибка при обработке задачи:', task._id, error);
+                            return [];
+                        }
+                    }).filter(row => row.length > 0)
+                ];
+                
+                // Записываем данные в лист креативщика
+                await googleSheets.writeData(spreadsheetId, `${creatorSheetName}!A1`, creatorValues);
+                
+                // Форматируем заголовки (жирный шрифт) в листе креативщика
+                await googleSheets.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId,
+                    requestBody: {
+                        requests: [{
+                            repeatCell: {
+                                range: {
+                                    sheetId: creatorSheetId,
+                                    startRowIndex: 0,
+                                    endRowIndex: 1
+                                },
+                                cell: {
+                                    userEnteredFormat: {
+                                        textFormat: {
+                                            bold: true
+                                        }
+                                    }
+                                },
+                                fields: 'userEnteredFormat.textFormat.bold'
+                            }
+                        }]
+                    }
+                });
+                
+                console.log(`Данные успешно записаны в лист "${creatorSheetName}"`);
+                
+            } catch (creatorError) {
+                console.error(`Ошибка при обработке креативщика ${creatorName}:`, creatorError);
+                continue; // Продолжаем с другим креативщиком в случае ошибки
+            }
+        }
     } catch (error) {
         throw new Error(`Ошибка при экспорте выполненных задач: ${error.message}`);
     }
@@ -216,21 +351,36 @@ const exportTasksDoneCsv = async () => {
 
 const exportAllTasksCsv = async () => {
     try {
+        console.log('Начало экспорта всех задач...');
+        
+        // Получаем все задачи
         const tasks = await Task.find({})
             .populate('buyer')
             .populate('creator')
             .sort({ state: 1, creator: 1, createdAt: 1 });
+            
+        console.log(`Найдено ${tasks.length} задач`);
 
-        // Get or create the spreadsheet
-        const { spreadsheetId, spreadsheet } = await prepareTasksSpreadsheet();
+        // Получаем или создаем таблицу
+        const { spreadsheetId } = await prepareTasksSpreadsheet();
         
-        // Check if "Все креативы" sheet exists, otherwise add it
+        // Создаем или получаем лист
         const sheetName = "Все креативы";
-        const existingSheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+        await googleSheets.addSheet(spreadsheetId, sheetName);
         
-        if (!existingSheet) {
-            await googleSheets.addSheet(spreadsheetId, sheetName);
+        // Получаем обновленную информацию о таблице, чтобы получить ID листа
+        const updatedSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+            spreadsheetId,
+            fields: 'sheets(properties(sheetId,title))',
+        });
+        
+        const sheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+        if (!sheet) {
+            throw new Error(`Не удалось создать или найти лист "${sheetName}"`);
         }
+        
+        const sheetId = sheet.properties.sheetId;
+        console.log(`Используем лист: ${sheetName} (ID: ${sheetId})`);
         
         // Заголовки для таблицы
         const headers = [
@@ -247,33 +397,116 @@ const exportAllTasksCsv = async () => {
             'Исполнитель'
         ];
 
-        // Подготавливаем данные
+        // Функция для получения читаемого статуса
+        const getStatusText = (state) => {
+            switch (state) {
+                case 'active': return 'Активно';
+                case 'progress': return 'В работе';
+                case 'wait': return 'На проверке';
+                case 'done': return 'Выполнено';
+                case 'failed': return 'Отклонено';
+                case 'canceled': return 'Отменено';
+                default: return state || 'Неизвестно';
+            }
+        };
+
+        // Подготавливаем данные с валидацией
         const values = [
             headers,
-            ...tasks.map(task => [
-                task.state === 'active' ? 'Активно' : 
-                task.state === 'progress' ? 'В работе' : 
-                task.state === 'wait' ? 'На проверке' : 
-                task.state === 'done' ? 'Выполнено' : 
-                task.state === 'failed' ? 'Отклонено' : 
-                task.state === 'canceled' ? 'Отменено' : task.state,
-                formatDate(task.createdAt),
-                task.name,
-                task.workType || 'Не указан',
-                task.points,
-                task.bonus,
-                task.CTR,
-                formatDate(task.expectedDate),
-                formatDate(task.completionDate),
-                task.buyer?.username || 'Не указан',
-                task.creator?.username || 'Не указан'
-            ])
+            ...tasks.map(task => {
+                try {
+                    return [
+                        getStatusText(task.state),
+                        formatDate(task.createdAt) || '',
+                        task.name?.toString() || 'Без названия',
+                        task.workType?.toString() || 'Не указан',
+                        task.points || 0,
+                        task.bonus || 0,
+                        task.CTR || 0,
+                        formatDate(task.expectedDate) || '',
+                        formatDate(task.completionDate) || '',
+                        task.buyer?.username?.toString() || 'Не указан',
+                        task.creator?.username?.toString() || 'Не указан'
+                    ];
+                } catch (error) {
+                    console.error('Ошибка при обработке задачи:', task._id, error);
+                    return [];
+                }
+            }).filter(row => row.length > 0) // Удаляем пустые строки
         ];
 
-        // Записываем данные
-        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1:K${values.length}`, values);
+        console.log(`Подготовлено ${values.length - 1} строк для записи`);
 
-        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${existingSheet?.properties?.sheetId || '0'}`;
+        // Очищаем лист перед записью новых данных
+        await googleSheets.sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `${sheetName}!A:Z`,
+        });
+
+        // Записываем данные
+        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+        console.log('Данные успешно записаны');
+
+        // Форматируем заголовки (жирный шрифт)
+        try {
+            // Автоматическое выравнивание ширины столбцов
+            await googleSheets.sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [
+                        // Жирные заголовки
+                        {
+                            repeatCell: {
+                                range: {
+                                    sheetId,
+                                    startRowIndex: 0,
+                                    endRowIndex: 1
+                                },
+                                cell: {
+                                    userEnteredFormat: {
+                                        textFormat: { bold: true },
+                                        horizontalAlignment: 'CENTER',
+                                        backgroundColor: {
+                                            red: 0.85,
+                                            green: 0.92,
+                                            blue: 0.83
+                                        }
+                                    }
+                                },
+                                fields: 'userEnteredFormat(textFormat,horizontalAlignment,backgroundColor)'
+                            }
+                        },
+                        // Заморозка первой строки
+                        {
+                            updateSheetProperties: {
+                                properties: {
+                                    sheetId,
+                                    gridProperties: {
+                                        frozenRowCount: 1
+                                    }
+                                },
+                                fields: 'gridProperties.frozenRowCount'
+                            }
+                        },
+                        // Автоматическое выравнивание ширины столбцов
+                        {
+                            autoResizeDimensions: {
+                                dimensions: {
+                                    sheetId,
+                                    dimension: 'COLUMNS',
+                                    startIndex: 0,
+                                    endIndex: headers.length
+                                }
+                            }
+                        }
+                    ]
+                }
+            });
+        } catch (formatError) {
+            console.warn('Не удалось применить форматирование к таблице:', formatError);
+        }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте всех задач: ${error.message}`);
     }

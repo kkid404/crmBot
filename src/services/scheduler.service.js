@@ -1,4 +1,6 @@
 const cron = require('node-cron');
+const tableUpdaterService = require('./tableUpdater.service');
+// Keep these imports for backward compatibility
 const taskController = require('../controllers/task.controller');
 const employeeScheduleController = require('../controllers/employee_schedule.controller');
 
@@ -36,69 +38,20 @@ class SchedulerService {
      * @returns {Promise<Object>} Object containing success status and links to all updated sheets
      */
     async updateAllSheetsNow() {
+        console.log('Starting update of all Google Sheets...');
+        
         try {
-            console.log('Starting update of all Google Sheets...');
+            // Use the new tableUpdater service that ensures proper clearing before updating
+            console.log('Using tableUpdater service to ensure tables are properly cleared before updating...');
+            const result = await tableUpdaterService.updateAllTables();
             
-            const links = {
-                taskSheets: [],
-                schedule: null
-            };
-
-            // Update task sheets
-            try {
-                console.log('Updating tasks in progress spreadsheet...');
-                const tasksInProgressUrl = await taskController.exportTasksInProgressCsv();
-                links.taskSheets.push({
-                    name: 'Креативы в работе',
-                    url: tasksInProgressUrl
-                });
-                console.log('Tasks in progress spreadsheet updated');
-            } catch (error) {
-                console.error('Error updating tasks in progress spreadsheet:', error.message);
+            if (result.success) {
+                console.log('All Google Sheets updated successfully with proper clearing');
+            } else {
+                console.error('Error occurred during table updates:', result.error);
             }
-
-            try {
-                console.log('Updating completed tasks spreadsheet...');
-                const completedTasksUrl = await taskController.exportTasksDoneCsv();
-                links.taskSheets.push({
-                    name: 'Выполненные креативы',
-                    url: completedTasksUrl
-                });
-                console.log('Completed tasks spreadsheet updated');
-            } catch (error) {
-                console.error('Error updating completed tasks spreadsheet:', error.message);
-            }
-
-            try {
-                console.log('Updating all tasks spreadsheet...');
-                const allTasksUrl = await taskController.exportAllTasksCsv();
-                links.taskSheets.push({
-                    name: 'Все креативы',
-                    url: allTasksUrl
-                });
-                console.log('All tasks spreadsheet updated');
-            } catch (error) {
-                console.error('Error updating all tasks spreadsheet:', error.message);
-            }
-
-            // Update employee schedule
-            try {
-                console.log('Updating employee schedule spreadsheet...');
-                const scheduleUrl = await employeeScheduleController.exportEmployeeScheduleToGoogleSheets();
-                links.schedule = {
-                    name: 'Расписание сотрудников',
-                    url: scheduleUrl
-                };
-                console.log('Employee schedule spreadsheet updated');
-            } catch (error) {
-                console.error('Error updating employee schedule spreadsheet:', error.message);
-            }
-
-            console.log('All Google Sheets updated successfully');
-            return {
-                success: true,
-                links
-            };
+            
+            return result;
         } catch (error) {
             console.error('Error updating Google Sheets:', error.message);
             return {

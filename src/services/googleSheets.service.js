@@ -202,6 +202,74 @@ class GoogleSheetsService {
             console.error('Ошибка при удалении листа:', error);
         }
     }
+
+    /**
+     * Completely clear a sheet's content and formatting
+     * @param {string} spreadsheetId - ID of the spreadsheet
+     * @param {string} sheetName - Name of the sheet to clear
+     * @returns {Promise<void>}
+     */
+    async clearSheet(spreadsheetId, sheetName) {
+        try {
+            console.log(`Полная очистка листа "${sheetName}"...`);
+            
+            // First get the sheet ID
+            const spreadsheet = await this.sheets.spreadsheets.get({
+                spreadsheetId,
+                fields: 'sheets(properties(sheetId,title))'
+            });
+            
+            const sheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+            if (!sheet) {
+                console.warn(`Лист "${sheetName}" не найден, пропускаем очистку`);
+                return;
+            }
+            
+            const sheetId = sheet.properties.sheetId;
+            
+            // Clear all cell values
+            await this.sheets.spreadsheets.values.clear({
+                spreadsheetId,
+                range: `${sheetName}!A1:Z1000`,
+            });
+            
+            // Reset all formatting and other properties
+            await this.sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [
+                        // Clear all formatting
+                        {
+                            updateCells: {
+                                range: {
+                                    sheetId: sheetId,
+                                    startRowIndex: 0,
+                                    startColumnIndex: 0
+                                },
+                                fields: 'userEnteredFormat'
+                            }
+                        },
+                        // Reset column widths to default
+                        {
+                            autoResizeDimensions: {
+                                dimensions: {
+                                    sheetId: sheetId,
+                                    dimension: 'COLUMNS',
+                                    startIndex: 0,
+                                    endIndex: 26
+                                }
+                            }
+                        }
+                    ]
+                }
+            });
+            
+            console.log(`Лист "${sheetName}" успешно очищен`);
+        } catch (error) {
+            console.error(`Ошибка при очистке листа "${sheetName}":`, error);
+            throw new Error(`Ошибка при очистке листа: ${error.message}`);
+        }
+    }
 }
 
-module.exports = new GoogleSheetsService(); 
+module.exports = new GoogleSheetsService();
