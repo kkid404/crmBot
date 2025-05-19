@@ -177,6 +177,72 @@ class TaskService {
         }
     }
 
+    /**
+     * Метод для автоматического выбора задачи с чередованием баеров
+     * @param {string} creatorId - ID креативщика, который берет задачу
+     * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач
+     */
+    static async getAutoAssignedTask(creatorId) {
+        try {
+            // Получаем все активные задачи
+            const activeTasks = await Task.find({ state: 'active' })
+                .populate('buyer')
+                .populate('creator');
+            
+            if (!activeTasks.length) {
+                return null; // Нет активных задач
+            }
+            
+            // Группируем задачи по баерам
+            const tasksByBuyer = {};
+            
+            activeTasks.forEach(task => {
+                const buyerId = task.buyer._id.toString();
+                if (!tasksByBuyer[buyerId]) {
+                    tasksByBuyer[buyerId] = [];
+                }
+                tasksByBuyer[buyerId].push(task);
+            });
+            
+            // Получаем список баеров с активными задачами
+            const buyerIds = Object.keys(tasksByBuyer);
+            
+            if (!buyerIds.length) {
+                return null; // Нет баеров с активными задачами
+            }
+            
+            // Получаем последние взятые задачи этого креативщика в статусе 'progress'
+            const recentTasks = await Task.find({
+                creator: creatorId,
+                state: 'progress'
+            })
+            .populate('buyer')
+            .sort({ updatedAt: -1 }) // Сортируем по дате обновления (сначала самые новые)
+            .limit(5); // Берем последние 5 задач
+            
+            // Создаем массив с ID последних баеров
+            const recentBuyerIds = recentTasks.map(task => task.buyer._id.toString());
+            
+            // Находим баеров, задачи которых не брались в последнее время
+            const priorityBuyerIds = buyerIds.filter(buyerId => !recentBuyerIds.includes(buyerId));
+            
+            // Если есть баеры, задачи которых давно не брались, выбираем их в первую очередь
+            const selectedBuyerId = priorityBuyerIds.length > 0 
+                ? priorityBuyerIds[0] // Берем первого баера из приоритетных
+                : buyerIds.find(id => !recentBuyerIds[0] === id) || buyerIds[0]; // Или берем баера, отличного от последнего, или первого из списка
+            
+            // Выбираем самую старую задачу выбранного баера
+            const buyerTasks = tasksByBuyer[selectedBuyerId];
+            buyerTasks.sort((a, b) => a.createdAt - b.createdAt); // Сортируем по дате создания (сначала самые старые)
+            
+            // Возвращаем выбранную задачу
+            return buyerTasks[0];
+        } catch (error) {
+            console.error('Ошибка при автоматическом выборе задачи:', error);
+            return null;
+        }
+    }
+    
     // Метод для установки бонуса по умолчанию для задач без бонуса
     static async setDefaultBonus(defaultBonus = 500, timeFrame = 30) {
         try {

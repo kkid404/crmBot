@@ -9,7 +9,13 @@ const tasks = async () => {
     const inlineKeyboard = tasks.map(task => {
         return [Markup.button.callback(task.name, task._id.toString())]; // Оборачиваем каждую кнопку в массив
     });
+    
+    // Добавляем кнопку для автоматического выбора ТЗ
+    inlineKeyboard.push([Markup.button.callback('🔄 Автоматически выбрать ТЗ', 'auto_assign')]);
+    
+    // Добавляем кнопку выхода
     inlineKeyboard.push([Markup.button.callback('Выйти', 'quit')]);
+    
     // Возвращаем inline-клавиатуру
     return Markup.inlineKeyboard(inlineKeyboard);
 };
