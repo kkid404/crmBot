@@ -1,17 +1,46 @@
 const taskService = require('../services/task.service');
 const { Markup } = require('telegraf');
 
-// Функция для создания inline клавиатуры на основе данных задач
-const myTasks = async (id, role = '', state) => {
-    const tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
+// Константы для пагинации
+const TASKS_PER_PAGE = 5; // Максимальное количество задач на странице
 
-    // Создаем массив кнопок для задач
-    const inlineKeyboard = tasks.map(task => {
+// Функция для создания inline клавиатуры на основе данных задач с пагинацией
+const myTasks = async (id, role = '', state, page = 0) => {
+    const tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
+    
+    // Вычисляем общее количество страниц
+    const totalPages = Math.ceil(tasks.length / TASKS_PER_PAGE);
+    // Получаем задачи для текущей страницы
+    const startIndex = page * TASKS_PER_PAGE;
+    const tasksForPage = tasks.slice(startIndex, startIndex + TASKS_PER_PAGE);
+
+    // Создаем массив кнопок для задач текущей страницы
+    const inlineKeyboard = tasksForPage.map(task => {
         // Add 💰 emoji for tasks with bonus
         const bonusIndicator = task.bonus ? '💰 ' : '';
-        return [Markup.button.callback(`${bonusIndicator}${task.name}`, task._id.toString())]; // Оборачиваем каждую кнопку в массив
+        // Ограничиваем длину названия задачи
+        const taskName = task.name.length > 30 ? task.name.substring(0, 27) + '...' : task.name;
+        return [Markup.button.callback(`${bonusIndicator}${taskName}`, task._id.toString())];
     });
 
+    // Добавляем кнопки навигации, если есть несколько страниц
+    if (totalPages > 1) {
+        const navigationButtons = [];
+        
+        if (page > 0) {
+            navigationButtons.push(Markup.button.callback('⬅️ Назад', `page_${page-1}`));
+        }
+        
+        navigationButtons.push(Markup.button.callback(`${page+1}/${totalPages}`, 'current_page'));
+        
+        if (page < totalPages - 1) {
+            navigationButtons.push(Markup.button.callback('Вперед ➡️', `page_${page+1}`));
+        }
+        
+        inlineKeyboard.push(navigationButtons);
+    }
+
+    // Добавляем кнопку выхода
     inlineKeyboard.push([Markup.button.callback('Выйти', 'quit')]);
 
     // Возвращаем inline-клавиатуру
@@ -19,8 +48,8 @@ const myTasks = async (id, role = '', state) => {
 };
 
 // Функция для создания inline клавиатуры для креативщиков с подписями в зависимости от статуса
-const creatorTasks = async (id) => {
-    const tasks = await taskService.getUserTasks(id, 'creator');
+const creatorTasks = async (id, state = '', page = 0) => {
+    const tasks = await taskService.getUserTasks(id, 'creator', state);
 
     // Статусы с соответствующими подписями
     const stateLabels = {
@@ -31,18 +60,44 @@ const creatorTasks = async (id) => {
         'canceled': '🚫 Отменено'
     };
 
-    // Создаем массив кнопок для задач с подписями в зависимости от статуса
-    const inlineKeyboard = tasks.map(task => {
+    // Вычисляем общее количество страниц
+    const totalPages = Math.ceil(tasks.length / TASKS_PER_PAGE);
+    // Получаем задачи для текущей страницы
+    const startIndex = page * TASKS_PER_PAGE;
+    const tasksForPage = tasks.slice(startIndex, startIndex + TASKS_PER_PAGE);
+
+    // Создаем массив кнопок для задач текущей страницы с подписями в зависимости от статуса
+    const inlineKeyboard = tasksForPage.map(task => {
         // Получаем подпись для статуса или используем сам статус, если нет соответствия
         const stateLabel = stateLabels[task.state] || task.state;
         
         // Add 💰 emoji for tasks with bonus
         const bonusIndicator = task.bonus ? '💰 ' : '';
         
-        const buttonText = `${bonusIndicator}${task.name} (${stateLabel})`;
+        // Ограничиваем длину названия задачи
+        const taskName = task.name.length > 25 ? task.name.substring(0, 22) + '...' : task.name;
+        const buttonText = `${bonusIndicator}${taskName} (${stateLabel})`;
         return [Markup.button.callback(buttonText, task._id.toString())];
     });
 
+    // Добавляем кнопки навигации, если есть несколько страниц
+    if (totalPages > 1) {
+        const navigationButtons = [];
+        
+        if (page > 0) {
+            navigationButtons.push(Markup.button.callback('⬅️ Назад', `page_${page-1}`));
+        }
+        
+        navigationButtons.push(Markup.button.callback(`${page+1}/${totalPages}`, 'current_page'));
+        
+        if (page < totalPages - 1) {
+            navigationButtons.push(Markup.button.callback('Вперед ➡️', `page_${page+1}`));
+        }
+        
+        inlineKeyboard.push(navigationButtons);
+    }
+
+    // Добавляем кнопку выхода
     inlineKeyboard.push([Markup.button.callback('Выйти', 'quit')]);
 
     // Возвращаем inline-клавиатуру

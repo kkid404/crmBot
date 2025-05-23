@@ -14,7 +14,9 @@ getMyTtCreatorScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
     ctx.session.user = user;
-    const keyboard = await creatorTasks(user._id,  "progress");
+    // Initialize page in session if not exists
+    ctx.session.currentPage = 0;
+    const keyboard = await creatorTasks(user._id, "progress", ctx.session.currentPage);
     await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
 });
 
@@ -36,8 +38,11 @@ getMyTtCreatorScene.action("back", async (ctx) => {
         }
     }
 
+    // Сбрасываем страницу при возврате к списку задач
+    ctx.session.currentPage = 0;
+    
     // Возвращаем информацию о задаче и обновляем клавиатуру
-    const keyboard = await creatorTasks(ctx.session.user._id,  "progress");
+    const keyboard = await creatorTasks(ctx.session.user._id, "progress", ctx.session.currentPage);
     await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
     
     // Очищаем выбранную задачу
@@ -56,6 +61,26 @@ getMyTtCreatorScene.action("quit", async (ctx) => {
     });
     ctx.session = {};
     ctx.scene.leave();
+});
+
+// Обработчик для кнопок пагинации
+getMyTtCreatorScene.action(/^page_\d+$/, async (ctx) => {
+    // Извлекаем номер страницы из callback_data
+    const pageNumber = parseInt(ctx.callbackQuery.data.split('_')[1]);
+    
+    // Сохраняем текущую страницу в сессии
+    ctx.session.currentPage = pageNumber;
+    
+    // Получаем обновленную клавиатуру с новой страницей
+    const keyboard = await creatorTasks(ctx.session.user._id, "progress", pageNumber);
+    
+    // Обновляем сообщение с новой клавиатурой
+    await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+});
+
+// Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
+getMyTtCreatorScene.action('current_page', async (ctx) => {
+    await ctx.answerCbQuery('Текущая страница');
 });
 
 
