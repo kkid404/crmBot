@@ -49,7 +49,7 @@ const myTasks = async (id, role = '', state, page = 0) => {
 
 // Функция для создания inline клавиатуры для креативщиков с подписями в зависимости от статуса
 const creatorTasks = async (id, state = '', page = 0) => {
-    const tasks = await taskService.getUserTasks(id, 'creator', state);
+    const tasks = await taskService.getUserTasks(id, 'creator');
 
     // Статусы с соответствующими подписями
     const stateLabels = {
