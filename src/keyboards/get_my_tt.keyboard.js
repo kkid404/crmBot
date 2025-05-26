@@ -6,7 +6,10 @@ const TASKS_PER_PAGE = 5; // Максимальное количество за�
 
 // Функция для создания inline клавиатуры на основе данных задач с пагинацией
 const myTasks = async (id, role = '', state, page = 0) => {
-    const tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
+    let tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
+    
+    // Сортируем задачи по дате создания (сначала новые)
+    tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     
     // Вычисляем общее количество страниц
     const totalPages = Math.ceil(tasks.length / TASKS_PER_PAGE);
@@ -49,7 +52,10 @@ const myTasks = async (id, role = '', state, page = 0) => {
 
 // Функция для создания inline клавиатуры для креативщиков с подписями в зависимости от статуса
 const creatorTasks = async (id, state = '', page = 0) => {
-    const tasks = await taskService.getUserTasks(id, 'creator');
+    let tasks = await taskService.getUserTasks(id, 'creator');
+    
+    // Сортируем задачи по дате создания (сначала новые)
+    tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     // Статусы с соответствующими подписями
     const stateLabels = {
