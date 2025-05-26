@@ -54,7 +54,10 @@ async function handleEnter(ctx) {
     const user = await userService.findUserByTelegramId(tgId).catch(handleError);
     if (!user) throw new Error("User not found");
     
-    const keyboard = await myTasks(user._id, user.position, "progress");
+    // Initialize page in session if not exists
+    ctx.session.currentPage = 0;
+    
+    const keyboard = await myTasks(user._id, user.position, "progress", ctx.session.currentPage);
     await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
 }
 
@@ -75,7 +78,10 @@ async function handleBack(ctx) {
             return;
         }
         
-        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, "creator", "progress"));
+        // Сбрасываем страницу при возврате к списку задач
+        ctx.session.currentPage = 0;
+        
+        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, "creator", "progress", ctx.session.currentPage));
     } catch (error) {
         console.error("Ошибка при возврате к списку задач:", error);
         // Если не получилось редактировать сообщение, отправляем новое
@@ -83,7 +89,7 @@ async function handleBack(ctx) {
             const tgId = String(ctx.from.id);
             const user = await userService.findUserByTelegramId(tgId);
             if (user) {
-                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, "creator", "progress"));
+                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, "creator", "progress", ctx.session.currentPage || 0));
             }
         } catch (innerError) {
             console.error("Не удалось отправить новое сообщение:", innerError);
@@ -325,6 +331,40 @@ function handleError(error) {
 ttToModerateScene.enter(handleEnter);
 ttToModerateScene.action("back", handleBack);
 ttToModerateScene.action("quit", handleQuit);
+
+// Обработчик для кнопок пагинации
+ttToModerateScene.action(/^page_\d+$/, async (ctx) => {
+    try {
+        // Извлекаем номер страницы из callback_data
+        const pageNumber = parseInt(ctx.callbackQuery.data.split('_')[1]);
+        
+        // Сохраняем текущую страницу в сессии
+        ctx.session.currentPage = pageNumber;
+        
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        if (!user) {
+            await ctx.answerCbQuery('Пользователь не найден');
+            return;
+        }
+        
+        // Получаем обновленную клавиатуру с новой страницей
+        const keyboard = await myTasks(user._id, user.position, "progress", pageNumber);
+        
+        // Обновляем сообщение с новой клавиатурой
+        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in pagination action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при переключении страницы');
+    }
+});
+
+// Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
+ttToModerateScene.action('current_page', async (ctx) => {
+    await ctx.answerCbQuery('Текущая страница');
+});
+
 ttToModerateScene.action("done", handleDone);
 ttToModerateScene.action("add_more", async (ctx) => {
     await ctx.reply("Отправьте следующий файл (фото или видео).");
@@ -385,12 +425,12 @@ ${exampleLine}
             }
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
-            const keyboard = await myTasks(user._id, user.position, "progress");
+            const keyboard = await myTasks(user._id, user.position, "progress", ctx.session.currentPage || 0);
             await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
         }
     } else {
         await ctx.reply("Вы находитесь в режиме отправки задачи на модерацию. Пожалуйста, выберите задачу из списка:");
-        const keyboard = await myTasks(user._id, user.position, "progress");
+        const keyboard = await myTasks(user._id, user.position, "progress", ctx.session.currentPage || 0);
         await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     }
 });

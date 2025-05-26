@@ -175,6 +175,9 @@ getTaskToModerateScene.enter(async (ctx) => {
             return;
         }
         
+        // Initialize page in session if not exists
+        ctx.session.currentPage = 0;
+        
         // Save previous task ID if it exists
         const preselectedTaskId = ctx.session.selectedTask;
         
@@ -281,7 +284,7 @@ getTaskToModerateScene.enter(async (ctx) => {
         }
         
         // If no preselected task or task not found, show the task selection menu
-        const keyboard = await myTasks(user._id, '', "wait");
+        const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage);
         await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {
         console.error('Error in getTaskToModerateScene.enter:', error);
@@ -401,6 +404,39 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         console.error('Error in task selection:', error);
         await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
     }
+});
+
+// Обработчик для кнопок пагинации
+getTaskToModerateScene.action(/^page_\d+$/, async (ctx) => {
+    try {
+        // Извлекаем номер страницы из callback_data
+        const pageNumber = parseInt(ctx.callbackQuery.data.split('_')[1]);
+        
+        // Сохраняем текущую страницу в сессии
+        ctx.session.currentPage = pageNumber;
+        
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        if (!user) {
+            await ctx.answerCbQuery('Пользователь не найден');
+            return;
+        }
+        
+        // Получаем обновленную клавиатуру с новой страницей
+        const keyboard = await myTasks(user._id, '', "wait", pageNumber);
+        
+        // Обновляем сообщение с новой клавиатурой
+        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in pagination action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при переключении страницы');
+    }
+});
+
+// Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
+getTaskToModerateScene.action('current_page', async (ctx) => {
+    await ctx.answerCbQuery('Текущая страница');
 });
 
 // Обработчик нажатия кнопки "✅ Принять" (done)
@@ -565,12 +601,12 @@ getTaskToModerateScene.on('text', async (ctx) => {
             await ctx.reply(taskInfo, moderate(task));
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
-            const keyboard = await myTasks(user._id, '', "wait");
+            const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage || 0);
             await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
         }
     } else {
         await ctx.reply("Вы находитесь в режиме модерации задач. Пожалуйста, выберите задачу из списка:");
-        const keyboard = await myTasks(user._id, '', "wait");
+        const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage || 0);
         await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     }
 });
@@ -812,12 +848,12 @@ getTaskToModerateScene.action('back', async (ctx) => {
         // Если сообщение с описанием задачи было отправлено, редактируем его
         if (ctx.session.taskMessageId) {
             try {
-                await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
+                await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait", ctx.session.currentPage || 0));
                 delete ctx.session.taskMessageId; // Очистить идентификатор сообщения после редактирования
             } catch (error) {
                 console.error('Ошибка при редактировании сообщения:', error);
                 // Если не удалось отредактировать, отправляем новое сообщение
-                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
+                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait", ctx.session.currentPage || 0));
             }
         } else {
             // Если нет сохраненного ID сообщения, просто отправляем новое

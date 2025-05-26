@@ -53,7 +53,9 @@ const watchReadyTzScene = new BaseScene('watchReadyTzScene');
 watchReadyTzScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
-    await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
+    // Initialize page in session if not exists
+    ctx.session.currentPage = 0;
+    await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
 });
 
 // Обработчик для кнопки "show_example"
@@ -318,13 +320,18 @@ watchReadyTzScene.action('back', async (ctx) => {
             ctx.session.mediaMessageIds = [];
         }
 
-        // Редактируем сообщение, чтобы показать список заданий
-        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
-
+        // Сбрасываем страницу при возврате к списку задач
+        ctx.session.currentPage = 0;
+        
+        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
+        
+        // Очищаем выбранную задачу
+        ctx.session.selectedTask = null;
+        
         await ctx.answerCbQuery();
     } catch (error) {
-        console.error('Error in moderate "back" action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при переходе назад');
+        console.error('Error in "back" action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при возврате к списку задач');
     }
 });
 
@@ -346,6 +353,39 @@ watchReadyTzScene.action('quit', async (ctx) => {
     );
     ctx.session = {};
     ctx.scene.leave();
+});
+
+// Обработчик для кнопок пагинации
+watchReadyTzScene.action(/^page_\d+$/, async (ctx) => {
+    try {
+        // Извлекаем номер страницы из callback_data
+        const pageNumber = parseInt(ctx.callbackQuery.data.split('_')[1]);
+        
+        // Сохраняем текущую страницу в сессии
+        ctx.session.currentPage = pageNumber;
+        
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        if (!user) {
+            await ctx.answerCbQuery('Пользователь не найден');
+            return;
+        }
+        
+        // Получаем обновленную клавиатуру с новой страницей
+        const keyboard = await myTasks(user._id, user.position, "done", pageNumber);
+        
+        // Обновляем сообщение с новой клавиатурой
+        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in pagination action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при переключении страницы');
+    }
+});
+
+// Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
+watchReadyTzScene.action('current_page', async (ctx) => {
+    await ctx.answerCbQuery('Текущая страница');
 });
 
 
@@ -950,7 +990,7 @@ ${rejectionMessage}
             const tgId = String(ctx.from.id);
             const user = await userService.findUserByTelegramId(tgId);
             if (user) {
-                await ctx.reply("Выберите задачу из списка:", await myTasks(user._id, user.position, "done"));
+                await ctx.reply("Выберите задачу из списка:", await myTasks(user._id, user.position, "done", ctx.session.currentPage || 0));
             } else {
                 await ctx.reply("Не удалось определить текущий шаг. Пожалуйста, вернитесь в главное меню.", await start(ctx.from.id));
             }
