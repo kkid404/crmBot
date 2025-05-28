@@ -258,12 +258,15 @@ class TaskService {
                     bonus: null,
                     completionDate: { $lt: cutoffDate }
                 },
-                { $set: { bonus: defaultBonus } }
+                { $set: { 
+                    bonus: defaultBonus,
+                    isPenaltyBonus: true 
+                }}
             );
             
             return {
                 success: true,
-                message: `Бонус ${defaultBonus} установлен для ${result.modifiedCount} задач`,
+                message: `Штрафной бонус ${defaultBonus} установлен для ${result.modifiedCount} задач`,
                 modifiedCount: result.modifiedCount,
                 matchedCount: result.matchedCount
             };

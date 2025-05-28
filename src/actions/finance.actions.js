@@ -130,9 +130,16 @@ const actions = bot => {
   bot.action('fin_custom_period', handleCustomPeriod);
   
   // Обработчик ввода месяца и года
-  bot.on('text', async (ctx) => {
+  bot.on('text', async (ctx, next) => {
+    console.log('[FINANCE HANDLER] Received text message:', ctx.message.text);
+    console.log('[FINANCE HANDLER] Finance state:', {
+      financeState: ctx.session?.financeState,
+      financeMonth: ctx.session?.financeMonth
+    });
+    
     // Проверяем, находимся ли в режиме ожидания ввода для финансового отчёта
     if (ctx.session?.financeState === 'waiting_month') {
+      console.log('[FINANCE HANDLER] Processing month input');
       const month = parseInt(ctx.message.text);
       
       if (isNaN(month) || month < 1 || month > 12) {
@@ -149,6 +156,7 @@ const actions = bot => {
     }
     
     if (ctx.session?.financeState === 'waiting_year') {
+      console.log('[FINANCE HANDLER] Processing year input');
       const year = parseInt(ctx.message.text);
       const currentYear = new Date().getFullYear();
       
@@ -168,7 +176,11 @@ const actions = bot => {
       await handleGenerateForPeriod(ctx, month, year);
       return;
     }
-  }, (ctx, next) => next());
+    
+    // Если мы не обрабатываем сообщение, передаем управление следующему обработчику
+    console.log('[FINANCE HANDLER] Not handling this message, passing to next handler');
+    return next();
+  });
 };
 
 module.exports = { actions };

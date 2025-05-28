@@ -20,6 +20,7 @@ const taskSchema = new Schema({
     completionDate: { type: Date, default: null },
     CTR: { type: Number, default: null }, 
     bonus: { type: Number, default: null },
+    isPenaltyBonus: { type: Boolean, default: false },
     version: { type: Number, default: 1 },
     result: { type: [String], default: [] },
     workType: { type: String, default: null },

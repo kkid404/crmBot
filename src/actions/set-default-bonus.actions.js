@@ -5,6 +5,28 @@ const { Markup } = require('telegraf');
  * Action handlers for setting default bonus
  */
 const actions = (bot) => {
+    // Функция для отображения меню установки бонуса
+    const showBonusMenu = async (ctx) => {
+        // Расчет даты отсечения на основе периода
+        const timeFrame = ctx.session.bonusPeriod || 30;
+        const defaultBonus = ctx.session.defaultBonus || 500;
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - timeFrame);
+        
+        // Форматирование даты как ДД.ММ.ГГГГ
+        const formattedDate = cutoffDate.toLocaleDateString('ru-RU');
+        
+        // Показываем подтверждение с указанной датой и суммой бонуса
+        await ctx.reply(`Установить штрафной бонус ${defaultBonus} для всех выполненных заданий без бонуса до ${formattedDate} и далее?`, 
+            Markup.inlineKeyboard([
+                [Markup.button.callback(`✅ Да, установить штрафной бонус ${defaultBonus}`, 'set_default_bonus')],
+                [Markup.button.callback('💰 Изменить сумму бонуса', 'change_bonus_amount')],
+                [Markup.button.callback('⏱️ Изменить период (дней)', 'change_period')],
+                [Markup.button.callback('❌ Отмена', 'cancel_bonus')]
+            ])
+        );
+    };
+
     // Handler for "Set default bonus" button
     bot.action('set_default_bonus', async (ctx) => {
         try {
@@ -12,6 +34,7 @@ const actions = (bot) => {
             
             // Calculate the cutoff date based on the period
             const timeFrame = ctx.session.bonusPeriod || 30;
+            const defaultBonus = ctx.session.defaultBonus || 500;
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - timeFrame);
             
@@ -19,10 +42,7 @@ const actions = (bot) => {
             const formattedDate = cutoffDate.toLocaleDateString('ru-RU');
             
             // Show processing message with the specific date
-            const message = await ctx.reply(`🔄 Устанавливаем бонус 500 для всех заданий без бонуса до ${formattedDate} и далее...`);
-            
-            // Default values
-            const defaultBonus = 500;
+            const message = await ctx.reply(`🔄 Устанавливаем штрафной бонус ${defaultBonus} для всех заданий без бонуса до ${formattedDate} и далее...`);
             
             // Call the service to set default bonus
             const result = await taskService.setDefaultBonus(defaultBonus, timeFrame);
@@ -32,7 +52,7 @@ const actions = (bot) => {
                     ctx.chat.id, 
                     message.message_id, 
                     null, 
-                    `✅ ${result.message}\n\nНайдено заданий: ${result.matchedCount}\nОбновлено заданий: ${result.modifiedCount}`
+                    `✅ ${result.message}\n\nНайдено заданий: ${result.matchedCount}\nОбновлено заданий со штрафным бонусом: ${result.modifiedCount}`
                 );
             } else {
                 await ctx.telegram.editMessageText(
@@ -58,10 +78,29 @@ const actions = (bot) => {
             
             // Set state to wait for period input
             ctx.session.waitingForBonusPeriod = true;
+            ctx.session.waitingForBonusAmount = false;
             
         } catch (error) {
             console.error('Error in change_period action:', error);
             await ctx.reply('❌ Произошла ошибка при изменении периода.');
+        }
+    });
+
+    // Handler for "Change bonus amount" button
+    bot.action('change_bonus_amount', async (ctx) => {
+        try {
+            await ctx.answerCbQuery();
+            
+            // Ask for new bonus amount
+            await ctx.reply('Введите сумму штрафного бонуса (например, 500):');
+            
+            // Set state to wait for bonus amount input
+            ctx.session.waitingForBonusAmount = true;
+            ctx.session.waitingForBonusPeriod = false;
+            
+        } catch (error) {
+            console.error('Error in change_bonus_amount action:', error);
+            await ctx.reply('❌ Произошла ошибка при изменении суммы бонуса.');
         }
     });
 
@@ -76,10 +115,25 @@ const actions = (bot) => {
         }
     });
 
-    // Handler for text input when waiting for period
+    // Инициализация команды setbonus
+    bot.command('setbonus', async (ctx) => {
+        // Показываем меню бонуса
+        await showBonusMenu(ctx);
+    });
+
+    // Обработчик для текстовых сообщений - с более высоким приоритетом
     bot.on('text', async (ctx, next) => {
-        // Check if we're waiting for period input
-        if (ctx.session.waitingForBonusPeriod) {
+        console.log('[BONUS HANDLER] Received text message:', ctx.message.text);
+        console.log('[BONUS HANDLER] Session state:', {
+            waitingForBonusPeriod: ctx.session?.waitingForBonusPeriod,
+            waitingForBonusAmount: ctx.session?.waitingForBonusAmount,
+            bonusPeriod: ctx.session?.bonusPeriod,
+            defaultBonus: ctx.session?.defaultBonus
+        });
+        
+        // Проверяем, ожидаем ли мы ввод периода
+        if (ctx.session?.waitingForBonusPeriod === true) {
+            console.log('[BONUS HANDLER] Processing period input');
             const text = ctx.message.text;
             const period = parseInt(text);
             
@@ -88,32 +142,43 @@ const actions = (bot) => {
                 return;
             }
             
-            // Save the period to session
+            // Сохраняем период в сессии
             ctx.session.bonusPeriod = period;
             ctx.session.waitingForBonusPeriod = false;
             
-            // Calculate the cutoff date based on the new period
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - period);
+            await ctx.reply(`✅ Период установлен: ${period} дней`);
             
-            // Format the date as DD.MM.YYYY
-            const formattedDate = cutoffDate.toLocaleDateString('ru-RU');
-            
-            // Show confirmation with the specific date
-            await ctx.reply(`Установить бонус 500 для всех выполненных заданий без бонуса до ${formattedDate} и далее?`, 
-                Markup.inlineKeyboard([
-                    [Markup.button.callback('✅ Да, установить бонус', 'set_default_bonus')],
-                    [Markup.button.callback('⏱️ Изменить период (дней)', 'change_period')],
-                    [Markup.button.callback('❌ Отмена', 'cancel_bonus')]
-                ])
-            );
-            
+            // Показываем меню бонуса с обновленным периодом
+            await showBonusMenu(ctx);
             return;
         }
         
-        // If we're not waiting for period input, pass to next middleware
+        // Проверяем, ожидаем ли мы ввод суммы бонуса
+        if (ctx.session?.waitingForBonusAmount === true) {
+            console.log('[BONUS HANDLER] Processing bonus amount input');
+            const text = ctx.message.text;
+            const bonusAmount = parseInt(text);
+            
+            if (isNaN(bonusAmount) || bonusAmount <= 0) {
+                await ctx.reply('❌ Пожалуйста, введите корректную сумму бонуса (положительное целое число).');
+                return;
+            }
+            
+            // Сохраняем сумму бонуса в сессии
+            ctx.session.defaultBonus = bonusAmount;
+            ctx.session.waitingForBonusAmount = false;
+            
+            await ctx.reply(`✅ Сумма бонуса установлена: ${bonusAmount}`);
+            
+            // Показываем меню бонуса с обновленной суммой бонуса
+            await showBonusMenu(ctx);
+            return;
+        }
+        
+        // Если мы не ожидаем никакого ввода, передаем управление следующему обработчику
+        console.log('[BONUS HANDLER] Not handling this message, passing to next handler');
         return next();
-    }, (ctx, next) => next());
+    });
 };
 
 module.exports = { actions };
