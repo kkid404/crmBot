@@ -110,7 +110,7 @@ class TaskService {
     static async updateTaskVersion(taskId) {
         const task = await Task.findById(taskId);
         if (task) {
-            task.version += 1; 
+            task.version = 1; 
             await task.save();
         }
     }
@@ -276,6 +276,36 @@ class TaskService {
             };
         }
     }
+
+   static async assignTask(taskId, creatorId, expectedDate, expectedTime) {
+        try {
+            return await Task.findOneAndUpdate(
+            {
+                _id: taskId,
+
+                // задача считается свободной, если ещё НЕ в progress
+                state: { $ne: 'progress' },
+
+                // а поле creator либо отсутствует, либо равно null
+                $or: [
+                { creator: null },
+                { creator: { $exists: false } }
+                ]
+            },
+            {
+                $set: {
+                state:        'progress',
+                creator:      creatorId,
+                expectedDate: expectedDate,
+                expectedTime: expectedTime
+                }
+            },
+            { new: true }
+            ).populate('buyer').populate('creator');
+        } catch (error) {
+            throw new Error(`Ошибка назначения задачи: ${error.message}`);
+        }
+        }
 }
 
 module.exports = TaskService;
