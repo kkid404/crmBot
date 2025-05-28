@@ -98,5 +98,4 @@ const schedulerCommand = require('./src/commands/scheduler.command');
 // Запуск бота
 bot.launch();
 console.log(ruMessage.global.start);
-console.log('Scheduler service initialized. Google Sheets will be updated every 30 minutes.');
 

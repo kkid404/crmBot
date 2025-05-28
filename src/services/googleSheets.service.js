@@ -1,275 +1,206 @@
 const { google } = require('googleapis');
+const Bottleneck = require('bottleneck');
 const path = require('path');
-const credentials = require(path.join(process.cwd(), 'credentials.json')); // Используем абсолютный путь
+const credentials = require(path.join(process.cwd(), 'credentials.json'));
 
+/**
+ * Google Sheets helper
+ *  • write‑лимитер (≤ 60 write‑rq/мин на пользователя)
+ *  • read‑лимитер  (≤ 180 read‑rq/мин)
+ *  • in‑memory cache для метаданных листов
+ */
 class GoogleSheetsService {
-    constructor() {
-        try {
-            this.auth = new google.auth.GoogleAuth({
-                credentials,
-                scopes: [
-                    'https://www.googleapis.com/auth/spreadsheets',
-                    'https://www.googleapis.com/auth/drive'
-                ]
-            });
-            this.sheets = google.sheets({ version: 'v4', auth: this.auth });
-            this.drive = google.drive({ version: 'v3', auth: this.auth });
-        } catch (error) {
-            console.error('Ошибка инициализации Google API:', error);
-            throw error;
-        }
+  constructor () {
+    /* ---------- auth ---------- */
+    this.auth   = new google.auth.GoogleAuth({
+      credentials,
+      scopes: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+      ]
+    });
+    this.sheets = google.sheets({ version: 'v4', auth: this.auth });
+    this.drive  = google.drive({  version: 'v3', auth: this.auth });
+
+    /* ---------- лимитеры ---------- */
+    this.writeLimiter = new Bottleneck({
+      reservoir               : 60,
+      reservoirRefreshAmount  : 60,
+      reservoirRefreshInterval: 60_000,
+      maxConcurrent           : 1
+    });
+
+    this.readLimiter = new Bottleneck({
+      reservoir               : 180,
+      reservoirRefreshAmount  : 180,
+      reservoirRefreshInterval: 60_000,
+      maxConcurrent           : 1
+    });
+
+    const backoff = (err, info) => err?.code === 429 && info.retryCount < 5
+      ? 1_000 * 2 ** info.retryCount  // 1 → 2 → 4 → 8 → 16 → 32 s
+      : undefined;
+
+    this.writeLimiter.on('failed', backoff);
+    this.readLimiter .on('failed', backoff);
+
+    /* ---------- patch helpers ---------- */
+    const wrapWrite = (obj, method) => {
+      if (!obj[method]) return; // skip if API version changed
+      const orig = obj[method].bind(obj);
+      obj[method] = this.writeLimiter.wrap(orig);
+      return obj[method];
+    };
+
+    const wrapRead = (obj, method) => {
+      if (!obj[method]) return;
+      const orig = obj[method].bind(obj);
+      obj[method] = this.readLimiter.wrap(orig);
+    };
+
+    /* ---------- globally patch WRITE API calls ---------- */
+    this._create       = wrapWrite(this.sheets.spreadsheets,        'create');
+    this._batchUpdate  = wrapWrite(this.sheets.spreadsheets,        'batchUpdate');
+    this._valuesUpdate = wrapWrite(this.sheets.spreadsheets.values, 'update');
+    this._valuesClear  = wrapWrite(this.sheets.spreadsheets.values, 'clear');
+    wrapWrite(this.sheets.spreadsheets.values, 'append');
+    this._permCreate   = wrapWrite(this.drive.permissions,          'create');
+
+    /* ---------- globally patch READ API calls ---------- */
+    wrapRead(this.sheets.spreadsheets,        'get');
+    wrapRead(this.sheets.spreadsheets.values, 'get');
+    wrapRead(this.sheets.spreadsheets.values, 'batchGet');
+
+    /* ---------- cache ---------- */
+    this._sheetCache = new Map(); // spreadsheetId → { meta, ts, fields }
+    this._cacheTTL   = Number(process.env.SHEETS_META_CACHE_TTL ?? 3_600_000); // default 1 ч
+  }
+
+  /* ===== utils ===== */
+  async _getSpreadsheetMeta (spreadsheetId, fields = 'sheets.properties') {
+    const now   = Date.now();
+    const cache = this._sheetCache.get(spreadsheetId);
+
+    if (cache && now - cache.ts < this._cacheTTL && cache.fields === fields) {
+      return cache.meta;
     }
 
-    async createSpreadsheet(title) {
-        try {
-            console.log('Создание новой таблицы...');
-            const response = await this.sheets.spreadsheets.create({
-                requestBody: {
-                    properties: { 
-                        title,
-                        locale: 'ru_RU'
-                    },
-                    sheets: [
-                        {
-                            properties: {
-                                title: 'Лист 1',
-                                gridProperties: {
-                                    rowCount: 1000,
-                                    columnCount: 26
-                                }
-                            }
-                        }
-                    ]
-                }
-            });
+    const meta = await this.sheets.spreadsheets.get({ spreadsheetId, fields });
+    this._sheetCache.set(spreadsheetId, { meta: meta.data, ts: now, fields });
+    return meta.data;
+  }
 
-            const spreadsheetId = response.data.spreadsheetId;
-            console.log('Таблица создана, ID:', spreadsheetId);
+  _invalidateCache (spreadsheetId) {
+    this._sheetCache.delete(spreadsheetId);
+  }
 
-            // Устанавливаем права доступа на редактирование для всех
-            await this.drive.permissions.create({
-                fileId: spreadsheetId,
-                requestBody: {
-                    role: 'writer',
-                    type: 'anyone'
-                },
-                supportsAllDrives: true,
-                sendNotificationEmail: false
-            });
+  /* ===== SPREADSHEET ===== */
+  async createSpreadsheet (title) {
+    const rsp = await this._create({
+      requestBody: {
+        properties: { title, locale: 'ru_RU' },
+        sheets: [{ properties: { title: 'Лист 1', gridProperties: { rowCount: 1_000, columnCount: 26 } } }]
+      }
+    });
 
-            // Проверяем, что права установлены
-            const permission = await this.drive.permissions.list({
-                fileId: spreadsheetId,
-                supportsAllDrives: true
-            });
+    const spreadsheetId = rsp.data.spreadsheetId;
 
-            if (!permission.data.permissions.some(p => p.type === 'anyone' && p.role === 'writer')) {
-                throw new Error('Не удалось установить права на редактирование');
-            }
+    await this._permCreate({
+      fileId: spreadsheetId,
+      requestBody: { role: 'writer', type: 'anyone' },
+      supportsAllDrives: true,
+      sendNotificationEmail: false
+    });
 
-            console.log('Права доступа на редактирование установлены');
-            return spreadsheetId;
-        } catch (error) {
-            console.error('Ошибка при создании таблицы:', error);
-            throw new Error(`Ошибка при создании таблицы: ${error.message}`);
-        }
+    return spreadsheetId;
+  }
+
+  async getOrCreateSpreadsheet (title, envId) {
+    if (!envId) return this.createSpreadsheet(title);
+
+    try {
+      await this.sheets.spreadsheets.get({ spreadsheetId: envId, fields: 'properties.title' });
+      if (title) {
+        await this._batchUpdate({
+          spreadsheetId: envId,
+          requestBody: { requests: [{ updateSpreadsheetProperties: { properties: { title }, fields: 'title' } }] }
+        });
+      }
+      return envId;
+    } catch (err) {
+      console.warn(`Нет доступа к таблице ${envId}: ${err.message}. Создаём новую.`);
+      return this.createSpreadsheet(title);
+    }
+  }
+
+  /* ===== SHEETS ===== */
+  async _sheetExists (spreadsheetId, title) {
+    const meta = await this._getSpreadsheetMeta(spreadsheetId);
+    return (meta.sheets || []).some(s => s.properties.title === title);
+  }
+
+  async addSheet (spreadsheetId, title) {
+    if (await this._sheetExists(spreadsheetId, title)) {
+      console.log(`Лист "${title}" уже существует – пропуск.`);
+      return;
     }
 
-    async getOrCreateSpreadsheet(title, envSpreadsheetId) {
-        try {
-            // Check if we have a spreadsheet ID in environment variables
-            if (envSpreadsheetId) {
-                console.log(`Использование существующей таблицы с ID: ${envSpreadsheetId}`);
-                try {
-                    // Verify that the spreadsheet exists and is accessible
-                    await this.sheets.spreadsheets.get({
-                        spreadsheetId: envSpreadsheetId
-                    });
-                    
-                    // Optional: Update title if it's different
-                    await this.sheets.spreadsheets.batchUpdate({
-                        spreadsheetId: envSpreadsheetId,
-                        requestBody: {
-                            requests: [{
-                                updateSpreadsheetProperties: {
-                                    properties: {
-                                        title: title
-                                    },
-                                    fields: 'title'
-                                }
-                            }]
-                        }
-                    });
-                    
-                    return envSpreadsheetId;
-                } catch (error) {
-                    console.warn(`Не удалось получить доступ к существующей таблице: ${error.message}. Создание новой таблицы...`);
-                    // If we can't access the spreadsheet, create a new one
-                    return await this.createSpreadsheet(title);
-                }
-            } else {
-                // If no spreadsheet ID is provided, create a new one
-                return await this.createSpreadsheet(title);
-            }
-        } catch (error) {
-            console.error('Ошибка при получении/создании таблицы:', error);
-            throw new Error(`Ошибка при получении/создании таблицы: ${error.message}`);
-        }
-    }
+    await this._batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title, gridProperties: { rowCount: 1_000, columnCount: 26 } } } }] }
+    });
+    this._invalidateCache(spreadsheetId);
+    console.log(`Создан лист "${title}"`);
+  }
 
-    async addSheet(spreadsheetId, title) {
-        try {
-            console.log(`Добавление листа "${title}"...`);
-            
-            // First check if sheet already exists
-            const spreadsheet = await this.sheets.spreadsheets.get({
-                spreadsheetId
-            });
-            
-            // Debug: List all existing sheets
-            const existingSheets = spreadsheet.data.sheets.map(sheet => sheet.properties.title);
-            console.log(`Существующие листы: ${JSON.stringify(existingSheets)}`);
-            
-            // If sheet with this name already exists, skip creation
-            const sheetExists = spreadsheet.data.sheets.some(sheet => 
-                sheet.properties.title === title
-            );
-            
-            if (sheetExists) {
-                console.log(`Лист "${title}" уже существует, пропускаем создание`);
-                return;
-            } else {
-                console.log(`Лист "${title}" не найден, создаем новый`);
-            }
-            
-            await this.sheets.spreadsheets.batchUpdate({
-                spreadsheetId,
-                requestBody: {
-                    requests: [{
-                        addSheet: {
-                            properties: {
-                                title,
-                                gridProperties: {
-                                    rowCount: 1000,
-                                    columnCount: 26
-                                }
-                            }
-                        }
-                    }]
-                }
-            });
-            console.log(`Лист "${title}" успешно добавлен`);
-        } catch (error) {
-            if (error.message && error.message.includes('already exists')) {
-                // Handle the case where the sheet exists even though our check didn't catch it
-                console.log(`Лист "${title}" уже существует (обнаружено через ошибку API), пропускаем создание`);
-                return;
-            }
-            console.error(`Ошибка при добавлении листа "${title}":`, error);
-            throw new Error(`Ошибка при добавлении листа: ${error.message}`);
-        }
-    }
+  async deleteSheet (spreadsheetId, sheetId) {
+    await this._batchUpdate({ spreadsheetId, requestBody: { requests: [{ deleteSheet: { sheetId } }] } });
+    this._invalidateCache(spreadsheetId);
+  }
 
-    async writeData(spreadsheetId, range, values) {
-        try {
-            console.log(`Запись данных в диапазон ${range}...`);
-            await this.sheets.spreadsheets.values.update({
-                spreadsheetId,
-                range,
-                valueInputOption: 'RAW',
-                requestBody: { values }
-            });
-            console.log('Данные записаны');
-        } catch (error) {
-            console.error('Ошибка при записи данных:', error);
-            throw new Error(`Ошибка при записи данных: ${error.message}`);
-        }
-    }
+  async deleteSheetByTitle (spreadsheetId, title) {
+    const meta = await this._getSpreadsheetMeta(spreadsheetId);
+    const sheet = meta.sheets.find(s => s.properties.title === title);
+    if (sheet) await this.deleteSheet(spreadsheetId, sheet.properties.sheetId);
+  }
 
-    async deleteSheet(spreadsheetId, sheetId) {
-        try {
-            await this.sheets.spreadsheets.batchUpdate({
-                spreadsheetId,
-                requestBody: {
-                    requests: [{
-                        deleteSheet: {
-                            sheetId
-                        }
-                    }]
-                }
-            });
-        } catch (error) {
-            console.error('Ошибка при удалении листа:', error);
-        }
-    }
+  async prepareSheet (spreadsheetId, title) {
+    const meta = await this._getSpreadsheetMeta(spreadsheetId);
+    const sheet = meta.sheets.find(s => s.properties.title === title);
 
-    /**
-     * Completely clear a sheet's content and formatting
-     * @param {string} spreadsheetId - ID of the spreadsheet
-     * @param {string} sheetName - Name of the sheet to clear
-     * @returns {Promise<void>}
-     */
-    async clearSheet(spreadsheetId, sheetName) {
-        try {
-            console.log(`Полная очистка листа "${sheetName}"...`);
-            
-            // First get the sheet ID
-            const spreadsheet = await this.sheets.spreadsheets.get({
-                spreadsheetId,
-                fields: 'sheets(properties(sheetId,title))'
-            });
-            
-            const sheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
-            if (!sheet) {
-                console.warn(`Лист "${sheetName}" не найден, пропускаем очистку`);
-                return;
-            }
-            
-            const sheetId = sheet.properties.sheetId;
-            
-            // Clear all cell values
-            await this.sheets.spreadsheets.values.clear({
-                spreadsheetId,
-                range: `${sheetName}!A1:Z1000`,
-            });
-            
-            // Reset all formatting and other properties
-            await this.sheets.spreadsheets.batchUpdate({
-                spreadsheetId,
-                requestBody: {
-                    requests: [
-                        // Clear all formatting
-                        {
-                            updateCells: {
-                                range: {
-                                    sheetId: sheetId,
-                                    startRowIndex: 0,
-                                    startColumnIndex: 0
-                                },
-                                fields: 'userEnteredFormat'
-                            }
-                        },
-                        // Reset column widths to default
-                        {
-                            autoResizeDimensions: {
-                                dimensions: {
-                                    sheetId: sheetId,
-                                    dimension: 'COLUMNS',
-                                    startIndex: 0,
-                                    endIndex: 26
-                                }
-                            }
-                        }
-                    ]
-                }
-            });
-            
-            console.log(`Лист "${sheetName}" успешно очищен`);
-        } catch (error) {
-            console.error(`Ошибка при очистке листа "${sheetName}":`, error);
-            throw new Error(`Ошибка при очистке листа: ${error.message}`);
-        }
-    }
+    if (!sheet) return this.addSheet(spreadsheetId, title);
+
+    await this._batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { deleteSheet: { sheetId: sheet.properties.sheetId } },
+          { addSheet   : { properties: { title, gridProperties: { rowCount: 1_000, columnCount: 26 } } } }
+        ]
+      }
+    });
+    this._invalidateCache(spreadsheetId);
+  }
+
+  /* ===== DATA ===== */
+  async writeData (spreadsheetId, range, values) {
+    await this._valuesUpdate({ spreadsheetId, range, valueInputOption: 'RAW', requestBody: { values } });
+  }
+
+  async clearSheet (spreadsheetId, title) {
+    const meta  = await this._getSpreadsheetMeta(spreadsheetId, 'sheets.properties(sheetId,title)');
+    const sheet = meta.sheets.find(s => s.properties.title === title);
+    if (!sheet) return;
+
+    await this._valuesClear({ spreadsheetId, range: `${title}!A1:Z1000` });
+
+    await this._batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ updateCells: { range: { sheetId: sheet.properties.sheetId }, fields: 'userEnteredFormat' } }]
+      }
+    });
+  }
 }
 
 module.exports = new GoogleSheetsService();

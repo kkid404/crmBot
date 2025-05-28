@@ -38,6 +38,12 @@ class UserService {
             throw new Error(`Ошибка поиска пользователя: ${error.message}`);
         }
     }
+
+      /** Проверка – финдиректор? */
+    static async isFinance(tg_id) {
+        const user = await User.findOne({ tg_id });
+        return user && user.position === 'finance';
+    }
 }
 
 module.exports = UserService;

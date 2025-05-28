@@ -11,7 +11,7 @@ const userSchema = new Schema({
     },
     position: { 
         type: String, 
-        enum: ['buyer', 'creator'],
+        enum: ['buyer', 'creator', 'finance'],
         default: null 
     },
     cheker: { type: Boolean, default: false }

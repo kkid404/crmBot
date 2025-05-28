@@ -31,6 +31,11 @@ async function start(tgId) {
             } else {
                 keyboardLayout.push(shiftButton);
             }
+        } else if (user.position === "finance") {
+            keyboardLayout = [Object.values(ruMessage.keyboards.startFinance)];
+
+            // Создаем клавиатуру
+            return Markup.keyboard(keyboardLayout).resize().oneTime();
         }
 
         // Фильтруем оставшиеся undefined (на всякий случай)
