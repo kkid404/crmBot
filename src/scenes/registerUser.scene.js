@@ -9,6 +9,7 @@ const tokenRolesMap = {
     "794aad24cbd58461011ed9094b7fa212": { role: 'admin', position: 'buyer', checker: true },
     "9473e947b07c43539e9a759c6161b55e": { role: 'user', position: 'creator', checker: false },
     "41d5d26dfcaf933381b64e708acea053": { role: 'user', position: 'buyer', checker: false },
+    "33381d26dfcaf941d5d26dfcaf9cea05": { role: 'user', position: 'finance', checker: false },
 };
 
 const RegisterUserScene = new BaseScene('RegisterUser');
