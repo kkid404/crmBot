@@ -113,7 +113,6 @@ async function exportFinanceReport(month, year) {
   const sheetsPayload = [
     { title: 'Бонусы‑креативщикам', data: creatorBonusRows },
     { title: 'Бонусы‑баеры', data: buyerBonusRows },
-    { title: 'Штрафные‑бонусы‑креативщикам', data: penaltyCreatorBonusRows },
     { title: 'Штрафные‑бонусы‑баеры', data: penaltyBuyerBonusRows },
     { title: 'Креативы‑по‑баерам', data: creativesByBuyerRows },
     { title: 'Креативы‑по‑креативщикам', data: creativesByCreatorRows },
