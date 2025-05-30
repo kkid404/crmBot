@@ -6,19 +6,75 @@ const monthNames = ['Январь','Февраль','Март','Апрель','�
 
 /**
  * Создаёт (или перезаписывает) финансовый отчёт в Google Sheets.
- * @param {number} month – 1‑based (1 = Jan)
- * @param {number} year
+ * @param {number|string} monthOrStartDate – 1‑based (1 = Jan) месяц или начальная дата в формате 'DD.MM'
+ * @param {number|string} yearOrEndDate – год или конечная дата в формате 'DD.MM'
+ * @param {number} [year] – год (опционально, если используются даты в формате 'DD.MM')
  * @returns {Promise<string>} public URL
  */
-async function exportFinanceReport(month, year) {
-  const periodStart = new Date(Date.UTC(year, month-1, 1, 0,0,0));
-  const periodEnd   = new Date(Date.UTC(year, month,   0, 23,59,59));
+async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
+  let periodStart, periodEnd, isDateRange = false;
+  let title;
+  
+  // Проверка формата даты (DD.MM)
+  const dateFormatRegex = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])$/;
+  
+  if (typeof monthOrStartDate === 'string' && dateFormatRegex.test(monthOrStartDate) && 
+      typeof yearOrEndDate === 'string' && dateFormatRegex.test(yearOrEndDate)) {
+    // Используем диапазон дат
+    isDateRange = true;
+    const currentYear = year || new Date().getFullYear();
+    
+    console.log(`[FINANCE] Processing date range with year: ${currentYear}`);
+    
+    // Парсинг начальной даты
+    const [startDay, startMonth] = monthOrStartDate.split('.').map(Number);
+    // Создаем дату в локальном времени, а не в UTC
+    periodStart = new Date(currentYear, startMonth-1, startDay, 0, 0, 0);
+    
+    // Парсинг конечной даты
+    const [endDay, endMonth] = yearOrEndDate.split('.').map(Number);
+    periodEnd = new Date(currentYear, endMonth-1, endDay, 23, 59, 59);
+    
+    console.log('[FINANCE] Date range:', {
+      startDate: monthOrStartDate,
+      endDate: yearOrEndDate,
+      parsedStartDate: periodStart.toISOString(),
+      parsedEndDate: periodEnd.toISOString()
+    });
+  } else {
+    // Используем месяц и год (стандартный формат)
+    const month = parseInt(monthOrStartDate);
+    const yearValue = parseInt(yearOrEndDate);
+    
+    // Проверяем, что параметры корректны
+    if (isNaN(month) || isNaN(yearValue) || month < 1 || month > 12) {
+      throw new Error(`Неверный формат месяца/года: ${monthOrStartDate}/${yearOrEndDate}`);
+    }
+    
+    // Создаем даты в локальном времени, а не в UTC
+    periodStart = new Date(yearValue, month-1, 1, 0, 0, 0);
+    periodEnd = new Date(yearValue, month, 0, 23, 59, 59);
+    
+    console.log('[FINANCE] Month period:', {
+      month: month,
+      year: yearValue,
+      start: periodStart.toISOString(),
+      end: periodEnd.toISOString()
+    });
+  }
 
   // --------------- 1. pull tasks for the month
+  console.log('[FINANCE] Query period:', {
+    start: periodStart.toISOString(),
+    end: periodEnd.toISOString()
+  });
+  
   const tasks = await Task.find({
     state: 'done',
     completionDate: { $gte: periodStart, $lte: periodEnd },
   }).populate('buyer').populate('creator');
+  
+  console.log(`[FINANCE] Found ${tasks.length} tasks in the date range`);
 
   // helpers
   const safeUsername = u => u?.username || `id_${u?.tg_id}`;
@@ -107,7 +163,15 @@ async function exportFinanceReport(month, year) {
   });
 
   // --------------- 4. push to Google Sheets
-  const title = `Финансы – ${monthNames[month-1]} ${year}`;
+  if (isDateRange) {
+    const formatDate = (date) => {
+      return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+    };
+    title = `Финансы – ${formatDate(periodStart)} - ${formatDate(periodEnd)}`;
+  } else {
+    // В этом случае monthOrStartDate - это месяц, а yearOrEndDate - это год
+    title = `Финансы – ${monthNames[monthOrStartDate-1]} ${yearOrEndDate}`;
+  }
   const spreadsheetId = await googleSheets.getOrCreateSpreadsheet(title);
   
   const sheetsPayload = [

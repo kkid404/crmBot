@@ -52,8 +52,9 @@ async function showPeriodSelector(ctx) {
     ));
   }
   
-  // Добавляем кнопку для выбора произвольного периода
-  buttons.push(Markup.button.callback('Другой период', 'fin_custom_period'));
+  // Добавляем кнопки для выбора произвольного периода и диапазона дат
+  buttons.push(Markup.button.callback('Другой месяц', 'fin_custom_period'));
+  buttons.push(Markup.button.callback('Диапазон дат', 'fin_date_range'));
   
   // Формируем клавиатуру из кнопок (по 2 в ряду)
   const keyboard = [];
@@ -90,7 +91,7 @@ ${url}`,
 }
 
 /**
- * Обработчик для ввода произвольного периода
+ * Обработчик для ввода произвольного периода (месяц/год)
  */
 async function handleCustomPeriod(ctx) {
   // Сохраняем в сессии, что ожидаем ввод месяца
@@ -99,6 +100,20 @@ async function handleCustomPeriod(ctx) {
   
   await ctx.reply(
     'Введите номер месяца (1-12):',
+    Markup.forceReply()
+  );
+}
+
+/**
+ * Обработчик для ввода диапазона дат
+ */
+async function handleDateRange(ctx) {
+  // Сохраняем в сессии, что ожидаем ввод начальной даты
+  ctx.session = ctx.session || {};
+  ctx.session.financeState = 'waiting_start_date';
+  
+  await ctx.reply(
+    'Введите начальную дату в формате ДД.ММ (например, 12.05):',
     Markup.forceReply()
   );
 }
@@ -126,18 +141,95 @@ const actions = bot => {
     await handleGenerateForPeriod(ctx, month, year);
   });
   
-  // Обработчик для выбора произвольного периода
+  // Обработчики для выбора произвольных периодов
   bot.action('fin_custom_period', handleCustomPeriod);
+  bot.action('fin_date_range', handleDateRange);
   
-  // Обработчик ввода месяца и года
+  // Обработчик ввода месяца, года и диапазона дат
   bot.on('text', async (ctx, next) => {
     console.log('[FINANCE HANDLER] Received text message:', ctx.message.text);
     console.log('[FINANCE HANDLER] Finance state:', {
       financeState: ctx.session?.financeState,
-      financeMonth: ctx.session?.financeMonth
+      financeMonth: ctx.session?.financeMonth,
+      financeStartDate: ctx.session?.financeStartDate
     });
     
-    // Проверяем, находимся ли в режиме ожидания ввода для финансового отчёта
+    // Функция проверки формата даты ДД.ММ
+    const isValidDateFormat = (dateStr) => {
+      // Проверка на формат даты ДД.ММ
+      const regex = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])$/;
+      if (!regex.test(dateStr)) {
+        console.log(`[FINANCE HANDLER] Invalid date format: ${dateStr}`);
+        return false;
+      }
+      
+      // Дополнительная проверка корректности даты
+      const [day, month] = dateStr.split('.').map(Number);
+      const currentYear = new Date().getFullYear();
+      const date = new Date(currentYear, month - 1, day);
+      const isValid = date.getDate() === day && date.getMonth() === month - 1;
+      
+      if (!isValid) {
+        console.log(`[FINANCE HANDLER] Invalid date: ${dateStr}, parsed as ${date.toISOString()}`);
+      }
+      
+      return isValid;
+    };
+    
+    // Проверяем, ожидаем ли ввод начальной даты диапазона
+    if (ctx.session?.financeState === 'waiting_start_date') {
+      console.log('[FINANCE HANDLER] Processing start date input');
+      const startDate = ctx.message.text.trim();
+      
+      if (!isValidDateFormat(startDate)) {
+        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ (например, 12.05):');
+        return;
+      }
+      
+      // Сохраняем начальную дату и ждём ввода конечной даты
+      ctx.session.financeStartDate = startDate;
+      ctx.session.financeState = 'waiting_end_date';
+      
+      await ctx.reply('Теперь введите конечную дату в формате ДД.ММ (например, 22.05):');
+      return;
+    }
+    
+    // Проверяем, ожидаем ли ввод конечной даты диапазона
+    if (ctx.session?.financeState === 'waiting_end_date') {
+      console.log('[FINANCE HANDLER] Processing end date input');
+      const endDate = ctx.message.text.trim();
+      
+      if (!isValidDateFormat(endDate)) {
+        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ (например, 22.05):');
+        return;
+      }
+      
+      // Получаем сохраненную начальную дату
+      const startDate = ctx.session.financeStartDate;
+      
+      // Сбрасываем состояние
+      delete ctx.session.financeState;
+      delete ctx.session.financeStartDate;
+      
+      // Генерируем отчёт за диапазон дат
+      const loading = await ctx.reply(ru.messages.finance.generating);
+      try {
+        // Явно передаём текущий год для корректной обработки дат
+        const currentYear = new Date().getFullYear();
+        console.log(`[FINANCE HANDLER] Generating report for date range: ${startDate} - ${endDate}, year: ${currentYear}`);
+        const url = await exportFinanceReport(startDate, endDate, currentYear);
+        await ctx.reply(
+          `${ru.messages.finance.done}\n${url}`,
+          start(ctx.chat.id)
+        );
+      } catch (e) {
+        console.error(e);
+        await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, undefined, 'Ошибка генерации');
+      }
+      return;
+    }
+    
+    // Проверяем, находимся ли в режиме ожидания ввода месяца
     if (ctx.session?.financeState === 'waiting_month') {
       console.log('[FINANCE HANDLER] Processing month input');
       const month = parseInt(ctx.message.text);
