@@ -1,6 +1,8 @@
 const Task = require('../databases/task.model');
+const RoundState = require('../databases/roundState.model');
 
 class TaskService {
+    static processedBuyersInCurrentRound = new Set();
     // Создание новой задачи
     static async createTask(data) {
         try {
@@ -178,65 +180,74 @@ class TaskService {
     }
 
     /**
-     * Метод для автоматического выбора задачи с чередованием баеров
-     * @param {string} creatorId - ID креативщика, который берет задачу
-     * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач
+     * Метод для автоматического выбора задачи с чередованием баеров по круговой системе.
+     * Выбирает по одной задаче для каждого баера, у которого есть активные задачи,
+     * прежде чем начать новый круг.
+     * @param {string} creatorId - ID креативщика (сохранено для совместимости, но не используется в логике выбора).
+     * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач.
      */
     static async getAutoAssignedTask(creatorId) {
         try {
-            // Получаем все активные задачи
-            const activeTasks = await Task.find({ state: 'active' })
-                .populate('buyer')
-                .populate('creator');
-            
-            if (!activeTasks.length) {
-                return null; // Нет активных задач
-            }
-            
-            // Группируем задачи по баерам
+            const activeTasks = await Task.find({ state: 'active' }).populate('buyer');
+            if (!activeTasks || activeTasks.length === 0) return null;
+    
+            // Группируем задачи по buyer._id
             const tasksByBuyer = {};
-            
             activeTasks.forEach(task => {
-                const buyerId = task.buyer._id.toString();
-                if (!tasksByBuyer[buyerId]) {
-                    tasksByBuyer[buyerId] = [];
+                if (task.buyer && task.buyer._id) {
+                    const buyerId = task.buyer._id.toString();
+                    if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
+                    tasksByBuyer[buyerId].push(task);
                 }
-                tasksByBuyer[buyerId].push(task);
             });
-            
-            // Получаем список баеров с активными задачами
-            const buyerIds = Object.keys(tasksByBuyer);
-            
-            if (!buyerIds.length) {
-                return null; // Нет баеров с активными задачами
+    
+            const allBuyerIdsWithActiveTasks = Object.keys(tasksByBuyer).sort();
+            if (allBuyerIdsWithActiveTasks.length === 0) return null;
+    
+            // Получаем состояние очереди из БД
+            let roundState = await RoundState.findOne({ key: 'autoAssignQueue' });
+            if (!roundState) {
+                roundState = new RoundState({ key: 'autoAssignQueue', processedBuyers: [] });
             }
-            
-            // Получаем последние взятые задачи этого креативщика в статусе 'progress'
-            const recentTasks = await Task.find({
-                creator: creatorId,
-                state: 'progress'
-            })
-            .populate('buyer')
-            .sort({ updatedAt: -1 }) // Сортируем по дате обновления (сначала самые новые)
-            .limit(5); // Берем последние 5 задач
-            
-            // Создаем массив с ID последних баеров
-            const recentBuyerIds = recentTasks.map(task => task.buyer._id.toString());
-            
-            // Находим баеров, задачи которых не брались в последнее время
-            const priorityBuyerIds = buyerIds.filter(buyerId => !recentBuyerIds.includes(buyerId));
-            
-            // Если есть баеры, задачи которых давно не брались, выбираем их в первую очередь
-            const selectedBuyerId = priorityBuyerIds.length > 0 
-                ? priorityBuyerIds[0] // Берем первого баера из приоритетных
-                : buyerIds.find(id => !recentBuyerIds[0] === id) || buyerIds[0]; // Или берем баера, отличного от последнего, или первого из списка
-            
-            // Выбираем самую старую задачу выбранного баера
+    
+            const processedBuyers = new Set(roundState.processedBuyers);
+    
+            // Определяем подходящих покупателей
+            let eligibleBuyerIds = allBuyerIdsWithActiveTasks.filter(
+                buyerId => !processedBuyers.has(buyerId)
+            );
+    
+            // Если все обработаны — начинаем новый раунд
+            if (eligibleBuyerIds.length === 0) {
+                processedBuyers.clear();
+                roundState.processedBuyers = [];
+                await roundState.save();
+                eligibleBuyerIds = allBuyerIdsWithActiveTasks;
+            }
+    
+            if (eligibleBuyerIds.length === 0) return null;
+    
+            const selectedBuyerId = eligibleBuyerIds[0];
             const buyerTasks = tasksByBuyer[selectedBuyerId];
-            buyerTasks.sort((a, b) => a.createdAt - b.createdAt); // Сортируем по дате создания (сначала самые старые)
-            
-            // Возвращаем выбранную задачу
-            return buyerTasks[0];
+    
+            if (!buyerTasks || buyerTasks.length === 0) {
+                processedBuyers.add(selectedBuyerId);
+                roundState.processedBuyers = Array.from(processedBuyers);
+                await roundState.save();
+                return this.getAutoAssignedTask(creatorId);
+            }
+    
+            // Сортируем задачи по дате создания
+            buyerTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            const selectedTask = buyerTasks[0];
+    
+            // Обновляем состояние очереди
+            processedBuyers.add(selectedBuyerId);
+            roundState.processedBuyers = Array.from(processedBuyers);
+            await roundState.save();
+    
+            return selectedTask;
+    
         } catch (error) {
             console.error('Ошибка при автоматическом выборе задачи:', error);
             return null;
