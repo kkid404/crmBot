@@ -106,6 +106,8 @@ const actions = (bot) => {
                 minute: '2-digit'
             });
             
+            await ctx.answerCbQuery();
+
             const statusMessage = 
                 '📊 Статус планировщика Google Sheets\n\n' +
                 '✅ Планировщик активен\n' +
@@ -117,7 +119,6 @@ const actions = (bot) => {
                 '• Все креативы\n' +
                 '• Расписание сотрудников';
             
-            await ctx.answerCbQuery();
             await ctx.reply(statusMessage);
         } catch (error) {
             console.error('Error in scheduler_status action:', error);

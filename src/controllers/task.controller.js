@@ -38,7 +38,7 @@ const exportTasksInProgressCsv = async () => {
         })
             .populate('buyer')
             .populate('creator')
-            .sort({ createdAt: 1 });
+            .sort({ createdAt: -1 });
             
         console.log(`Найдено ${tasks.length} задач в работе`);
 
@@ -149,7 +149,7 @@ const exportTasksDoneCsv = async () => {
         const tasks = await Task.find({ state: 'done' })
             .populate('buyer')
             .populate('creator')
-            .sort({ creator: 1, createdAt: 1 });
+            .sort({ completionDate: -1 }); // Сортировка по completionDate (убывание)
             
         console.log(`Найдено ${tasks.length} выполненных задач`);
 
@@ -344,6 +344,8 @@ const exportTasksDoneCsv = async () => {
                 continue; // Продолжаем с другим креативщиком в случае ошибки
             }
         }
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${mainSheetId}`;
     } catch (error) {
         throw new Error(`Ошибка при экспорте выполненных задач: ${error.message}`);
     }
@@ -357,8 +359,12 @@ const exportAllTasksCsv = async () => {
         const tasks = await Task.find({})
             .populate('buyer')
             .populate('creator')
-            .sort({ state: 1, creator: 1, createdAt: 1 });
-            
+            .sort([
+                ['state', 1], // Сначала сортируем по состоянию (для группировки)
+                ['completionDate', -1], // Для выполненных задач сортируем по completionDate
+                ['createdAt', -1] // Для остальных задач сортируем по createdAt
+            ]);
+
         console.log(`Найдено ${tasks.length} задач`);
 
         // Получаем или создаем таблицу
@@ -516,4 +522,4 @@ module.exports = {
     exportTasksInProgressCsv,
     exportTasksDoneCsv,
     exportAllTasksCsv
-}; 
+};
