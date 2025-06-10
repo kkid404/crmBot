@@ -15,6 +15,9 @@ const tokenRolesMap = {
 const RegisterUserScene = new BaseScene('RegisterUser');
 
 RegisterUserScene.enter(async (ctx) => {
+    if (ctx.chat.type !== 'private') {
+        return
+    }
     const tgId = String(ctx.from.id);
     await ctx.reply(ruMessage.messages.send_token);
 

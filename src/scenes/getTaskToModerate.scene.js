@@ -9,6 +9,11 @@ const { moderate } = require('../keyboards/moderate.keyboard');
 const taskChekerService = require('../services/taskCheker.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
+const extractRegion  = require('../utils/region.util');
+const TopicService   = require('../services/topic.service');
+const dayjs          = require('dayjs');
+const ruLocale       = require('dayjs/locale/ru.js');
+dayjs.locale(ruLocale);
 
 const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
 
@@ -120,12 +125,132 @@ ${corrections}
                 const buyer = await userService.findById(task.buyer);
                 await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
             } else {
-                const creator = await userService.findById(task.creator);
-                const buyer = await userService.findById(task.buyer);
-                // Все одобрили задание – обновляем состояние задания
-                await taskService.updateTask(taskId, { state: 'done' })
-                await ctx.telegram.sendMessage(creator.tg_id, `✅ ${task.name} Одобрено!`);;
-                await ctx.telegram.sendMessage(buyer.tg_id, `✅ ${task.name} готово!`);;
+                // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
+                const finalizedTask = await taskService.updateTask(taskId, { state: 'done' });
+                if (!finalizedTask) {
+                    console.error(`Failed to update and retrieve task ${taskId}`);
+                    return false; // Выходим, если не удалось обновить задачу
+                }
+
+                const { creator, buyer } = finalizedTask;
+
+                // --- Логика отправки в форум --- //
+                try {
+                    const topic_id = await TopicService.getOrCreate(ctx, extractRegion(finalizedTask.name));
+
+
+                    
+                    const fmt = iso =>
+                      iso ? dayjs(iso).locale('ru').format('DD.MM.YYYY HH:mm') : '—';
+                    
+                    // эмодзи-подписи по ключам, чтобы не плодить if’ы
+                    const labels = {
+                      name: '📌 Задача',
+                      description: '📝 Описание',
+                      link_app: '🔗 Приложение',
+                      workType: '💼 Тип работы',
+                      expectedDate: '⏰ Предполагаемая дата сдачи',
+                      completionDate: '✅ Завершено',
+                      buyer: '👤 Баер',
+                      creator: '👨‍💻 Креативщик',
+                    };
+                    
+                    // основной код ----------------------------------------------------
+                    const task = finalizedTask.toObject();
+                    
+                    // удаляем лишнее сразу
+                    delete task.points;
+                    delete task.state;
+                    delete task.ctr;
+                    delete task.bonus;
+                    delete task.result;
+                    delete task.example_creative;
+                    delete task.__v;
+                    
+                    // готовим плоские поля
+                    const flat = {
+                      name: task.name,
+                      description: task.description,
+                      link_app: task.link_app,
+                      workType: task.workType,
+                      expectedDate: fmt(task.expectedDate),
+                      completionDate: fmt(task.completionDate),
+                      buyer: `@${task.buyer.username}`,
+                      creator: `@${task.creator.username}`,
+                    };
+                    
+                    // собираем текст
+                    const message = Object.entries(flat)
+                      .map(([k, v]) => `<b>${labels[k]}:</b> ${v}`)
+                      .join('\n\n');            // пустая строка между блоками
+                    
+                    await ctx.telegram.sendMessage(
+                      process.env.FORUM_CHAT_ID,
+                      message,
+                      {
+                        parse_mode: 'HTML',
+                        message_thread_id: topic_id,
+                      },
+                    );
+
+                    // 2. Отправка готового креатива
+                    if (finalizedTask.result && finalizedTask.result.length > 0) {
+                        const resultMedia = Array.isArray(finalizedTask.result) ? finalizedTask.result : [finalizedTask.result];
+                        const resultCaption = `Готовый - ${finalizedTask.name}`;
+                        if (resultMedia.length > 1) {
+                            await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, resultMedia.map((fileId, i) => ({
+                                type: fileId.startsWith('BA') ? 'video' : 'photo',
+                                media: fileId,
+                                caption: i === 0 ? resultCaption : undefined,
+                            })), { message_thread_id: topic_id });
+                        } else if (resultMedia.length === 1) {
+                            const fileId = resultMedia[0];
+                            const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
+                            await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: resultCaption, message_thread_id: topic_id });
+                        }
+                    }
+
+                    // 3. Отправка примера креатива
+                    if (finalizedTask.example_creative && finalizedTask.example_creative.length > 0) {
+                        const exampleMedia = Array.isArray(finalizedTask.example_creative) ? finalizedTask.example_creative : [finalizedTask.example_creative];
+                        const exampleCaption = `Пример для - ${finalizedTask.name}`;
+                        if (exampleMedia.length > 1) {
+                            await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, exampleMedia.map((fileId, i) => ({
+                                type: fileId.startsWith('BA') ? 'video' : 'photo',
+                                media: fileId,
+                                caption: i === 0 ? exampleCaption : undefined,
+                            })), { message_thread_id: topic_id });
+                        } else if (exampleMedia.length === 1) {
+                             const fileId = exampleMedia[0];
+                             const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
+                             await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: exampleCaption, message_thread_id: topic_id });
+                        }
+                    }
+                } catch (e) {
+                    console.error('Ошибка при пересылке данных в форум:', e);
+                }
+                // ---------- Конец логики форума --- //
+
+                // --- Уведомления пользователям ---
+                try {
+                    if (creator && creator.tg_id) {
+                        await ctx.telegram.sendMessage(creator.tg_id, `✅ ${finalizedTask.name} Одобрено!`);
+                    } else {
+                         console.error(`Could not find creator or creator.tg_id for task ${finalizedTask._id}`);
+                    }
+                } catch (error) {
+                    console.error(`Failed to send approval message to creator for task ${finalizedTask.name}:`, error.message);
+                }
+
+                try {
+                    if (buyer && buyer.tg_id) {
+                        await ctx.telegram.sendMessage(buyer.tg_id, `✅ ${finalizedTask.name} готово!`);
+                    } else {
+                        console.error(`Could not find buyer or buyer.tg_id for task ${finalizedTask._id}`);
+                    }
+                } catch (error) {
+                    console.error(`Failed to send completion message to buyer for task ${finalizedTask.name}:`, error.message);
+                }
             }
             return true;
         }
