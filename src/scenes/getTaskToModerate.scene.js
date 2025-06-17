@@ -14,6 +14,7 @@ const TopicService   = require('../services/topic.service');
 const dayjs          = require('dayjs');
 const ruLocale       = require('dayjs/locale/ru.js');
 dayjs.locale(ruLocale);
+const forwardToSecondChat = require('../services/secondaryForward.service');
 
 const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
 
@@ -136,14 +137,14 @@ ${corrections}
 
                 // --- Логика отправки в форум --- //
                 try {
-                    const topic_id = await TopicService.getOrCreate(ctx, extractRegion(finalizedTask.name));
+                    const topicIdMain = await TopicService.getOrCreate(ctx, process.env.FORUM_CHAT_ID, extractRegion(finalizedTask.name));
 
 
                     
                     const fmt = iso =>
                       iso ? dayjs(iso).locale('ru').format('DD.MM.YYYY HH:mm') : '—';
                     
-                    // эмодзи-подписи по ключам, чтобы не плодить if’ы
+                    // эмодзи-подписи по ключам, чтобы не плодить if'ы
                     const labels = {
                       name: '📌 Задача',
                       description: '📝 Описание',
@@ -189,7 +190,7 @@ ${corrections}
                       message,
                       {
                         parse_mode: 'HTML',
-                        message_thread_id: topic_id,
+                        message_thread_id: topicIdMain,
                       },
                     );
 
@@ -202,11 +203,11 @@ ${corrections}
                                 type: fileId.startsWith('BA') ? 'video' : 'photo',
                                 media: fileId,
                                 caption: i === 0 ? resultCaption : undefined,
-                            })), { message_thread_id: topic_id });
+                            })), { message_thread_id: topicIdMain });
                         } else if (resultMedia.length === 1) {
                             const fileId = resultMedia[0];
                             const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
-                            await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: resultCaption, message_thread_id: topic_id });
+                            await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: resultCaption, message_thread_id: topicIdMain });
                         }
                     }
 
@@ -214,18 +215,38 @@ ${corrections}
                     if (finalizedTask.example_creative && finalizedTask.example_creative.length > 0) {
                         const exampleMedia = Array.isArray(finalizedTask.example_creative) ? finalizedTask.example_creative : [finalizedTask.example_creative];
                         const exampleCaption = `Пример для - ${finalizedTask.name}`;
-                        if (exampleMedia.length > 1) {
-                            await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, exampleMedia.map((fileId, i) => ({
-                                type: fileId.startsWith('BA') ? 'video' : 'photo',
-                                media: fileId,
-                                caption: i === 0 ? exampleCaption : undefined,
-                            })), { message_thread_id: topic_id });
-                        } else if (exampleMedia.length === 1) {
-                             const fileId = exampleMedia[0];
-                             const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
-                             await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: exampleCaption, message_thread_id: topic_id });
+                        
+                        // Проверяем, является ли контент медиафайлом
+                        const isValidMedia = exampleMedia.every(fileId => 
+                            fileId.startsWith('AgAC') || // фото
+                            fileId.startsWith('BAA') || // видео
+                            fileId.startsWith('BQA') || // документ
+                            fileId.startsWith('CQA') || // аудио
+                            fileId.startsWith('DQA')    // анимация
+                        );
+
+                        if (isValidMedia) {
+                            if (exampleMedia.length > 1) {
+                                await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, exampleMedia.map((fileId, i) => ({
+                                    type: fileId.startsWith('BA') ? 'video' : 'photo',
+                                    media: fileId,
+                                    caption: i === 0 ? exampleCaption : undefined,
+                                })), { message_thread_id: topicIdMain });
+                            } else if (exampleMedia.length === 1) {
+                                const fileId = exampleMedia[0];
+                                const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
+                                await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: exampleCaption, message_thread_id: topicIdMain });
+                            }
+                        } else {
+                            // Если это не медиафайл, отправляем как текстовое сообщение
+                            await ctx.telegram.sendMessage(
+                                process.env.FORUM_CHAT_ID,
+                                `${exampleCaption}\n\n${exampleMedia.join('\n')}`,
+                                { message_thread_id: topicIdMain }
+                            );
                         }
                     }
+                    await forwardToSecondChat(ctx, finalizedTask, extractRegion(finalizedTask.name));
                 } catch (e) {
                     console.error('Ошибка при пересылке данных в форум:', e);
                 }
