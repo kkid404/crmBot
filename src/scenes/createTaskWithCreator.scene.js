@@ -1,0 +1,278 @@
+const { Scenes } = require('telegraf');
+const { BaseScene } = Scenes;
+const ruMessage = require('../lang/ru.json');
+const { start } = require('../keyboards/start.keyboard');
+const { back } = require('../keyboards/back.keyboard');
+const userService = require('../services/user.service');
+const BuyerCreatorService = require('../services/buyerCreator.service');
+const taskService = require('../services/task.service');
+const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
+const { Markup } = require('telegraf');
+
+// Функция для создания имени задачи
+const createName = async (geo) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    let countTaskToday = await taskService.getTaskToday();
+    countTaskToday = countTaskToday.length + 1;
+    return `${geo}_${day}_${month}_${year}_${countTaskToday}`;
+};
+
+// Функция для создания клавиатуры с креативщиками
+async function createCreatorsKeyboard(buyerId) {
+    try {
+        const buyer = await userService.findUserByTelegramId(buyerId);
+        const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(buyer._id);
+        
+        if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
+            return null; // Нет связанных креативщиков
+        }
+        
+        const buttons = buyerCreator.creators.map(creator => [
+            Markup.button.callback(
+                `@${creator.username || 'без_username'}`,
+                `creator_${creator._id}`
+            )
+        ]);
+        
+        // Добавляем кнопку "Назад"
+        buttons.push([Markup.button.callback('⬅️ Назад', 'back_to_main')]);
+        
+        return Markup.inlineKeyboard(buttons);
+    } catch (error) {
+        console.error('Ошибка при создании клавиатуры креативщиков:', error);
+        return null;
+    }
+}
+
+// Функция для создания задачи и назначения креативщику
+async function createTaskForCreator(ctx, creatorId, creatorUsername) {
+    try {
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        
+        // Создаём задачу
+        const taskData = {
+            name: ctx.session.name,
+            description: ctx.session.description,
+            buyer: user._id,
+            creator: creatorId,
+            state: 'progress' // Устанавливаем статус "в работе"
+        };
+        
+        let createdTask;
+        let maxRetries = 5;
+        let retryCount = 0;
+        let success = false;
+        
+        while (!success && retryCount < maxRetries) {
+            try {
+                createdTask = await taskService.createTask(taskData);
+                success = true;
+                
+                // Отправляем уведомление креативщику
+                const creator = await userService.findById(creatorId);
+                if (creator) {
+                    try {
+                        const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
+                        await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                        console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                    } catch (err) {
+                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                    }
+                    
+                    await ctx.reply(
+                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
+                        await start(ctx.from.id)
+                    );
+                } else {
+                    await ctx.reply(
+                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику`,
+                        await start(ctx.from.id)
+                    );
+                }
+                
+            } catch (error) {
+                if (error.message.includes('duplicate key error') && error.message.includes('name')) {
+                    retryCount++;
+                    const nameParts = taskData.name.split('_');
+                    const currentCounter = parseInt(nameParts.pop()) || 0;
+                    nameParts.push((currentCounter + retryCount).toString());
+                    taskData.name = nameParts.join('_');
+                } else {
+                    throw error;
+                }
+            }
+        }
+        
+        if (!success) {
+            console.error("Не удалось создать задачу после нескольких попыток");
+            await ctx.reply("Произошла ошибка при создании задачи.", await start(ctx.from.id));
+        }
+        
+        // Очищаем сессию и выходим из сцены
+        ctx.session = {};
+        ctx.scene.leave();
+        
+    } catch (error) {
+        console.error('Ошибка при создании задачи:', error);
+        await ctx.reply("Произошла ошибка при создании задачи.", await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+}
+
+const createTaskWithCreatorScene = new BaseScene('createTaskWithCreatorScene');
+
+// Вход в сцену
+createTaskWithCreatorScene.enter(async (ctx) => {
+    try {
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        
+        // Проверяем, что пользователь является баером
+        if (!user || user.position !== 'buyer') {
+            await ctx.reply("⚠️ Только баеры могут создавать задачи.", await start(ctx.from.id));
+            ctx.scene.leave();
+            return;
+        }
+        
+        // Проверяем, есть ли у баера связанные креативщики
+        const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(user._id);
+        if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
+            await ctx.reply(
+                "⚠️ У вас нет связанных креативщиков.",
+                await start(ctx.from.id)
+            );
+            ctx.scene.leave();
+            return;
+        }
+        
+        // Инициализируем сессию
+        ctx.session.step = 1;
+        ctx.session.buyerId = tgId;
+        
+        await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+        
+    } catch (error) {
+        console.error('Ошибка при входе в сцену создания задачи:', error);
+        await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик текстовых сообщений
+createTaskWithCreatorScene.on('text', async (ctx) => {
+    try {
+        const step = ctx.session.step;
+        const userInput = ctx.message.text;
+
+        // Обработка кнопки "Назад"
+        if (userInput === ruMessage.keyboards.back[0]) {
+            await ctx.reply(
+                ruMessage.messages.start.replace('{name}', ctx.from.first_name),
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+
+        switch (step) {
+            case 1:
+                // Валидация ГЕО кода
+                if (!isValidAlpha2CountryCode(userInput)) {
+                    await ctx.reply(
+                        "❌ Неверный формат ГЕО кода. Пожалуйста, введите корректный двузначный код страны (например: US, RU, GB).",
+                        back()
+                    );
+                    return;
+                }
+                
+                ctx.session.geo = userInput.trim().toUpperCase();
+                const name = await createName(ctx.session.geo);
+                ctx.session.name = name;
+                ctx.session.step = 2;
+                await ctx.reply(ruMessage.messages.writeTT.send_description, back());
+                break;
+                
+            case 2:
+                ctx.session.description = userInput;
+                ctx.session.step = 3;
+                
+                // Проверяем количество связанных креативщиков
+                const buyer = await userService.findUserByTelegramId(ctx.session.buyerId);
+                const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(buyer._id);
+                
+                if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
+                    await ctx.reply(
+                        "⚠️ Ошибка при получении списка креативщиков.",
+                        await start(ctx.from.id)
+                    );
+                    ctx.session = {};
+                    ctx.scene.leave();
+                    return;
+                }
+                
+                // Если только один креативщик, автоматически назначаем задание
+                if (buyerCreator.creators.length === 1) {
+                    const creator = buyerCreator.creators[0];
+                    await createTaskForCreator(ctx, creator._id, creator.username);
+                    return;
+                }
+                
+                // Если несколько креативщиков, показываем выбор
+                const keyboard = await createCreatorsKeyboard(ctx.session.buyerId);
+                if (keyboard) {
+                    await ctx.reply("👨‍🎨 Выберите креативщика для назначения задачи:", keyboard);
+                } else {
+                    await ctx.reply(
+                        "⚠️ Ошибка при получении списка креативщиков.",
+                        await start(ctx.from.id)
+                    );
+                    ctx.session = {};
+                    ctx.scene.leave();
+                }
+                break;
+                
+            default:
+                await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
+                ctx.session = {};
+                ctx.scene.leave();
+                break;
+        }
+    } catch (error) {
+        console.error('Ошибка в обработке текста:', error);
+        await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик выбора креативщика
+createTaskWithCreatorScene.action(/^creator_(.+)$/, async (ctx) => {
+    try {
+        const creatorId = ctx.match[1];
+        const creator = await userService.findById(creatorId);
+        await createTaskForCreator(ctx, creatorId, creator?.username);
+    } catch (error) {
+        console.error('Ошибка при создании задачи:', error);
+        await ctx.reply("Произошла ошибка при создании задачи.", await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик кнопки "Назад"
+createTaskWithCreatorScene.action('back_to_main', async (ctx) => {
+    await ctx.reply(
+        ruMessage.messages.start.replace('{name}', ctx.from.first_name),
+        await start(ctx.from.id)
+    );
+    ctx.session = {};
+    ctx.scene.leave();
+});
+
+module.exports = createTaskWithCreatorScene; 

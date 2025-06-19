@@ -5,6 +5,10 @@ class UserService {
         return User.findOne({ tg_id });
     }
 
+    static async findUserByUsername(username) {
+        return User.findOne({ username });
+    }
+
     static async createUser(data) {
         const user = new User(data);
         return user.save();

@@ -3,7 +3,7 @@ const { Schema } = mongoose;
 
 const taskSchema = new Schema({
     name: { type: String, required: true, unique: true },
-    link_app: { type: String, required: true },
+    link_app: { type: String, default: null },
     description: { type: String, required: true },
     example_creative: { type: [String], default: [] },
     state: { 

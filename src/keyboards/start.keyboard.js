@@ -11,7 +11,10 @@ async function start(tgId) {
         let keyboardLayout;
 
         if (user.position === "buyer") {
-            const keyboardLayout = [Object.values(ruMessage.keyboards.startBuyer)];
+            const keyboardLayout = [
+                Object.values(ruMessage.keyboards.startBuyer),
+                ["📝 Быстрое ТЗ"]
+            ];
 
             // Создаем клавиатуру
             return Markup.keyboard(keyboardLayout).resize().oneTime();
