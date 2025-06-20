@@ -39,6 +39,11 @@ async function start(tgId) {
 
             // Создаем клавиатуру
             return Markup.keyboard(keyboardLayout).resize().oneTime();
+        } else if (user.position === "owner") {
+            keyboardLayout = [Object.values(ruMessage.keyboards.ownerKeyboard)];
+
+            // Создаем клавиатуру
+            return Markup.keyboard(keyboardLayout).resize().oneTime();
         }
 
         // Фильтруем оставшиеся undefined (на всякий случай)

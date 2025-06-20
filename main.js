@@ -7,6 +7,7 @@ const { connectToMongo } = require('./src/databases/connect.database');
 const LocalSession = require('telegraf-session-local');
 const checkUser = require('./src/middlewares/isUser.middleware')
 const { statisticsActions } = require('./src/actions/statistics.actions'); // Добавляем импорт
+const { pointsActions } = require('./src/actions/points.actions');
 const errorHandler = require('./src/middlewares/errorHandler.middleware');
 
 const botToken = process.env.TELEGRAM_TOKEN;
