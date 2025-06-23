@@ -10,14 +10,14 @@ async function start(tgId) {
 
         let keyboardLayout;
 
-        if (user.position === "buyer") {
-            const keyboardLayout = [
-                Object.values(ruMessage.keyboards.startBuyer),
-                ["📝 Быстрое ТЗ"]
-            ];
+        // Универсальная buyer-клавиатура
+        const buyerButtons = [...Object.values(ruMessage.keyboards.startBuyer), "📝 Быстрое ТЗ"];
 
-            // Создаем клавиатуру
-            return Markup.keyboard(keyboardLayout).resize().oneTime();
+        if (user.position === "buyer") {
+            keyboardLayout = buyerButtons;
+        } else if (user.position === "owner") {
+            // owner получает buyer-кнопки + owner-кнопки
+            keyboardLayout = [...buyerButtons, ...ruMessage.keyboards.ownerKeyboard];
         } else if (user.position === "creator") {
             // Создаем копию массива и фильтруем undefined
             keyboardLayout = [...ruMessage.keyboards.startCreo].filter(btn => btn != null);
@@ -36,11 +36,6 @@ async function start(tgId) {
             }
         } else if (user.position === "finance") {
             keyboardLayout = [Object.values(ruMessage.keyboards.startFinance)];
-
-            // Создаем клавиатуру
-            return Markup.keyboard(keyboardLayout).resize().oneTime();
-        } else if (user.position === "owner") {
-            keyboardLayout = [Object.values(ruMessage.keyboards.ownerKeyboard)];
 
             // Создаем клавиатуру
             return Markup.keyboard(keyboardLayout).resize().oneTime();
