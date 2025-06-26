@@ -142,7 +142,17 @@ ${exampleLine}
 
 
 getTTScene.enter(async (ctx) => {
-    await ctx.reply(ruMessage.messages.getTT.select_tt, await getPooledBuyerTasksKeyboard());
+    const keyboard = await getPooledBuyerTasksKeyboard();
+    // Проверяем, есть ли кроме кнопки "Выйти" другие кнопки
+    if (
+        keyboard.reply_markup &&
+        keyboard.reply_markup.inline_keyboard.length === 1 &&
+        keyboard.reply_markup.inline_keyboard[0][0].text === 'Выйти'
+    ) {
+        await ctx.reply('Нет доступных задач. Попробуйте позже.', keyboard);
+    } else {
+        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+    }
 });
 
 getTTScene.action("back", async (ctx) => {
@@ -174,11 +184,29 @@ getTTScene.action("back", async (ctx) => {
 
         try {
             // Attempt to edit the message to go back to the task selection list
-            await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await getPooledBuyerTasksKeyboard());
+            const keyboard = await getPooledBuyerTasksKeyboard();
+            if (
+                keyboard.reply_markup &&
+                keyboard.reply_markup.inline_keyboard.length === 1 &&
+                keyboard.reply_markup.inline_keyboard[0][0].text === 'Выйти'
+            ) {
+                await ctx.editMessageText('Нет доступных задач. Попробуйте позже.', keyboard);
+            } else {
+                await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+            }
         } catch (e) {
             console.warn(`[getTTScene.back] Failed to edit message (possibly 'not modified' or deleted): ${e.message}. Replying with new message.`);
             try {
-                await ctx.reply(ruMessage.messages.getTT.select_tt, await getPooledBuyerTasksKeyboard());
+                const keyboard = await getPooledBuyerTasksKeyboard();
+                if (
+                    keyboard.reply_markup &&
+                    keyboard.reply_markup.inline_keyboard.length === 1 &&
+                    keyboard.reply_markup.inline_keyboard[0][0].text === 'Выйти'
+                ) {
+                    await ctx.reply('Нет доступных задач. Попробуйте позже.', keyboard);
+                } else {
+                    await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+                }
             } catch (replyError) {
                 console.error('[getTTScene.back] Critical: Failed to send reply message for task list:', replyError.message);
             }
