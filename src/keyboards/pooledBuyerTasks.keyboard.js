@@ -52,7 +52,7 @@ async function refreshPool() {
  * Generates the inline keyboard with pooled tasks.
  * Refreshes the pool if it's empty or exhausted.
  */
-const getKeyboard = async () => {
+const getKeyboard = async (isRetry = false) => {
     // Refresh conditions:
     // 1. Initial state (currentPool is empty).
     // 2. Pool is exhausted (all tasks from currentPool have been processed and currentPool had tasks).
@@ -79,9 +79,17 @@ const getKeyboard = async () => {
     /* 3.  Если после фильтрации задач не осталось – обновляем пул
            и строим клавиатуру заново */
     if (availableTasks.length === 0) {
+        if (isRetry) {
+            // Если мы уже пробовали обновить и задач всё равно нет, возвращаем пустую клавиатуру
+            return Markup.inlineKeyboard([
+                [Markup.button.callback('Выйти', 'back')]
+            ]);
+        }
         await refreshPool();
-        return getKeyboard();   // один рекурсивный вызов, дальше вернёмся
+        return getKeyboard(true);   // один рекурсивный вызов с флагом, что это повтор
     }
+    
+    // Этот блок стал недостижимым из-за логики выше, но оставляем на всякий случай
     if (availableTasks.length === 0) {
         // No tasks available even after a potential refresh
         return Markup.inlineKeyboard([
