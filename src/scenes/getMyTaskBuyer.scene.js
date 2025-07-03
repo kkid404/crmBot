@@ -654,7 +654,7 @@ const formatTaskInfo = (task, creatorName) => {
     // Ожидаемая дата выполнения
     let dateInfo = '';
     if (task.expectedDate) {
-        const expectedDateStr = new Date(task.expectedDate).toLocaleDateString();
+        const expectedDateStr = new Date(task.expectedDate).toLocaleDateString('ru-RU'); // <-- добавлена локаль
         const expectedTimeStr = task.expectedTime ? ` к ${task.expectedTime}` : '';
         dateInfo = `⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}\n`;
     }
