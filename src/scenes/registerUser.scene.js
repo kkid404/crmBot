@@ -7,7 +7,7 @@ const { start } = require('../keyboards/start.keyboard');
 const tokenRolesMap = {
     "ee2433259b0fe399b40e81d2c98a38b6": { role: 'admin', position: 'creator', checker: true },
     "794aad24cbd58461011ed9094b7fa212": { role: 'admin', position: 'buyer', checker: true },
-    "9473e947b07c43539e9a759c6161b55e": { role: 'user', position: 'creator', checker: false },
+    "9473e947b07c43539e9a759c6161b56e": { role: 'user', position: 'creator', checker: false },
     "41d5d26dfcaf933381b64e708acea053": { role: 'user', position: 'buyer', checker: false },
     "33381d26dfcaf941d5d26dfcaf9cea05": { role: 'user', position: 'finance', checker: false },
 };
