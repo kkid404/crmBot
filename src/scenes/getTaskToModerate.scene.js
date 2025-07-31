@@ -1,115 +1,134 @@
-const { Scenes } = require('telegraf');
+const { Scenes } = require("telegraf");
 const { BaseScene } = Scenes;
-const ruMessage = require('../lang/ru.json');
-const { start } = require('../keyboards/start.keyboard');
-const { myTasks } = require('../keyboards/get_my_tt.keyboard');
-const userService = require('../services/user.service');
-const taskService = require('../services/task.service');
-const { moderate } = require('../keyboards/moderate.keyboard');
-const taskChekerService = require('../services/taskCheker.service');
-const { backInline } = require('../keyboards/backInline.keyboard');
-const { back_to_task } = require('../keyboards/back_to_task.keyboard');
-const extractRegion  = require('../utils/region.util');
-const TopicService   = require('../services/topic.service');
-const dayjs          = require('dayjs');
-const ruLocale       = require('dayjs/locale/ru.js');
+const ruMessage = require("../lang/ru.json");
+const { start } = require("../keyboards/start.keyboard");
+const { myTasks } = require("../keyboards/get_my_tt.keyboard");
+const userService = require("../services/user.service");
+const taskService = require("../services/task.service");
+const { moderate } = require("../keyboards/moderate.keyboard");
+const taskChekerService = require("../services/taskCheker.service");
+const { backInline } = require("../keyboards/backInline.keyboard");
+const { back_to_task } = require("../keyboards/back_to_task.keyboard");
+const extractRegion = require("../utils/region.util");
+const TopicService = require("../services/topic.service");
+const dayjs = require("dayjs");
+const ruLocale = require("dayjs/locale/ru.js");
 dayjs.locale(ruLocale);
-const forwardToSecondChat = require('../services/secondaryForward.service');
+const forwardToSecondChat = require("../services/secondaryForward.service");
 
-const getTaskToModerateScene = new BaseScene('getTaskToModerateScene');
+const getTaskToModerateScene = new BaseScene("getTaskToModerateScene");
 
 const formatTaskInfo = (task) => {
-    // Определяем, есть ли медиафайлы
-    const hasMedia = Array.isArray(task.example_creative) 
-        ? task.example_creative.length > 0 
-        : typeof task.example_creative === 'string' && task.example_creative.trim() !== '';
-    
-    // Формируем строку для отображения информации о примерах креатива
-    const exampleLine = hasMedia
-        ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
-        : "🎨 Примеры креатива: отсутствуют";
+  // Определяем, есть ли медиафайлы
+  const hasMedia = Array.isArray(task.example_creative)
+    ? task.example_creative.length > 0
+    : typeof task.example_creative === "string" &&
+      task.example_creative.trim() !== "";
 
-    // Подсчитываем количество результатов для отображения
-    let resultCount = 0;
-    if (Array.isArray(task.result)) {
-        resultCount = task.result.length;
-    } else if (task.result) {
-        resultCount = 1;
-    }
+  // Формируем строку для отображения информации о примерах креатива
+  const exampleLine = hasMedia
+    ? `🎨 Примеры креатива: ${
+        Array.isArray(task.example_creative) ? task.example_creative.length : 1
+      }`
+    : "🎨 Примеры креатива: отсутствуют";
 
-    // Формируем текст с информацией о задании
-    const taskInfo = `
+  // Подсчитываем количество результатов для отображения
+  let resultCount = 0;
+  if (Array.isArray(task.result)) {
+    resultCount = task.result.length;
+  } else if (task.result) {
+    resultCount = 1;
+  }
+
+  // Формируем текст с информацией о задании
+  const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-👨‍💻 Креатор: ${task.creator?.username || 'Не назначен'}
-📝 Результат: ${resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"}
+👨‍💻 Креатор: ${task.creator?.username || "Не назначен"}
+📝 Результат: ${
+    resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
+  }
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
-    
-    return taskInfo;
+
+  return taskInfo;
 };
 
 // Функция для безопасного редактирования сообщения (если потребуется где‑то ещё)
 const safeEditMessageText = async (ctx, text, extra) => {
-    try {
-        await ctx.editMessageText(text, extra);
-    } catch (error) {
-        if (error.response &&
-            error.response.error_code === 400 &&
-            error.response.description.includes("message can't be edited")) {
-            await ctx.reply(text, extra);
-        } else {
-            throw error;
-        }
+  try {
+    await ctx.editMessageText(text, extra);
+  } catch (error) {
+    if (
+      error.response &&
+      error.response.error_code === 400 &&
+      error.response.description.includes("message can't be edited")
+    ) {
+      await ctx.reply(text, extra);
+    } else {
+      throw error;
     }
+  }
 };
 
 // Функция для проверки голосов и финализации задания (UI для чекера больше не обновляем)
 const checkAndFinalizeTask = async (ctx) => {
-    try {
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
-        if (!task) return false;
-        const version = task.version;
+  try {
+    const taskId = ctx.session.selectedTask;
+    const task = await taskService.findTaskById(taskId);
+    if (!task) return false;
+    const version = task.version;
 
-        // Получаем записи голосования для текущей версии
-        const allRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
-        const versionRecords = allRecords.filter(record => record.version === version);
-        
-        // Получаем всех чекеров (предполагается, что голосовать должны все чекеры системы)
-        const checkers = await userService.findAllCheckers();
-        const totalCheckers = checkers.length;
-        
-        if (versionRecords.length < totalCheckers) {
-            // Не все голосовали – можно просто завершить обработку без обновления интерфейса для чекера
-            return false;
-        } else {
-            // Все чекеры проголосовали
-            const hasFailed = versionRecords.some(record => record.status === 'failed');
-            if (hasFailed) {
-                // Агрегируем правки из всех записей с failed
-                const corrections = versionRecords
-                    .filter(record => record.status === 'failed')
-                    .map(record => record.message)
-                    .join('\n');
-                
-                // Обеспечиваем обратную совместимость с массивом example_creative
-                let exampleLine = "🎨 Пример креатива: отсутствует";
-                
-                if (Array.isArray(task.example_creative) && task.example_creative.length > 0) {
-                    // Определяем, сколько примеров креатива есть
-                    exampleLine = `🎨 Примеры креатива: ${task.example_creative.length}`;
-                } else if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
-                    // Обрабатываем случай, когда example_creative - это строка
-                    const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAA");
-                    exampleLine = isMedia
-                        ? "🎨 Пример креатива ниже"
-                        : `🎨 Пример креатива: ${task.example_creative}`;
-                }
-                
-                const creativeMessage = `
+    // Получаем записи голосования для текущей версии
+    const allRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
+    const versionRecords = allRecords.filter(
+      (record) => record.version === version
+    );
+
+    // Получаем всех чекеров (предполагается, что голосовать должны все чекеры системы)
+    const checkers = await userService.findAllCheckers();
+    const totalCheckers = checkers.length;
+
+    if (versionRecords.length < totalCheckers) {
+      // Не все голосовали – можно просто завершить обработку без обновления интерфейса для чекера
+      return false;
+    } else {
+      // Все чекеры проголосовали
+      const hasFailed = versionRecords.some(
+        (record) => record.status === "failed"
+      );
+      if (hasFailed) {
+        // Агрегируем правки из всех записей с failed
+        const corrections = versionRecords
+          .filter((record) => record.status === "failed")
+          .map((record) => record.message)
+          .join("\n");
+
+        // Обеспечиваем обратную совместимость с массивом example_creative
+        let exampleLine = "🎨 Пример креатива: отсутствует";
+
+        if (
+          Array.isArray(task.example_creative) &&
+          task.example_creative.length > 0
+        ) {
+          // Определяем, сколько примеров креатива есть
+          exampleLine = `🎨 Примеры креатива: ${task.example_creative.length}`;
+        } else if (
+          typeof task.example_creative === "string" &&
+          task.example_creative.trim() !== ""
+        ) {
+          // Обрабатываем случай, когда example_creative - это строка
+          const isMedia =
+            task.example_creative.startsWith("AgAC") ||
+            task.example_creative.startsWith("BAA");
+          exampleLine = isMedia
+            ? "🎨 Пример креатива ниже"
+            : `🎨 Пример креатива: ${task.example_creative}`;
+        }
+
+        const creativeMessage = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
@@ -119,902 +138,1056 @@ ${exampleLine}
 правки:
 ${corrections}
                 `;
-                // Обновляем состояние задания и увеличиваем версию
-                await taskService.updateTask(taskId, { state: 'progress', version: task.version + 1 });
-                // Отправляем сообщение креативщику (учтите, что findById теперь возвращает объект, а не массив)
-                const creator = await userService.findById(task.creator);
-                const buyer = await userService.findById(task.buyer);
-                await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
-            } else {
-                // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
-                const finalizedTask = await taskService.updateTask(taskId, { state: 'done' });
-                if (!finalizedTask) {
-                    console.error(`Failed to update and retrieve task ${taskId}`);
-                    return false; // Выходим, если не удалось обновить задачу
-                }
-
-                const { creator, buyer } = finalizedTask;
-
-                // --- Логика отправки в форум --- //
-                try {
-                    const topicIdMain = await TopicService.getOrCreate(ctx, process.env.FORUM_CHAT_ID, extractRegion(finalizedTask.name));
-
-
-                    
-                    const fmt = iso =>
-                      iso ? dayjs(iso).locale('ru').format('DD.MM.YYYY HH:mm') : '—';
-                    
-                    // эмодзи-подписи по ключам, чтобы не плодить if'ы
-                    const labels = {
-                      name: '📌 Задача',
-                      description: '📝 Описание',
-                      link_app: '🔗 Приложение',
-                      workType: '💼 Тип работы',
-                      expectedDate: '⏰ Предполагаемая дата сдачи',
-                      completionDate: '✅ Завершено',
-                      buyer: '👤 Баер',
-                      creator: '👨‍💻 Креативщик',
-                    };
-                    
-                    // основной код ----------------------------------------------------
-                    const task = finalizedTask.toObject();
-                    
-                    // удаляем лишнее сразу
-                    delete task.points;
-                    delete task.state;
-                    delete task.ctr;
-                    delete task.bonus;
-                    delete task.result;
-                    delete task.example_creative;
-                    delete task.__v;
-                    
-                    // готовим плоские поля
-                    const flat = {
-                      name: task.name,
-                      description: task.description,
-                      link_app: task.link_app,
-                      workType: task.workType,
-                      expectedDate: fmt(task.expectedDate),
-                      completionDate: fmt(task.completionDate),
-                      buyer: `@${task.buyer.username}`,
-                      creator: `@${task.creator.username}`,
-                    };
-                    
-                    // собираем текст
-                    const message = Object.entries(flat)
-                      .map(([k, v]) => `<b>${labels[k]}:</b> ${v}`)
-                      .join('\n\n');            // пустая строка между блоками
-                    
-                    await ctx.telegram.sendMessage(
-                      process.env.FORUM_CHAT_ID,
-                      message,
-                      {
-                        parse_mode: 'HTML',
-                        message_thread_id: topicIdMain,
-                      },
-                    );
-
-                    // 2. Отправка готового креатива
-                    if (finalizedTask.result && finalizedTask.result.length > 0) {
-                        const resultMedia = Array.isArray(finalizedTask.result) ? finalizedTask.result : [finalizedTask.result];
-                        const resultCaption = `Готовый - ${finalizedTask.name}`;
-                        if (resultMedia.length > 1) {
-                            await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, resultMedia.map((fileId, i) => ({
-                                type: fileId.startsWith('BA') ? 'video' : 'photo',
-                                media: fileId,
-                                caption: i === 0 ? resultCaption : undefined,
-                            })), { message_thread_id: topicIdMain });
-                        } else if (resultMedia.length === 1) {
-                            const fileId = resultMedia[0];
-                            const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
-                            await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: resultCaption, message_thread_id: topicIdMain });
-                        }
-                    }
-
-                    // 3. Отправка примера креатива
-                    if (finalizedTask.example_creative && finalizedTask.example_creative.length > 0) {
-                        const exampleMedia = Array.isArray(finalizedTask.example_creative) ? finalizedTask.example_creative : [finalizedTask.example_creative];
-                        const exampleCaption = `Пример для - ${finalizedTask.name}`;
-                        
-                        // Проверяем, является ли контент медиафайлом
-                        const isValidMedia = exampleMedia.every(fileId => 
-                            fileId.startsWith('AgAC') || // фото
-                            fileId.startsWith('BAA') || // видео
-                            fileId.startsWith('BQA') || // документ
-                            fileId.startsWith('CQA') || // аудио
-                            fileId.startsWith('DQA')    // анимация
-                        );
-
-                        if (isValidMedia) {
-                            if (exampleMedia.length > 1) {
-                                await ctx.telegram.sendMediaGroup(process.env.FORUM_CHAT_ID, exampleMedia.map((fileId, i) => ({
-                                    type: fileId.startsWith('BA') ? 'video' : 'photo',
-                                    media: fileId,
-                                    caption: i === 0 ? exampleCaption : undefined,
-                                })), { message_thread_id: topicIdMain });
-                            } else if (exampleMedia.length === 1) {
-                                const fileId = exampleMedia[0];
-                                const method = fileId.startsWith('BA') ? 'sendVideo' : 'sendPhoto';
-                                await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, { caption: exampleCaption, message_thread_id: topicIdMain });
-                            }
-                        } else {
-                            // Если это не медиафайл, отправляем как текстовое сообщение
-                            await ctx.telegram.sendMessage(
-                                process.env.FORUM_CHAT_ID,
-                                `${exampleCaption}\n\n${exampleMedia.join('\n')}`,
-                                { message_thread_id: topicIdMain }
-                            );
-                        }
-                    }
-                    await forwardToSecondChat(ctx, finalizedTask, extractRegion(finalizedTask.name));
-                } catch (e) {
-                    console.error('Ошибка при пересылке данных в форум:', e);
-                }
-                // ---------- Конец логики форума --- //
-
-                // --- Уведомления пользователям ---
-                try {
-                    if (creator && creator.tg_id) {
-                        await ctx.telegram.sendMessage(creator.tg_id, `✅ ${finalizedTask.name} Одобрено!`);
-                    } else {
-                         console.error(`Could not find creator or creator.tg_id for task ${finalizedTask._id}`);
-                    }
-                } catch (error) {
-                    console.error(`Failed to send approval message to creator for task ${finalizedTask.name}:`, error.message);
-                }
-
-                try {
-                    if (buyer && buyer.tg_id) {
-                        await ctx.telegram.sendMessage(buyer.tg_id, `✅ ${finalizedTask.name} готово!`);
-                    } else {
-                        console.error(`Could not find buyer or buyer.tg_id for task ${finalizedTask._id}`);
-                    }
-                } catch (error) {
-                    console.error(`Failed to send completion message to buyer for task ${finalizedTask.name}:`, error.message);
-                }
-            }
-            return true;
+        // Обновляем состояние задания и увеличиваем версию
+        await taskService.updateTask(taskId, {
+          state: "progress",
+          version: task.version + 1,
+        });
+        // Отправляем сообщение креативщику (учтите, что findById теперь возвращает объект, а не массив)
+        const creator = await userService.findById(task.creator);
+        const buyer = await userService.findById(task.buyer);
+        await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
+      } else {
+        // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
+        const finalizedTask = await taskService.updateTask(taskId, {
+          state: "done",
+        });
+        if (!finalizedTask) {
+          console.error(`Failed to update and retrieve task ${taskId}`);
+          return false; // Выходим, если не удалось обновить задачу
         }
-    } catch (error) {
-        console.error('Error in checkAndFinalizeTask:', error);
-        return false;
+
+        const { creator, buyer } = finalizedTask;
+
+        // --- Логика отправки в форум --- //
+        try {
+          const topicIdMain = await TopicService.getOrCreate(
+            ctx,
+            process.env.FORUM_CHAT_ID,
+            extractRegion(finalizedTask.name)
+          );
+
+          const fmt = (iso) =>
+            iso ? dayjs(iso).locale("ru").format("DD.MM.YYYY HH:mm") : "—";
+
+          // эмодзи-подписи по ключам, чтобы не плодить if'ы
+          const labels = {
+            name: "📌 Задача",
+            description: "📝 Описание",
+            link_app: "🔗 Приложение",
+            workType: "💼 Тип работы",
+            expectedDate: "⏰ Предполагаемая дата сдачи",
+            completionDate: "✅ Завершено",
+            buyer: "👤 Баер",
+            creator: "👨‍💻 Креативщик",
+          };
+
+          // основной код ----------------------------------------------------
+          const task = finalizedTask.toObject();
+
+          // удаляем лишнее сразу
+          delete task.points;
+          delete task.state;
+          delete task.ctr;
+          delete task.bonus;
+          delete task.result;
+          delete task.example_creative;
+          delete task.__v;
+
+          // готовим плоские поля
+          const flat = {
+            name: task.name,
+            description: task.description,
+            link_app: task.link_app,
+            workType: task.workType,
+            expectedDate: fmt(task.expectedDate),
+            completionDate: fmt(task.completionDate),
+            buyer: `@${task.buyer.username}`,
+            creator: `@${task.creator.username}`,
+          };
+
+          // собираем текст
+          const message = Object.entries(flat)
+            .map(([k, v]) => `<b>${labels[k]}:</b> ${v}`)
+            .join("\n\n"); // пустая строка между блоками
+
+          await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, message, {
+            parse_mode: "HTML",
+            message_thread_id: topicIdMain,
+          });
+
+          // 2. Отправка готового креатива
+          if (finalizedTask.result && finalizedTask.result.length > 0) {
+            const resultMedia = Array.isArray(finalizedTask.result)
+              ? finalizedTask.result
+              : [finalizedTask.result];
+            const resultCaption = `Готовый - ${finalizedTask.name}`;
+            if (resultMedia.length > 1) {
+              await ctx.telegram.sendMediaGroup(
+                process.env.FORUM_CHAT_ID,
+                resultMedia.map((fileId, i) => ({
+                  type: fileId.startsWith("BA") ? "video" : "photo",
+                  media: fileId,
+                  caption: i === 0 ? resultCaption : undefined,
+                })),
+                { message_thread_id: topicIdMain }
+              );
+            } else if (resultMedia.length === 1) {
+              const fileId = resultMedia[0];
+              const method = fileId.startsWith("BA")
+                ? "sendVideo"
+                : "sendPhoto";
+              await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, {
+                caption: resultCaption,
+                message_thread_id: topicIdMain,
+              });
+            }
+          }
+
+          // 3. Отправка примера креатива
+          if (
+            finalizedTask.example_creative &&
+            finalizedTask.example_creative.length > 0
+          ) {
+            const exampleMedia = Array.isArray(finalizedTask.example_creative)
+              ? finalizedTask.example_creative
+              : [finalizedTask.example_creative];
+            const exampleCaption = `Пример для - ${finalizedTask.name}`;
+
+            // Проверяем, является ли контент медиафайлом
+            const isValidMedia = exampleMedia.every(
+              (fileId) =>
+                fileId.startsWith("AgAC") || // фото
+                fileId.startsWith("BAA") || // видео
+                fileId.startsWith("BQA") || // документ
+                fileId.startsWith("CQA") || // аудио
+                fileId.startsWith("DQA") // анимация
+            );
+
+            if (isValidMedia) {
+              if (exampleMedia.length > 1) {
+                await ctx.telegram.sendMediaGroup(
+                  process.env.FORUM_CHAT_ID,
+                  exampleMedia.map((fileId, i) => ({
+                    type: fileId.startsWith("BA") ? "video" : "photo",
+                    media: fileId,
+                    caption: i === 0 ? exampleCaption : undefined,
+                  })),
+                  { message_thread_id: topicIdMain }
+                );
+              } else if (exampleMedia.length === 1) {
+                const fileId = exampleMedia[0];
+                const method = fileId.startsWith("BA")
+                  ? "sendVideo"
+                  : "sendPhoto";
+                await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, {
+                  caption: exampleCaption,
+                  message_thread_id: topicIdMain,
+                });
+              }
+            } else {
+              // Если это не медиафайл, отправляем как текстовое сообщение
+              await ctx.telegram.sendMessage(
+                process.env.FORUM_CHAT_ID,
+                `${exampleCaption}\n\n${exampleMedia.join("\n")}`,
+                { message_thread_id: topicIdMain }
+              );
+            }
+          }
+          await forwardToSecondChat(
+            ctx,
+            finalizedTask,
+            extractRegion(finalizedTask.name)
+          );
+        } catch (e) {
+          console.error("Ошибка при пересылке данных в форум:", e);
+        }
+        // ---------- Конец логики форума --- //
+
+        // --- Уведомления пользователям ---
+        try {
+          if (creator && creator.tg_id) {
+            await ctx.telegram.sendMessage(
+              creator.tg_id,
+              `✅ ${finalizedTask.name} Одобрено!`
+            );
+          } else {
+            console.error(
+              `Could not find creator or creator.tg_id for task ${finalizedTask._id}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `Failed to send approval message to creator for task ${finalizedTask.name}:`,
+            error.message
+          );
+        }
+
+        try {
+          if (buyer && buyer.tg_id) {
+            await ctx.telegram.sendMessage(
+              buyer.tg_id,
+              `✅ ${finalizedTask.name} готово!`
+            );
+          } else {
+            console.error(
+              `Could not find buyer or buyer.tg_id for task ${finalizedTask._id}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `Failed to send completion message to buyer for task ${finalizedTask.name}:`,
+            error.message
+          );
+        }
+      }
+      return true;
     }
+  } catch (error) {
+    console.error("Error in checkAndFinalizeTask:", error);
+    return false;
+  }
 };
 
 // В начале файла добавим функцию для удаления медиа
 const deleteMediaMessages = async (ctx) => {
-    // Удаляем сданное изображение (одиночное сообщение)
-    if (ctx.session.mediaMessageId) {
-        try {
-            ctx.session.mediaMessageId = null;
-        } catch (err) {
-            console.error("Ошибка при удалении одиночного медиа:", err);
-        }
+  // Удаляем сданное изображение (одиночное сообщение)
+  if (ctx.session.mediaMessageId) {
+    try {
+      ctx.session.mediaMessageId = null;
+    } catch (err) {
+      console.error("Ошибка при удалении одиночного медиа:", err);
     }
-    
-    // Удаляем массив медиа сообщений результата работы
-    if (ctx.session.mediaMessageIds && ctx.session.mediaMessageIds.length > 0) {
-        ctx.session.mediaMessageIds = [];
-    }
+  }
 
-    // Удаляем примеры креативов (массив сообщений)
-    if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
-        ctx.session.exampleMediaMessageIds = [];
-    }
+  // Удаляем массив медиа сообщений результата работы
+  if (ctx.session.mediaMessageIds && ctx.session.mediaMessageIds.length > 0) {
+    ctx.session.mediaMessageIds = [];
+  }
 
-    // Для обратной совместимости проверяем и старое одиночное сообщение
-    if (ctx.session.exampleMediaMessageId) {
-        try {
-            ctx.session.exampleMediaMessageId = null;
-        } catch (err) {
-            console.error("Ошибка при удалении примера:", err);
-        }
+  // Удаляем примеры креативов (массив сообщений)
+  if (
+    ctx.session.exampleMediaMessageIds &&
+    ctx.session.exampleMediaMessageIds.length > 0
+  ) {
+    ctx.session.exampleMediaMessageIds = [];
+  }
+
+  // Для обратной совместимости проверяем и старое одиночное сообщение
+  if (ctx.session.exampleMediaMessageId) {
+    try {
+      ctx.session.exampleMediaMessageId = null;
+    } catch (err) {
+      console.error("Ошибка при удалении примера:", err);
     }
+  }
 };
 
 getTaskToModerateScene.enter(async (ctx) => {
-    try {
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        if (!user) {
-            await ctx.reply(ruMessage.messages.userNotFound);
-            return;
-        }
-        
-        // Initialize page in session if not exists
-        ctx.session.currentPage = 0;
-        
-        // Save previous task ID if it exists
-        const preselectedTaskId = ctx.session.selectedTask;
-        
-        // Очищаем сессию при входе в сцену, но сохраняем ID задачи если он был
-        ctx.session.mediaMessageId = null;
-        ctx.session.exampleMediaMessageId = null;
-        ctx.session.exampleMediaMessageIds = [];
-        ctx.session.taskMessageId = null;
-        
-        // If we have a task ID from a direct link (like moderate_task:xxx), load it immediately
-        if (preselectedTaskId) {
-            ctx.session.selectedTask = preselectedTaskId;
-            const task = await taskService.findTaskById(preselectedTaskId);
-            
-            if (task) {
-                // Directly use the task information to display it
-                const taskInfo = formatTaskInfo(task);
-                
-                // Display the task results (media)
-                if (task.result) {
-                    try {
-                        // Handle result display (media files)
-                        if (Array.isArray(task.result) && task.result.length > 0) {
-                            // Code to display media group here (similar to the action handler)
-                            const mediaGroup = task.result.map(fileId => {
-                                const isVideo = fileId.startsWith('BAA');
-                                const isDocument = fileId.startsWith('BQA');
-                                const isAudio = fileId.startsWith('CQA');
-                                const isAnimation = fileId.startsWith('DQA');
-                                
-                                let type = 'photo';
-                                if (isVideo) type = 'video';
-                                else if (isDocument) type = 'document';
-                                else if (isAudio) type = 'audio';
-                                else if (isAnimation) type = 'animation';
-                                
-                                return { type, media: fileId };
-                            });
-                            
-                            if (mediaGroup.length > 0) {
-                                const chunks = [];
-                                for (let i = 0; i < mediaGroup.length; i += 10) {
-                                    chunks.push(mediaGroup.slice(i, i + 10));
-                                }
-                                
-                                for (const chunk of chunks) {
-                                    if (chunk.length > 0) {
-                                        const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
-                                        
-                                        if (sentMessages && sentMessages.length > 0) {
-                                            if (!ctx.session.mediaMessageIds) {
-                                                ctx.session.mediaMessageIds = [];
-                                            }
-                                            sentMessages.forEach(msg => {
-                                                ctx.session.mediaMessageIds.push(msg.message_id);
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        } else if (typeof task.result === 'string') {
-                            // Handle single media file
-                            let mediaResponse;
-                            if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
-                                mediaResponse = await ctx.replyWithPhoto(task.result);
-                            } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
-                                mediaResponse = await ctx.replyWithVideo(task.result);
-                            } else {
-                                try {
-                                    mediaResponse = await ctx.replyWithPhoto(task.result);
-                                } catch {
-                                    try {
-                                        mediaResponse = await ctx.replyWithVideo(task.result);
-                                    } catch (innerError) {
-                                        console.error("Не удалось определить тип медиа:", innerError);
-                                        await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
-                                    }
-                                }
-                            }
-
-                            if (mediaResponse?.message_id) {
-                                ctx.session.mediaMessageId = mediaResponse.message_id;
-                            }
-                        }
-                    } catch (error) {
-                        console.error("Ошибка при отправке результата:", error);
-                        await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
-                    }
-                }
-                
-                // Display task info and moderation controls
-                const moderateKeyboard = moderate(task);
-                const taskMessage = await ctx.reply(taskInfo, {
-                    ...moderateKeyboard,
-                    reply_markup: {
-                        ...moderateKeyboard.reply_markup,
-                        remove_keyboard: true
-                    }
-                });
-                ctx.session.taskMessageId = taskMessage.message_id;
-                
-                return;
-            }
-        }
-        
-        // If no preselected task or task not found, show the task selection menu
-        const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage);
-        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
-    } catch (error) {
-        console.error('Error in getTaskToModerateScene.enter:', error);
-        await ctx.reply(ruMessage.messages.errorOccurred);
+  try {
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (!user) {
+      await ctx.reply(ruMessage.messages.userNotFound);
+      return;
     }
+
+    // Initialize page in session if not exists
+    ctx.session.currentPage = 0;
+
+    // Save previous task ID if it exists
+    const preselectedTaskId = ctx.session.selectedTask;
+
+    // Очищаем сессию при входе в сцену, но сохраняем ID задачи если он был
+    ctx.session.mediaMessageId = null;
+    ctx.session.exampleMediaMessageId = null;
+    ctx.session.exampleMediaMessageIds = [];
+    ctx.session.taskMessageId = null;
+
+    // If we have a task ID from a direct link (like moderate_task:xxx), load it immediately
+    if (preselectedTaskId) {
+      ctx.session.selectedTask = preselectedTaskId;
+      const task = await taskService.findTaskById(preselectedTaskId);
+
+      if (task) {
+        // Directly use the task information to display it
+        const taskInfo = formatTaskInfo(task);
+
+        // Display the task results (media)
+        if (task.result) {
+          try {
+            // Handle result display (media files)
+            if (Array.isArray(task.result) && task.result.length > 0) {
+              // Code to display media group here (similar to the action handler)
+              const mediaGroup = task.result.map((fileId) => {
+                const isVideo = fileId.startsWith("BAA");
+                const isDocument = fileId.startsWith("BQA");
+                const isAudio = fileId.startsWith("CQA");
+                const isAnimation = fileId.startsWith("DQA");
+
+                let type = "photo";
+                if (isVideo) type = "video";
+                else if (isDocument) type = "document";
+                else if (isAudio) type = "audio";
+                else if (isAnimation) type = "animation";
+
+                return { type, media: fileId };
+              });
+
+              if (mediaGroup.length > 0) {
+                const chunks = [];
+                for (let i = 0; i < mediaGroup.length; i += 10) {
+                  chunks.push(mediaGroup.slice(i, i + 10));
+                }
+
+                for (const chunk of chunks) {
+                  if (chunk.length > 0) {
+                    const sentMessages = await ctx.telegram.sendMediaGroup(
+                      ctx.chat.id,
+                      chunk
+                    );
+
+                    if (sentMessages && sentMessages.length > 0) {
+                      if (!ctx.session.mediaMessageIds) {
+                        ctx.session.mediaMessageIds = [];
+                      }
+                      sentMessages.forEach((msg) => {
+                        ctx.session.mediaMessageIds.push(msg.message_id);
+                      });
+                    }
+                  }
+                }
+              }
+            } else if (typeof task.result === "string") {
+              // Handle single media file
+              let mediaResponse;
+              if (
+                task.mediaType === "photo" ||
+                task.result.startsWith("AgAC")
+              ) {
+                mediaResponse = await ctx.replyWithPhoto(task.result);
+              } else if (
+                task.mediaType === "video" ||
+                task.result.startsWith("BAA")
+              ) {
+                mediaResponse = await ctx.replyWithVideo(task.result);
+              } else {
+                try {
+                  mediaResponse = await ctx.replyWithPhoto(task.result);
+                } catch {
+                  try {
+                    mediaResponse = await ctx.replyWithVideo(task.result);
+                  } catch (innerError) {
+                    console.error(
+                      "Не удалось определить тип медиа:",
+                      innerError
+                    );
+                    await ctx.reply(
+                      "Не удалось отобразить результат работы. Неизвестный формат медиа."
+                    );
+                  }
+                }
+              }
+
+              if (mediaResponse?.message_id) {
+                ctx.session.mediaMessageId = mediaResponse.message_id;
+              }
+            }
+          } catch (error) {
+            console.error("Ошибка при отправке результата:", error);
+            await ctx.reply(
+              "Не удалось отобразить результат работы. Ошибка при обработке медиа."
+            );
+          }
+        }
+
+        // Display task info and moderation controls
+        const moderateKeyboard = moderate(task);
+        const taskMessage = await ctx.reply(taskInfo, {
+          ...moderateKeyboard,
+          reply_markup: {
+            ...moderateKeyboard.reply_markup,
+            remove_keyboard: true,
+          },
+        });
+        ctx.session.taskMessageId = taskMessage.message_id;
+
+        return;
+      }
+    }
+
+    // If no preselected task or task not found, show the task selection menu
+    const keyboard = await myTasks(
+      user._id,
+      "",
+      "wait",
+      ctx.session.currentPage
+    );
+    await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+  } catch (error) {
+    console.error("Error in getTaskToModerateScene.enter:", error);
+    await ctx.reply(ruMessage.messages.errorOccurred);
+  }
 });
 
 // Модифицируем обработчик выбора задачи
 getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
-    try {
-
-        const taskId = ctx.callbackQuery.data;
-        const task = await taskService.findTaskById(taskId);
-        if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-            return;
-        }
-
-        ctx.session.selectedTask = taskId;
-        const taskInfo = formatTaskInfo(task);
-
-        // Отправляем результат креатива
-        if (task.result) {
-            try {
-                // Обрабатываем случай, когда result является массивом (новый формат)
-                if (Array.isArray(task.result) && task.result.length > 0) {
-                    // Разделяем медиафайлы по типам
-                    const mediaGroup = task.result.map(fileId => {
-                        // Определяем тип медиа по первым символам file_id
-                        const isVideo = fileId.startsWith('BAA');
-                        const isDocument = fileId.startsWith('BQA');
-                        const isAudio = fileId.startsWith('CQA');
-                        const isAnimation = fileId.startsWith('DQA');
-                        
-                        // Определяем тип медиа
-                        let type = 'photo'; // По умолчанию фото
-                        if (isVideo) type = 'video';
-                        else if (isDocument) type = 'document';
-                        else if (isAudio) type = 'audio';
-                        else if (isAnimation) type = 'animation';
-                        
-                        return {
-                            type: type,
-                            media: fileId
-                        };
-                    });
-                    
-                    // Отправляем медиагруппу (максимум 10 файлов в одной группе)
-                    if (mediaGroup.length > 0) {
-                        // Telegram поддерживает до 10 файлов в одной группе
-                        const chunks = [];
-                        for (let i = 0; i < mediaGroup.length; i += 10) {
-                            chunks.push(mediaGroup.slice(i, i + 10));
-                        }
-                        
-                        // Отправляем каждую группу отдельно
-                        for (const chunk of chunks) {
-                            if (chunk.length > 0) {
-                                const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
-                                
-                                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
-                                if (sentMessages && sentMessages.length > 0) {
-                                    if (!ctx.session.mediaMessageIds) {
-                                        ctx.session.mediaMessageIds = [];
-                                    }
-                                    sentMessages.forEach(msg => {
-                                        ctx.session.mediaMessageIds.push(msg.message_id);
-                                    });
-                                }
-                            }
-                        }
-                    }
-                } 
-                // Обрабатываем случай, когда result является строкой (старый формат)
-                else if (typeof task.result === 'string') {
-                    let mediaResponse;
-                    if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
-                        mediaResponse = await ctx.replyWithPhoto(task.result);
-                    } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
-                        mediaResponse = await ctx.replyWithVideo(task.result);
-                    } else {
-                        try {
-                            mediaResponse = await ctx.replyWithPhoto(task.result);
-                        } catch {
-                            try {
-                                mediaResponse = await ctx.replyWithVideo(task.result);
-                            } catch (innerError) {
-                                console.error("Не удалось определить тип медиа:", innerError);
-                                await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
-                            }
-                        }
-                    }
-
-                    if (mediaResponse?.message_id) {
-                        ctx.session.mediaMessageId = mediaResponse.message_id;
-                    }
-                }
-            } catch (error) {
-                console.error("Ошибка при отправке результата:", error);
-                await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
-            }
-        }
-
-        // Отправляем описание задачи с удалением обычной клавиатуры
-        const moderateKeyboard = moderate(task);
-        const taskMessage = await ctx.reply(taskInfo, {
-            ...moderateKeyboard,
-            reply_markup: {
-                ...moderateKeyboard.reply_markup,
-                remove_keyboard: true
-            }
-        });
-        ctx.session.taskMessageId = taskMessage.message_id;
-
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in task selection:', error);
-        await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+  try {
+    const taskId = ctx.callbackQuery.data;
+    const task = await taskService.findTaskById(taskId);
+    if (!task) {
+      await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+      return;
     }
+
+    ctx.session.selectedTask = taskId;
+    const taskInfo = formatTaskInfo(task);
+
+    // Отправляем результат креатива
+    if (task.result) {
+      try {
+        // Обрабатываем случай, когда result является массивом (новый формат)
+        if (Array.isArray(task.result) && task.result.length > 0) {
+          // Разделяем медиафайлы по типам
+          const mediaGroup = task.result.map((fileId) => {
+            // Определяем тип медиа по первым символам file_id
+            const isVideo = fileId.startsWith("BAA");
+            const isDocument = fileId.startsWith("BQA");
+            const isAudio = fileId.startsWith("CQA");
+            const isAnimation = fileId.startsWith("DQA");
+
+            // Определяем тип медиа
+            let type = "photo"; // По умолчанию фото
+            if (isVideo) type = "video";
+            else if (isDocument) type = "document";
+            else if (isAudio) type = "audio";
+            else if (isAnimation) type = "animation";
+
+            return {
+              type: type,
+              media: fileId,
+            };
+          });
+
+          // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+          if (mediaGroup.length > 0) {
+            // Telegram поддерживает до 10 файлов в одной группе
+            const chunks = [];
+            for (let i = 0; i < mediaGroup.length; i += 10) {
+              chunks.push(mediaGroup.slice(i, i + 10));
+            }
+
+            // Отправляем каждую группу отдельно
+            for (const chunk of chunks) {
+              if (chunk.length > 0) {
+                const sentMessages = await ctx.telegram.sendMediaGroup(
+                  ctx.chat.id,
+                  chunk
+                );
+
+                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
+                if (sentMessages && sentMessages.length > 0) {
+                  if (!ctx.session.mediaMessageIds) {
+                    ctx.session.mediaMessageIds = [];
+                  }
+                  sentMessages.forEach((msg) => {
+                    ctx.session.mediaMessageIds.push(msg.message_id);
+                  });
+                }
+              }
+            }
+          }
+        }
+        // Обрабатываем случай, когда result является строкой (старый формат)
+        else if (typeof task.result === "string") {
+          let mediaResponse;
+          if (task.mediaType === "photo" || task.result.startsWith("AgAC")) {
+            mediaResponse = await ctx.replyWithPhoto(task.result);
+          } else if (
+            task.mediaType === "video" ||
+            task.result.startsWith("BAA")
+          ) {
+            mediaResponse = await ctx.replyWithVideo(task.result);
+          } else {
+            try {
+              mediaResponse = await ctx.replyWithPhoto(task.result);
+            } catch {
+              try {
+                mediaResponse = await ctx.replyWithVideo(task.result);
+              } catch (innerError) {
+                console.error("Не удалось определить тип медиа:", innerError);
+                await ctx.reply(
+                  "Не удалось отобразить результат работы. Неизвестный формат медиа."
+                );
+              }
+            }
+          }
+
+          if (mediaResponse?.message_id) {
+            ctx.session.mediaMessageId = mediaResponse.message_id;
+          }
+        }
+      } catch (error) {
+        console.error("Ошибка при отправке результата:", error);
+        await ctx.reply(
+          "Не удалось отобразить результат работы. Ошибка при обработке медиа."
+        );
+      }
+    }
+
+    // Отправляем описание задачи с удалением обычной клавиатуры
+    const moderateKeyboard = moderate(task);
+    const taskMessage = await ctx.reply(taskInfo, {
+      ...moderateKeyboard,
+      reply_markup: {
+        ...moderateKeyboard.reply_markup,
+        remove_keyboard: true,
+      },
+    });
+    ctx.session.taskMessageId = taskMessage.message_id;
+
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error("Error in task selection:", error);
+    await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+  }
 });
 
 // Обработчик для кнопок пагинации
 getTaskToModerateScene.action(/^page_\d+$/, async (ctx) => {
-    try {
-        // Извлекаем номер страницы из callback_data
-        const pageNumber = parseInt(ctx.callbackQuery.data.split('_')[1]);
-        
-        // Сохраняем текущую страницу в сессии
-        ctx.session.currentPage = pageNumber;
-        
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        if (!user) {
-            await ctx.answerCbQuery('Пользователь не найден');
-            return;
-        }
-        
-        // Получаем обновленную клавиатуру с новой страницей
-        const keyboard = await myTasks(user._id, '', "wait", pageNumber);
-        
-        // Обновляем сообщение с новой клавиатурой
-        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in pagination action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при переключении страницы');
+  try {
+    // Извлекаем номер страницы из callback_data
+    const pageNumber = parseInt(ctx.callbackQuery.data.split("_")[1]);
+
+    // Сохраняем текущую страницу в сессии
+    ctx.session.currentPage = pageNumber;
+
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (!user) {
+      await ctx.answerCbQuery("Пользователь не найден");
+      return;
     }
+
+    // Получаем обновленную клавиатуру с новой страницей
+    const keyboard = await myTasks(user._id, "", "wait", pageNumber);
+
+    // Обновляем сообщение с новой клавиатурой
+    await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error("Error in pagination action:", error);
+    await ctx.answerCbQuery("Произошла ошибка при переключении страницы");
+  }
 });
 
 // Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
-getTaskToModerateScene.action('current_page', async (ctx) => {
-    await ctx.answerCbQuery('Текущая страница');
+getTaskToModerateScene.action("current_page", async (ctx) => {
+  await ctx.answerCbQuery("Текущая страница");
 });
 
 // Обработчик нажатия кнопки "✅ Принять" (done)
-getTaskToModerateScene.action('done', async (ctx) => {
-    try {
-        const taskId = ctx.session.selectedTask;
-        if (!taskId) {
-            await ctx.answerCbQuery('Задание не выбрано');
-            return;
-        }
-        const task = await taskService.findTaskById(taskId);
-        if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-            return;
-        }
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        if (!user) {
-            await ctx.answerCbQuery('Пользователь не найден');
-            return;
-        }
-        const version = task.version;
-
-        // Проверяем, голосовал ли уже этот чекер (независимо от статуса)
-        const checkersRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
-        const existingRecord = checkersRecords.find(record =>
-            record.chekerId.toString() === user._id.toString() &&
-            record.version === version
-        );
-        if (existingRecord) {
-            await ctx.answerCbQuery('Вы уже проголосовали');
-            return;
-        }
-
-        // Создаем запись проверки с одобрением
-        await taskChekerService.createTaskChecker({
-            taskId,
-            chekerId: user._id,
-            status: 'done',
-            version,
-            message: 'Задание принято'
-        });
-
-        // Запускаем логику финализации (без изменения интерфейса для чекера)
-        await checkAndFinalizeTask(ctx);
-
-
-        // Отправляем сообщение, что ответ принят, и показываем стартовую клавиатуру
-        await ctx.reply("Ответ принят", await start(ctx.from.id));
-        ctx.scene.leave();
-    } catch (error) {
-        console.error('Error in moderate "done" action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при принятии задания');
+getTaskToModerateScene.action("done", async (ctx) => {
+  try {
+    const taskId = ctx.session.selectedTask;
+    if (!taskId) {
+      await ctx.answerCbQuery("Задание не выбрано");
+      return;
     }
+    const task = await taskService.findTaskById(taskId);
+    if (!task) {
+      await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+      return;
+    }
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (!user) {
+      await ctx.answerCbQuery("Пользователь не найден");
+      return;
+    }
+    const version = task.version;
+
+    // Проверяем, голосовал ли уже этот чекер (независимо от статуса)
+    const checkersRecords = await taskChekerService.findAllCheckersByTaskId(
+      taskId
+    );
+    const existingRecord = checkersRecords.find(
+      (record) =>
+        record.chekerId.toString() === user._id.toString() &&
+        record.version === version
+    );
+    if (existingRecord) {
+      await ctx.answerCbQuery("Вы уже проголосовали");
+      return;
+    }
+
+    // Создаем запись проверки с одобрением
+    await taskChekerService.createTaskChecker({
+      taskId,
+      chekerId: user._id,
+      status: "done",
+      version,
+      message: "Задание принято",
+    });
+
+    // Запускаем логику финализации (без изменения интерфейса для чекера)
+    await checkAndFinalizeTask(ctx);
+
+    // Отправляем сообщение, что ответ принят, и показываем стартовую клавиатуру
+    await ctx.reply("Ответ принят", await start(ctx.from.id));
+    ctx.scene.leave();
+  } catch (error) {
+    console.error('Error in moderate "done" action:', error);
+    await ctx.answerCbQuery("Произошла ошибка при принятии задания");
+  }
 });
 
 // Обработчик нажатия кнопки "❌ Отклонить" (cancel)
-getTaskToModerateScene.action('cancel', async (ctx) => {
-    try {
-        const taskId = ctx.session.selectedTask;
-        if (!taskId) {
-            await ctx.answerCbQuery('Задание не выбрано');
-            return;
-        }
-        const task = await taskService.findTaskById(taskId);
-        if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-            return;
-        }
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        if (!user) {
-            await ctx.answerCbQuery('Пользователь не найден');
-            return;
-        }
-        const version = task.version;
-        
-        // Проверяем, голосовал ли уже этот чекер
-        const checkersRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
-        const existingRecord = checkersRecords.find(record =>
-            record.chekerId.toString() === user._id.toString() &&
-            record.version === version
-        );
-        if (existingRecord) {
-            await ctx.answerCbQuery('Вы уже проголосовали');
-            return;
-        }
-        
-        // Сохраняем в сессии данные для ожидания сообщения с правкой
-        ctx.session.waitingForCorrection = true;
-        ctx.session.pendingCancelVote = {
-            taskId,
-            version,
-            userId: user._id
-        };
-
-        await ctx.reply("❌ Задание отклонено. Пожалуйста, введите сообщение с правкой:");
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in moderate "cancel" action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при отклонении задания');
+getTaskToModerateScene.action("cancel", async (ctx) => {
+  try {
+    const taskId = ctx.session.selectedTask;
+    if (!taskId) {
+      await ctx.answerCbQuery("Задание не выбрано");
+      return;
     }
+    const task = await taskService.findTaskById(taskId);
+    if (!task) {
+      await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+      return;
+    }
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (!user) {
+      await ctx.answerCbQuery("Пользователь не найден");
+      return;
+    }
+    const version = task.version;
+
+    // Проверяем, голосовал ли уже этот чекер
+    const checkersRecords = await taskChekerService.findAllCheckersByTaskId(
+      taskId
+    );
+    const existingRecord = checkersRecords.find(
+      (record) =>
+        record.chekerId.toString() === user._id.toString() &&
+        record.version === version
+    );
+    if (existingRecord) {
+      await ctx.answerCbQuery("Вы уже проголосовали");
+      return;
+    }
+
+    // Сохраняем в сессии данные для ожидания сообщения с правкой
+    ctx.session.waitingForCorrection = true;
+    ctx.session.pendingCancelVote = {
+      taskId,
+      version,
+      userId: user._id,
+    };
+
+    // Уведомляем креативщика о том, что правки отклонены
+    try {
+      const creator = await userService.findById(task.creator);
+      if (creator?.tg_id) {
+        await ctx.telegram.sendMessage(
+          creator.tg_id,
+          "❌ Ваши правки по заданию были отклонены модератором. Пожалуйста, внесите новые правки."
+        );
+      }
+    } catch (e) {
+      console.error("Failed to send rejection message to creator", e);
+    }
+
+    await ctx.reply(
+      "❌ Задание отклонено. Пожалуйста, введите сообщение с правкой:"
+    );
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Error in moderate "cancel" action:', error);
+    await ctx.answerCbQuery("Произошла ошибка при отклонении задания");
+  }
 });
 
 // Обработчик текстовых сообщений для ввода правок
-getTaskToModerateScene.on('text', async (ctx) => {
-    if (ctx.session.waitingForCorrection && ctx.session.pendingCancelVote) {
-        try {
-            const correction = ctx.message.text;
-            const { taskId, version, userId } = ctx.session.pendingCancelVote;
-            
-            // Создаем запись проверки с отклонением и переданными правками
-            await taskChekerService.createTaskChecker({
-                taskId,
-                chekerId: userId,
-                status: 'failed',
-                version,
-                message: correction
-            });
-            
-            // Сбрасываем флаги ожидания
-            delete ctx.session.waitingForCorrection;
-            delete ctx.session.pendingCancelVote;
-            
-            // Запускаем финализацию задания
-            await checkAndFinalizeTask(ctx);
-            
-            // Удаляем inline-сообщение с заданием и отправляем стартовое меню с сообщением об успешном ответе
-            try {
-            } catch (e) { }
-            await ctx.reply("Ответ принят", await start(ctx.from.id));
-            ctx.scene.leave();
-        } catch (error) {
-            console.error('Error processing correction text:', error);
-            await ctx.reply('Ошибка при обработке вашего сообщения с правкой');
-        }
-        return;
+getTaskToModerateScene.on("text", async (ctx) => {
+  if (ctx.session.waitingForCorrection && ctx.session.pendingCancelVote) {
+    try {
+      const correction = ctx.message.text;
+      const { taskId, version, userId } = ctx.session.pendingCancelVote;
+
+      // Создаем запись проверки с отклонением и переданными правками
+      await taskChekerService.createTaskChecker({
+        taskId,
+        chekerId: userId,
+        status: "failed",
+        version,
+        message: correction,
+      });
+
+      // Сбрасываем флаги ожидания
+      delete ctx.session.waitingForCorrection;
+      delete ctx.session.pendingCancelVote;
+
+      // Запускаем финализацию задания
+      await checkAndFinalizeTask(ctx);
+
+      // Удаляем inline-сообщение с заданием и отправляем стартовое меню с сообщением об успешном ответе
+      try {
+      } catch (e) {}
+      await ctx.reply("Ответ принят", await start(ctx.from.id));
+      ctx.scene.leave();
+    } catch (error) {
+      console.error("Error processing correction text:", error);
+      await ctx.reply("Ошибка при обработке вашего сообщения с правкой");
     }
+    return;
+  }
 
-    // Если мы не ожидаем правки, но получили текстовое сообщение
-    const { selectedTask } = ctx.session;
-    const tgId = String(ctx.from.id);
-    const userInput = ctx.message.text;
-    const user = await userService.findUserByTelegramId(tgId);
+  // Если мы не ожидаем правки, но получили текстовое сообщение
+  const { selectedTask } = ctx.session;
+  const tgId = String(ctx.from.id);
+  const userInput = ctx.message.text;
+  const user = await userService.findUserByTelegramId(tgId);
 
-    // Если пользователь ввёл "назад" текстом
-    if (userInput === ruMessage.keyboards.back[0]) {
-        await ctx.scene.enter('backScene');
-        ctx.session = {};
-        ctx.scene.leave();
-        return;
-    }
+  // Если пользователь ввёл "назад" текстом
+  if (userInput === ruMessage.keyboards.back[0]) {
+    await ctx.scene.enter("backScene");
+    ctx.session = {};
+    ctx.scene.leave();
+    return;
+  }
 
-    // Проверяем текущее состояние сцены и возвращаем пользователю информацию
-    if (ctx.session.waitingForCorrection) {
-        await ctx.reply("Ожидается ввод правки для отклонения задачи. Пожалуйста, введите текст правки.");
-    } else if (selectedTask) {
-        const task = await taskService.findTaskById(selectedTask);
-        if (task) {
-            await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
-            const taskInfo = formatTaskInfo(task);
-            await ctx.reply(taskInfo, moderate(task));
-        } else {
-            await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
-            const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage || 0);
-            await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
-        }
+  // Проверяем текущее состояние сцены и возвращаем пользователю информацию
+  if (ctx.session.waitingForCorrection) {
+    await ctx.reply(
+      "Ожидается ввод правки для отклонения задачи. Пожалуйста, введите текст правки."
+    );
+  } else if (selectedTask) {
+    const task = await taskService.findTaskById(selectedTask);
+    if (task) {
+      await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
+      const taskInfo = formatTaskInfo(task);
+      await ctx.reply(taskInfo, moderate(task));
     } else {
-        await ctx.reply("Вы находитесь в режиме модерации задач. Пожалуйста, выберите задачу из списка:");
-        const keyboard = await myTasks(user._id, '', "wait", ctx.session.currentPage || 0);
-        await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+      await ctx.reply(
+        "Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:"
+      );
+      const keyboard = await myTasks(
+        user._id,
+        "",
+        "wait",
+        ctx.session.currentPage || 0
+      );
+      await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     }
+  } else {
+    await ctx.reply(
+      "Вы находитесь в режиме модерации задач. Пожалуйста, выберите задачу из списка:"
+    );
+    const keyboard = await myTasks(
+      user._id,
+      "",
+      "wait",
+      ctx.session.currentPage || 0
+    );
+    await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
+  }
 });
 
 getTaskToModerateScene.action("quit", async (ctx) => {
-    await ctx.reply(ruMessage.messages.start.replace("{name}", ctx.from.first_name), await start(ctx.from.id));
-    ctx.session = {};
-    ctx.scene.leave();
+  await ctx.reply(
+    ruMessage.messages.start.replace("{name}", ctx.from.first_name),
+    await start(ctx.from.id)
+  );
+  ctx.session = {};
+  ctx.scene.leave();
 });
 
 // Обработчик для показа примера задания
-getTaskToModerateScene.action('show_example', async (ctx) => {
-    try {
-        // Удаляем все предыдущие медиа
-        await deleteMediaMessages(ctx);
+getTaskToModerateScene.action("show_example", async (ctx) => {
+  try {
+    // Удаляем все предыдущие медиа
+    await deleteMediaMessages(ctx);
 
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
-        
-        if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-            return;
-        }
+    const taskId = ctx.session.selectedTask;
+    const task = await taskService.findTaskById(taskId);
 
-        // Инициализируем массив для ID сообщений
-        ctx.session.exampleMediaMessageIds = [];
+    if (!task) {
+      await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+      return;
+    }
 
-        const taskInfo = formatTaskInfo(task);
-        await ctx.editMessageText(taskInfo, back_to_task());
+    // Инициализируем массив для ID сообщений
+    ctx.session.exampleMediaMessageIds = [];
 
-        // Обеспечиваем обратную совместимость, преобразуя строку в массив
-        if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
-            task.example_creative = [task.example_creative];
-        } else if (!Array.isArray(task.example_creative)) {
-            task.example_creative = [];
-        }
+    const taskInfo = formatTaskInfo(task);
+    await ctx.editMessageText(taskInfo, back_to_task());
 
-        // Разделяем примеры на медиа и текст
-        const mediaExamples = [];
-        const textExamples = [];
+    // Обеспечиваем обратную совместимость, преобразуя строку в массив
+    if (
+      typeof task.example_creative === "string" &&
+      task.example_creative.trim() !== ""
+    ) {
+      task.example_creative = [task.example_creative];
+    } else if (!Array.isArray(task.example_creative)) {
+      task.example_creative = [];
+    }
 
-        // Определяем, какие примеры являются медиа, а какие текстом
-        task.example_creative.forEach(example => {
-            // Проверяем форматы file_id для Telegram
-            if (example.startsWith('AgAC') || example.startsWith('BAA') || example.startsWith('BQA') || 
-                example.startsWith('CQA') || example.startsWith('DQA')) {
-                mediaExamples.push(example);
-            } else {
-                textExamples.push(example);
-            }
+    // Разделяем примеры на медиа и текст
+    const mediaExamples = [];
+    const textExamples = [];
+
+    // Определяем, какие примеры являются медиа, а какие текстом
+    task.example_creative.forEach((example) => {
+      // Проверяем форматы file_id для Telegram
+      if (
+        example.startsWith("AgAC") ||
+        example.startsWith("BAA") ||
+        example.startsWith("BQA") ||
+        example.startsWith("CQA") ||
+        example.startsWith("DQA")
+      ) {
+        mediaExamples.push(example);
+      } else {
+        textExamples.push(example);
+      }
+    });
+
+    // Сначала отправляем текстовые примеры, если они есть
+    if (textExamples.length > 0) {
+      const textMessage = await ctx.reply(
+        `📝 Текстовые примеры креативов (${
+          textExamples.length
+        }):\n\n${textExamples.join("\n\n")}`
+      );
+      ctx.session.exampleMediaMessageIds.push(textMessage.message_id);
+    }
+
+    // Если есть медиафайлы, отправляем их в группе
+    if (mediaExamples.length > 0) {
+      try {
+        // Готовим массив медиафайлов для отправки в группе
+        const mediaGroup = mediaExamples.map((fileId) => {
+          // Определяем тип медиа по первым символам file_id
+          const isVideo = fileId.startsWith("BAA");
+          const isDocument = fileId.startsWith("BQA");
+          const isAudio = fileId.startsWith("CQA");
+          const isAnimation = fileId.startsWith("DQA");
+
+          // Определяем тип медиа
+          let type = "photo"; // По умолчанию фото
+          if (isVideo) type = "video";
+          else if (isDocument) type = "document";
+          else if (isAudio) type = "audio";
+          else if (isAnimation) type = "animation";
+
+          return {
+            type: type,
+            media: fileId,
+          };
         });
 
-        // Сначала отправляем текстовые примеры, если они есть
-        if (textExamples.length > 0) {
-            const textMessage = await ctx.reply(`📝 Текстовые примеры креативов (${textExamples.length}):\n\n${textExamples.join('\n\n')}`);
-            ctx.session.exampleMediaMessageIds.push(textMessage.message_id);
-        }
+        // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+        if (mediaGroup.length > 0) {
+          // Telegram поддерживает до 10 файлов в одной группе
+          const chunks = [];
+          for (let i = 0; i < mediaGroup.length; i += 10) {
+            chunks.push(mediaGroup.slice(i, i + 10));
+          }
 
-        // Если есть медиафайлы, отправляем их в группе
-        if (mediaExamples.length > 0) {
-            try {
-                // Готовим массив медиафайлов для отправки в группе
-                const mediaGroup = mediaExamples.map(fileId => {
-                    // Определяем тип медиа по первым символам file_id
-                    const isVideo = fileId.startsWith('BAA');
-                    const isDocument = fileId.startsWith('BQA');
-                    const isAudio = fileId.startsWith('CQA');
-                    const isAnimation = fileId.startsWith('DQA');
-                    
-                    // Определяем тип медиа
-                    let type = 'photo'; // По умолчанию фото
-                    if (isVideo) type = 'video';
-                    else if (isDocument) type = 'document';
-                    else if (isAudio) type = 'audio';
-                    else if (isAnimation) type = 'animation';
-                    
-                    return {
-                        type: type,
-                        media: fileId
-                    };
+          // Отправляем каждую группу отдельно
+          for (const chunk of chunks) {
+            if (chunk.length > 0) {
+              const sentMessages = await ctx.telegram.sendMediaGroup(
+                ctx.chat.id,
+                chunk
+              );
+
+              // Сохраняем ID всех отправленных сообщений
+              if (sentMessages && sentMessages.length > 0) {
+                sentMessages.forEach((msg) => {
+                  ctx.session.exampleMediaMessageIds.push(msg.message_id);
                 });
-                
-                // Отправляем медиагруппу (максимум 10 файлов в одной группе)
-                if (mediaGroup.length > 0) {
-                    // Telegram поддерживает до 10 файлов в одной группе
-                    const chunks = [];
-                    for (let i = 0; i < mediaGroup.length; i += 10) {
-                        chunks.push(mediaGroup.slice(i, i + 10));
-                    }
-                    
-                    // Отправляем каждую группу отдельно
-                    for (const chunk of chunks) {
-                        if (chunk.length > 0) {
-                            const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
-                            
-                            // Сохраняем ID всех отправленных сообщений
-                            if (sentMessages && sentMessages.length > 0) {
-                                sentMessages.forEach(msg => {
-                                    ctx.session.exampleMediaMessageIds.push(msg.message_id);
-                                });
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error(`Ошибка отправки медиафайлов: ${error.message}`);
-                await ctx.reply(`Не удалось отправить медиафайлы: ${error.message}`);
+              }
             }
+          }
         }
-
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in show_example:', error);
-        await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+      } catch (error) {
+        console.error(`Ошибка отправки медиафайлов: ${error.message}`);
+        await ctx.reply(`Не удалось отправить медиафайлы: ${error.message}`);
+      }
     }
+
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error("Error in show_example:", error);
+    await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+  }
 });
 
 // Модифицируем обработчик возврата к заданию
-getTaskToModerateScene.action('back_to_task', async (ctx) => {
-    try {
-        // Удаляем все предыдущие медиа
-        await deleteMediaMessages(ctx);
+getTaskToModerateScene.action("back_to_task", async (ctx) => {
+  try {
+    // Удаляем все предыдущие медиа
+    await deleteMediaMessages(ctx);
 
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
+    const taskId = ctx.session.selectedTask;
+    const task = await taskService.findTaskById(taskId);
 
-        if (!task) {
-            await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
-            return;
-        }
-
-        const taskInfo = formatTaskInfo(task);
-        await ctx.editMessageText(taskInfo, moderate(task));
-
-        // Отправляем результат креатива
-        if (task.result) {
-            try {
-                // Обрабатываем случай, когда result является массивом (новый формат)
-                if (Array.isArray(task.result) && task.result.length > 0) {
-                    // Разделяем медиафайлы по типам
-                    const mediaGroup = task.result.map(fileId => {
-                        // Определяем тип медиа по первым символам file_id
-                        const isVideo = fileId.startsWith('BAA');
-                        const isDocument = fileId.startsWith('BQA');
-                        const isAudio = fileId.startsWith('CQA');
-                        const isAnimation = fileId.startsWith('DQA');
-                        
-                        // Определяем тип медиа
-                        let type = 'photo'; // По умолчанию фото
-                        if (isVideo) type = 'video';
-                        else if (isDocument) type = 'document';
-                        else if (isAudio) type = 'audio';
-                        else if (isAnimation) type = 'animation';
-                        
-                        return {
-                            type: type,
-                            media: fileId
-                        };
-                    });
-                    
-                    // Отправляем медиагруппу (максимум 10 файлов в одной группе)
-                    if (mediaGroup.length > 0) {
-                        // Telegram поддерживает до 10 файлов в одной группе
-                        const chunks = [];
-                        for (let i = 0; i < mediaGroup.length; i += 10) {
-                            chunks.push(mediaGroup.slice(i, i + 10));
-                        }
-                        
-                        // Отправляем каждую группу отдельно
-                        for (const chunk of chunks) {
-                            if (chunk.length > 0) {
-                                const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
-                                
-                                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
-                                if (sentMessages && sentMessages.length > 0) {
-                                    if (!ctx.session.mediaMessageIds) {
-                                        ctx.session.mediaMessageIds = [];
-                                    }
-                                    sentMessages.forEach(msg => {
-                                        ctx.session.mediaMessageIds.push(msg.message_id);
-                                    });
-                                }
-                            }
-                        }
-                    }
-                } 
-                // Обрабатываем случай, когда result является строкой (старый формат)
-                else if (typeof task.result === 'string') {
-                    let mediaResponse;
-                    if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
-                        mediaResponse = await ctx.replyWithPhoto(task.result);
-                    } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
-                        mediaResponse = await ctx.replyWithVideo(task.result);
-                    } else {
-                        try {
-                            mediaResponse = await ctx.replyWithPhoto(task.result);
-                        } catch {
-                            try {
-                                mediaResponse = await ctx.replyWithVideo(task.result);
-                            } catch (innerError) {
-                                console.error("Не удалось определить тип медиа:", innerError);
-                                await ctx.reply("Не удалось отобразить результат работы. Неизвестный формат медиа.");
-                            }
-                        }
-                    }
-
-                    if (mediaResponse?.message_id) {
-                        ctx.session.mediaMessageId = mediaResponse.message_id;
-                    }
-                }
-            } catch (error) {
-                console.error("Ошибка при отправке результата:", error);
-                await ctx.reply("Не удалось отобразить результат работы. Ошибка при обработке медиа.");
-            }
-        }
-
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in back_to_task:', error);
-        await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+    if (!task) {
+      await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
+      return;
     }
+
+    const taskInfo = formatTaskInfo(task);
+    await ctx.editMessageText(taskInfo, moderate(task));
+
+    // Отправляем результат креатива
+    if (task.result) {
+      try {
+        // Обрабатываем случай, когда result является массивом (новый формат)
+        if (Array.isArray(task.result) && task.result.length > 0) {
+          // Разделяем медиафайлы по типам
+          const mediaGroup = task.result.map((fileId) => {
+            // Определяем тип медиа по первым символам file_id
+            const isVideo = fileId.startsWith("BAA");
+            const isDocument = fileId.startsWith("BQA");
+            const isAudio = fileId.startsWith("CQA");
+            const isAnimation = fileId.startsWith("DQA");
+
+            // Определяем тип медиа
+            let type = "photo"; // По умолчанию фото
+            if (isVideo) type = "video";
+            else if (isDocument) type = "document";
+            else if (isAudio) type = "audio";
+            else if (isAnimation) type = "animation";
+
+            return {
+              type: type,
+              media: fileId,
+            };
+          });
+
+          // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+          if (mediaGroup.length > 0) {
+            // Telegram поддерживает до 10 файлов в одной группе
+            const chunks = [];
+            for (let i = 0; i < mediaGroup.length; i += 10) {
+              chunks.push(mediaGroup.slice(i, i + 10));
+            }
+
+            // Отправляем каждую группу отдельно
+            for (const chunk of chunks) {
+              if (chunk.length > 0) {
+                const sentMessages = await ctx.telegram.sendMediaGroup(
+                  ctx.chat.id,
+                  chunk
+                );
+
+                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
+                if (sentMessages && sentMessages.length > 0) {
+                  if (!ctx.session.mediaMessageIds) {
+                    ctx.session.mediaMessageIds = [];
+                  }
+                  sentMessages.forEach((msg) => {
+                    ctx.session.mediaMessageIds.push(msg.message_id);
+                  });
+                }
+              }
+            }
+          }
+        }
+        // Обрабатываем случай, когда result является строкой (старый формат)
+        else if (typeof task.result === "string") {
+          let mediaResponse;
+          if (task.mediaType === "photo" || task.result.startsWith("AgAC")) {
+            mediaResponse = await ctx.replyWithPhoto(task.result);
+          } else if (
+            task.mediaType === "video" ||
+            task.result.startsWith("BAA")
+          ) {
+            mediaResponse = await ctx.replyWithVideo(task.result);
+          } else {
+            try {
+              mediaResponse = await ctx.replyWithPhoto(task.result);
+            } catch {
+              try {
+                mediaResponse = await ctx.replyWithVideo(task.result);
+              } catch (innerError) {
+                console.error("Не удалось определить тип медиа:", innerError);
+                await ctx.reply(
+                  "Не удалось отобразить результат работы. Неизвестный формат медиа."
+                );
+              }
+            }
+          }
+
+          if (mediaResponse?.message_id) {
+            ctx.session.mediaMessageId = mediaResponse.message_id;
+          }
+        }
+      } catch (error) {
+        console.error("Ошибка при отправке результата:", error);
+        await ctx.reply(
+          "Не удалось отобразить результат работы. Ошибка при обработке медиа."
+        );
+      }
+    }
+
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error("Error in back_to_task:", error);
+    await ctx.answerCbQuery(ruMessage.messages.errorOccurred);
+  }
 });
 
 // Обработчик для кнопки "back"
-getTaskToModerateScene.action('back', async (ctx) => {
-    try {
-        // Получаем пользователя по Telegram ID напрямую
-        const tgId = String(ctx.from.id);
-        const user = await userService.findUserByTelegramId(tgId);
-        
-        if (!user) {
-            await ctx.answerCbQuery('Пользователь не найден');
-            return;
-        }
+getTaskToModerateScene.action("back", async (ctx) => {
+  try {
+    // Получаем пользователя по Telegram ID напрямую
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
 
-        // Удаляем все медиа-сообщения, если есть
-        await deleteMediaMessages(ctx);
-
-        // Если сообщение с описанием задачи было отправлено, редактируем его
-        if (ctx.session.taskMessageId) {
-            try {
-                await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait", ctx.session.currentPage || 0));
-                delete ctx.session.taskMessageId; // Очистить идентификатор сообщения после редактирования
-            } catch (error) {
-                console.error('Ошибка при редактировании сообщения:', error);
-                // Если не удалось отредактировать, отправляем новое сообщение
-                await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait", ctx.session.currentPage || 0));
-            }
-        } else {
-            // Если нет сохраненного ID сообщения, просто отправляем новое
-            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, '', "wait"));
-        }
-        
-        // Сбрасываем выбранную задачу
-        ctx.session.selectedTask = null;
-
-        await ctx.answerCbQuery();
-    } catch (error) {
-        console.error('Error in moderate "back" action:', error);
-        await ctx.answerCbQuery('Произошла ошибка при переходе назад');
+    if (!user) {
+      await ctx.answerCbQuery("Пользователь не найден");
+      return;
     }
+
+    // Удаляем все медиа-сообщения, если есть
+    await deleteMediaMessages(ctx);
+
+    // Если сообщение с описанием задачи было отправлено, редактируем его
+    if (ctx.session.taskMessageId) {
+      try {
+        await ctx.editMessageText(
+          ruMessage.messages.getTT.select_tt,
+          await myTasks(user._id, "", "wait", ctx.session.currentPage || 0)
+        );
+        delete ctx.session.taskMessageId; // Очистить идентификатор сообщения после редактирования
+      } catch (error) {
+        console.error("Ошибка при редактировании сообщения:", error);
+        // Если не удалось отредактировать, отправляем новое сообщение
+        await ctx.reply(
+          ruMessage.messages.getTT.select_tt,
+          await myTasks(user._id, "", "wait", ctx.session.currentPage || 0)
+        );
+      }
+    } else {
+      // Если нет сохраненного ID сообщения, просто отправляем новое
+      await ctx.reply(
+        ruMessage.messages.getTT.select_tt,
+        await myTasks(user._id, "", "wait")
+      );
+    }
+
+    // Сбрасываем выбранную задачу
+    ctx.session.selectedTask = null;
+
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Error in moderate "back" action:', error);
+    await ctx.answerCbQuery("Произошла ошибка при переходе назад");
+  }
 });
 
 module.exports = getTaskToModerateScene;
-
