@@ -4,6 +4,7 @@ const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
 const { creatorTasks } = require('../keyboards/get_my_tt.keyboard');
 const userService = require('../services/user.service');
+const taskChekerService = require('../services/taskCheker.service');
 const taskService = require('../services/task.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
 
@@ -114,8 +115,13 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
         `🎨 Примеры креатива: ${task.example_creative.length}` : 
         "🎨 Примеры креатива: отсутствуют";
 
+    // Получаем правки, если они есть
+    const checkerRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
+    const failedCorrections = checkerRecords.filter(r => r.status === 'failed' && r.message).map(r => r.message);
+    const correctionsText = failedCorrections.length ? `Правки:\n${failedCorrections.join('\n')}\n` : '';
+
     // Формируем текст сообщения с информацией о задаче
-    const formatTaskInfo = (task, exampleLine) => {
+    const formatTaskInfo = (task, exampleLine, correctionsText) => {
         // Форматируем ожидаемую дату выполнения
         const expectedDateStr = task.expectedDate ? 
             new Date(task.expectedDate).toLocaleDateString() : 
@@ -143,10 +149,10 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 ${exampleLine}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}
-${bonusStr}${ctrStr}    `;
+${correctionsText}${bonusStr}${ctrStr}`;
     }
 
-    const taskInfo = formatTaskInfo(task, exampleLine);
+    const taskInfo = formatTaskInfo(task, exampleLine, correctionsText);
 
     // Редактируем сообщение с информацией о задаче
     await ctx.editMessageText(taskInfo, backInline());
