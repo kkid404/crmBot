@@ -63,12 +63,18 @@ async function handleRange (ctx) {
 }
 
 const actions = bot => {
-  /* кнопка «🏆 Собрать рейтинг» */
-  const pointsTriggers = ru.keyboards.ownerKeyboard
-    ? (Array.isArray(ru.keyboards.ownerKeyboard)
-        ? ru.keyboards.ownerKeyboard
-        : Object.values(ru.keyboards.ownerKeyboard))
-    : ['🏆 Собрать рейтинг'];
+  /* кнопка «🏆 Собрать отчёт» (для владельца и админа) */
+  const collectButtons = key => {
+    if (!key) return [];
+    return Array.isArray(key) ? key : Object.values(key);
+  };
+
+  const pointsTriggers = Array.from(new Set([
+    ...collectButtons(ru.keyboards.ownerKeyboard),
+    ...collectButtons(ru.keyboards.startAdmin),
+    '🏆 Собрать отчёт', // резерв на случай отсутствия в конфиге
+    '🏆 Собрать отчет', // поддержка "отчет" без ё
+  ]));
 
   bot.hears(pointsTriggers, showPeriodSelector);
   bot.command('points',  showPeriodSelector);
