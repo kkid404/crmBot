@@ -117,8 +117,18 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 
     // Получаем правки, если они есть
     const checkerRecords = await taskChekerService.findAllCheckersByTaskId(taskId);
-    const failedCorrections = checkerRecords.filter(r => r.status === 'failed' && r.message).map(r => r.message);
-    const correctionsText = failedCorrections.length ? `Правки:\n${failedCorrections.join('\n')}\n` : '';
+    // Формируем массив строк вида: "дата\nсообщение" для каждой неуспешной проверки
+    const failedCorrections = checkerRecords
+        .filter(r => r.status === 'failed' && r.message)
+        .map(r => {
+            // Предпочтительно используем updatedAt, если он есть, иначе createdAt
+            const dateSource = r.updatedAt || r.createdAt || Date.now();
+            const dateStr = new Date(dateSource).toLocaleDateString();
+            return `${dateStr}\n${r.message}`;
+        });
+
+    // Если есть правки, добавляем заголовок и разделяем их пустой строкой
+    const correctionsText = failedCorrections.length ? `Правки:\n${failedCorrections.join('\n\n')}\n` : '';
 
     // Формируем текст сообщения с информацией о задаче
     const formatTaskInfo = (task, exampleLine, correctionsText) => {
