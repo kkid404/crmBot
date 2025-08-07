@@ -57,7 +57,7 @@ function createTasksKeyboard(tasks) {
         if (task.expectedDate) {
             const dateObj = new Date(task.expectedDate);
             const datePart = dateObj.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-            const timePart = dateObj.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
+            const timePart = task.expectedTime ? task.expectedTime : dateObj.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
             expectedDateInfo = `${datePart} ${timePart}`;
         }
         return [Markup.button.callback(`${expectedDateInfo} | ${task.name} (${creatorName})`, task._id.toString())];
