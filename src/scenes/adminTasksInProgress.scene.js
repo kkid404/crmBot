@@ -53,7 +53,13 @@ function createTasksKeyboard(tasks) {
     const buttons = tasks.map(task => {
         // Создаем текст для кнопки: название задачи + имя креативщика
         const creatorName = task.creator?.username || 'Не назначен';
-        const expectedDateInfo = task.expectedDate ? new Date(task.expectedDate).toLocaleDateString("ru-RU") : '—';
+        let expectedDateInfo = '—';
+        if (task.expectedDate) {
+            const dateObj = new Date(task.expectedDate);
+            const datePart = dateObj.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+            const timePart = dateObj.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
+            expectedDateInfo = `${datePart} ${timePart}`;
+        }
         return [Markup.button.callback(`${expectedDateInfo} | ${task.name} (${creatorName})`, task._id.toString())];
     });
     
