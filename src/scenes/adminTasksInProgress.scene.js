@@ -53,7 +53,8 @@ function createTasksKeyboard(tasks) {
     const buttons = tasks.map(task => {
         // Создаем текст для кнопки: название задачи + имя креативщика
         const creatorName = task.creator?.username || 'Не назначен';
-        return [Markup.button.callback(`${task.name} (${creatorName})`, task._id.toString())];
+        const completionDateInfo = task.completionDate ? new Date(task.completionDate).toLocaleDateString() : '—';
+        return [Markup.button.callback(`${completionDateInfo} | ${task.name} (${creatorName})`, task._id.toString())];
     });
     
     // Добавляем кнопку "Выход"

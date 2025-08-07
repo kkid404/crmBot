@@ -32,6 +32,23 @@ const formatTaskInfo = (task) => {
       }`
     : "🎨 Примеры креатива: отсутствуют";
 
+  // Получаем имя заказчика (buyer)
+  let buyerName = "Не указан";
+  if (task.buyer) {
+    if (typeof task.buyer === "object" && task.buyer.username) {
+      buyerName = task.buyer.username;
+    }
+  }
+
+  // Формируем информацию о ожидаемой дате выполнения
+  let expectedDateInfo = "Не указана";
+  if (task.expectedDate) {
+    expectedDateInfo = new Date(task.expectedDate).toLocaleDateString("ru-RU");
+    if (task.expectedTime) {
+      expectedDateInfo += ` к ${task.expectedTime}`;
+    }
+  }
+
   // Подсчитываем количество результатов для отображения
   let resultCount = 0;
   if (Array.isArray(task.result)) {
@@ -48,9 +65,11 @@ const formatTaskInfo = (task) => {
 ${exampleLine}
 👨‍💻 Креатор: ${task.creator?.username || "Не назначен"}
 📝 Результат: ${
-    resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
-  }
+  resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
+}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
+👨‍💼 Заказчик: ${buyerName}
     `;
 
   return taskInfo;
