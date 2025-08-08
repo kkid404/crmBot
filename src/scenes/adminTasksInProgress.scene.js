@@ -49,8 +49,38 @@ ${exampleLine}
 
 // Создаем клавиатуру для задач
 function createTasksKeyboard(tasks) {
+    // Сортируем задачи по ожидаемой дате (datePart) и времени (timePart)
+    const sortedTasks = tasks.slice().sort((a, b) => {
+        // Вспомогательная функция для получения метки времени задачи
+        const getDateTime = (task) => {
+            if (!task.expectedDate) {
+                // Если дата не указана, поместим задачу в конец списка
+                return Number.MAX_VALUE;
+            }
+            const dateObj = new Date(task.expectedDate);
+
+            // Если указано ожидаемое время, добавляем его к дате
+            if (task.expectedTime) {
+                try {
+                    const [hoursStr, minutesStr] = task.expectedTime.split(":");
+                    const hours = parseInt(hoursStr, 10);
+                    const minutes = parseInt(minutesStr, 10);
+                    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+                        dateObj.setHours(hours, minutes, 0, 0);
+                    }
+                } catch (_) {
+                    // В случае ошибки парсинга оставляем время без изменений
+                }
+            }
+
+            return dateObj.getTime();
+        };
+
+        return getDateTime(a) - getDateTime(b);
+    });
+
     // Создаем кнопки для каждой задачи
-    const buttons = tasks.map(task => {
+    const buttons = sortedTasks.map(task => {
         // Создаем текст для кнопки: название задачи + имя креативщика
         const creatorName = task.creator?.username || 'Не назначен';
         let expectedDateInfo = '—';
