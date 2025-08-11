@@ -9,6 +9,8 @@ const checkUser = require('./src/middlewares/isUser.middleware')
 const { statisticsActions } = require('./src/actions/statistics.actions'); // Добавляем импорт
 const { pointsActions } = require('./src/actions/points.actions');
 const errorHandler = require('./src/middlewares/errorHandler.middleware');
+const { startDeadlineChecker } = require('./src/services/deadlineChecker.service');
+
 
 const botToken = process.env.TELEGRAM_TOKEN;
 
@@ -22,6 +24,9 @@ const bot = new Telegraf(botToken);
 
 // Подключаем обработчик ошибок первым
 bot.use(errorHandler);
+
+// Запуск дедлайн чекера
+startDeadlineChecker(bot);
 
 const { Stage } = Scenes;
 
