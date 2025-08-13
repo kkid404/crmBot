@@ -30,6 +30,13 @@ async function handlePoints(ctx) {
         workType: workType // Добавляем тип работы
     };
     
+    // Проверяем тип работы и устанавливаем соответствующий бонус
+    if (workType && workType.includes('🖼️ Глубокий уник')) {
+        taskInfo.bonus = 500;
+    } else if (workType && workType.includes('🎨 Дизайн приложения / Уник')) {
+        taskInfo.bonus = 300;
+    }
+    
     await taskService.updateTask(ctx.session.selectedTask, taskInfo).catch(handleError);
     const checkers = await userService.findAllCheckers().catch(handleError);
     for (const checker of checkers) {
