@@ -1,5 +1,6 @@
 const taskService = require('./task.service');
-const userService = require('./user.service');
+const UserService = require('./user.service');
+const User = require('../databases/user.model');
 
 // Логирование с временной меткой
 function log(message, data = '') {
@@ -80,7 +81,7 @@ function startDeadlineChecker(bot, intervalMs = 15 * 60 * 1000) {
  */
 async function notifyAdminsAndCreator(bot, task, diffMs) {
     // Ищем админов с position "creator"
-    const admins = await userService.findUsers({ role: 'admin', position: 'creator' });
+    const admins = await User.find({ role: 'admin', position: 'creator' });
     log(`Найдено админов-креативщиков: ${admins?.length || 0}`);
 
     // Собираем уникальные telegram id получателей
