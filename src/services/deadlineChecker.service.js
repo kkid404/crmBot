@@ -2,6 +2,25 @@ const taskService = require('./task.service');
 const UserService = require('./user.service');
 const User = require('../databases/user.model');
 
+// Объект для хранения информации об отправленных уведомлениях
+// Формат: { taskId: timestamp }
+const notifications = {};
+
+// Функция для очистки старых уведомлений (старше 48 часов)
+function cleanupOldNotifications() {
+    const now = Date.now();
+    const twoDaysMs = 48 * 60 * 60 * 1000; // 48 часов в миллисекундах
+    
+    Object.keys(notifications).forEach(taskId => {
+        if (now - notifications[taskId] > twoDaysMs) {
+            delete notifications[taskId];
+            log(`Удалена старая запись о задаче ${taskId}`);
+        }
+    });
+    
+    log(`Текущее количество отслеживаемых задач: ${Object.keys(notifications).length}`);
+}
+
 // Логирование с временной меткой
 function log(message, data = '') {
     const timestamp = new Date().toISOString();
@@ -55,8 +74,17 @@ function startDeadlineChecker(bot, intervalMs = 15 * 60 * 1000) {
 
                 // Если до дедлайна остался ровно 1 час (±5 мин для надёжности)
                 if (diff > 0 && diff <= ONE_HOUR_MS) {
-                    log(`Отправка уведомления по задаче ${task._id} (осталось ${Math.round(diff/1000/60)} мин)`);
-                    await notifyAdminsAndCreator(bot, task, diff);
+                    // Проверяем, не отправляли ли уже уведомление по этой задаче
+                    const taskId = task._id.toString();
+                    if (!notifications[taskId]) {
+                        log(`Отправка уведомления по задаче ${taskId} (осталось ${Math.round(diff/1000/60)} мин)`);
+                        await notifyAdminsAndCreator(bot, task, diff);
+                        // Записываем время отправки уведомления
+                        notifications[taskId] = Date.now();
+                        log(`Задача ${taskId} добавлена в журнал уведомлений`);
+                    } else {
+                        log(`Уведомление по задаче ${taskId} уже было отправлено ранее`);
+                    }
                 } else if (diff > ONE_HOUR_MS) {
                     log(`До дедлайна задачи ${task._id} больше часа: ${Math.round(diff/1000/60/60)} часов`);
                 } else {
@@ -71,6 +99,10 @@ function startDeadlineChecker(bot, intervalMs = 15 * 60 * 1000) {
     // Запускаем сразу и далее каждые intervalMs
     checkDeadlines();
     setInterval(checkDeadlines, intervalMs);
+    
+    // Запускаем очистку старых уведомлений раз в сутки
+    cleanupOldNotifications();
+    setInterval(cleanupOldNotifications, 24 * 60 * 60 * 1000); // Раз в сутки
 }
 
 /**
