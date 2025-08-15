@@ -1,6 +1,12 @@
 const taskService = require('./task.service');
 const userService = require('./user.service');
 
+// Логирование с временной меткой
+function log(message, data = '') {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${message}`, data || '');
+}
+
 /**
  * Запускает проверку дедлайнов задач раз в час.
  * @param {import('telegraf').Telegraf} bot Экземпляр Telegraf для отправки уведомлений.
@@ -13,16 +19,21 @@ function startDeadlineChecker(bot, intervalMs = 60 * 60 * 1000) {
 
     // Функция-проверка
     const checkDeadlines = async () => {
+        log('Запуск проверки дедлайнов');
         try {
             // Получаем все задачи со статусом «progress»
             const tasks = await taskService.getTasksByState('progress');
+            log(`Найдено задач в статусе progress: ${tasks?.length || 0}`);
             if (!tasks || tasks.length === 0) return;
 
             const now = new Date();
             const ONE_HOUR_MS = 60 * 60 * 1000;
 
             for (const task of tasks) {
-                if (!task.expectedDate) continue;
+                if (!task.expectedDate) {
+                    log(`Задача ${task._id} пропущена: не указан expectedDate`);
+                    continue;
+                }
 
                 // Формируем объект даты дедлайна
                 const deadline = new Date(task.expectedDate);
@@ -33,13 +44,22 @@ function startDeadlineChecker(bot, intervalMs = 60 * 60 * 1000) {
                     if (!Number.isNaN(h) && !Number.isNaN(m)) {
                         deadline.setHours(h, m, 0, 0);
                     }
+                } else {
+                    log(`Для задачи ${task._id} не указано expectedTime, будет использовано 23:59`);
+                    deadline.setHours(23, 59, 0, 0);
                 }
 
                 const diff = deadline - now;
+                log(`Задача ${task._id} '${task.name}': до дедлайна ${Math.round(diff/1000/60)} минут`);
 
                 // Если до дедлайна остался ровно 1 час (±5 мин для надёжности)
                 if (diff > 0 && diff <= ONE_HOUR_MS) {
+                    log(`Отправка уведомления по задаче ${task._id} (осталось ${Math.round(diff/1000/60)} мин)`);
                     await notifyAdminsAndCreator(bot, task, diff);
+                } else if (diff > ONE_HOUR_MS) {
+                    log(`До дедлайна задачи ${task._id} больше часа: ${Math.round(diff/1000/60/60)} часов`);
+                } else {
+                    log(`Дедлайн задачи ${task._id} уже прошел: ${Math.abs(Math.round(diff/1000/60))} минут назад`);
                 }
             }
         } catch (err) {
@@ -61,27 +81,48 @@ function startDeadlineChecker(bot, intervalMs = 60 * 60 * 1000) {
 async function notifyAdminsAndCreator(bot, task, diffMs) {
     // Ищем админов с position "creator"
     const admins = await userService.findUsers({ role: 'admin', position: 'creator' });
+    log(`Найдено админов-креативщиков: ${admins?.length || 0}`);
 
     // Собираем уникальные telegram id получателей
     const recipients = new Set();
     if (admins && admins.length) {
-        admins.forEach(u => u.tg_id && recipients.add(String(u.tg_id)));
+        admins.forEach(u => {
+            if (u.tg_id) {
+                recipients.add(String(u.tg_id));
+                log(`Добавлен получатель (админ): ${u.tg_id}`);
+            } else {
+                log(`У админа ${u._id} не указан tg_id`);
+            }
+        });
     }
 
-    if (task.creator && task.creator.tg_id) {
-        recipients.add(String(task.creator.tg_id));
+    if (task.creator) {
+        if (task.creator.tg_id) {
+            recipients.add(String(task.creator.tg_id));
+            log(`Добавлен получатель (создатель): ${task.creator.tg_id}`);
+        } else {
+            log(`У создателя задачи ${task.creator._id || 'unknown'} не указан tg_id`);
+        }
+    } else {
+        log('У задачи не указан создатель');
     }
 
-    if (recipients.size === 0) return;
+    if (recipients.size === 0) {
+        log('Нет получателей для уведомления');
+        return;
+    }
 
     const minutesLeft = Math.round(diffMs / 1000 / 60);
     const msg = `⏰ До дедлайна задачи "${task.name}" осталось ${minutesLeft} минут. Пожалуйста, завершите работу вовремя.`;
 
     for (const tgId of recipients) {
         try {
+            log(`Отправка сообщения пользователю ${tgId}: ${msg}`);
             await bot.telegram.sendMessage(tgId, msg);
+            log(`Сообщение успешно отправлено пользователю ${tgId}`);
         } catch (err) {
             console.error(`Не удалось отправить уведомление пользователю ${tgId}:`, err.message);
+            log(`Ошибка отправки пользователю ${tgId}: ${err.message}`, { stack: err.stack });
         }
     }
 }
