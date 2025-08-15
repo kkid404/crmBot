@@ -8,11 +8,11 @@ function log(message, data = '') {
 }
 
 /**
- * Запускает проверку дедлайнов задач раз в час.
+ * Запускает проверку дедлайнов задач.
  * @param {import('telegraf').Telegraf} bot Экземпляр Telegraf для отправки уведомлений.
- * @param {number} [intervalMs=60*60*1000] Интервал проверки в миллисекундах.
+ * @param {number} [intervalMs=15*60*1000] Интервал проверки в миллисекундах (по умолчанию 15 минут).
  */
-function startDeadlineChecker(bot, intervalMs = 60 * 60 * 1000) {
+function startDeadlineChecker(bot, intervalMs = 15 * 60 * 1000) {
     if (!bot) {
         throw new Error('startDeadlineChecker: bot instance is required');
     }
