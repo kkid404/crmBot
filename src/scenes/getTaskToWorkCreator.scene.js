@@ -6,11 +6,13 @@ const { selected_or_back } = require('../keyboards/selected_or_back.keyboard');
 const { date } = require('../keyboards/date.keyboard');
 const { done_or_cancel } = require('../keyboards/done_or_cancel.keyboard');
 const { start } = require('../keyboards/start.keyboard');
+const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
 const userService = require('../services/user.service');
 
 const { getPooledBuyerTasksKeyboard, markTaskAsSelectedFromPool, manualRefreshPooledTasksAction } = require('../keyboards/pooledBuyerTasks.keyboard');
 
 const taskService = require('../services/task.service');
+const { Markup } = require('telegraf');
 
 function parseCustomDate(dateStr) {
     const [day, month] = dateStr.split('.'); // Разделяем на день и месяц
@@ -139,7 +141,6 @@ ${exampleLine}
         // await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await getPooledBuyerTasksKeyboard());
     }
 }
-
 
 getTTScene.enter(async (ctx) => {
     const keyboard = await getPooledBuyerTasksKeyboard();
@@ -455,6 +456,20 @@ getTTScene.action(/^[0-9a-fA-F]{24}$/, async (ctx) => {
         }
         // Optionally, re-display the keyboard or send an error message
         // await ctx.editMessageText(ruMessage.messages.getTT.select_tt, await getPooledBuyerTasksKeyboard());
+    }
+});
+
+getTTScene.action("set_expected_time", async (ctx) => {
+    try {
+        // Save task ID to session for the setExpectedTimeScene
+        ctx.session.taskIdForTimeSetting = ctx.session.selectedTask;
+        
+        // Enter the setExpectedTimeScene
+        await ctx.scene.enter('setExpectedTimeScene');
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in set_expected_time handler:', error);
+        await ctx.answerCbQuery('Произошла ошибка. Пожалуйста, попробуйте позже.');
     }
 });
 

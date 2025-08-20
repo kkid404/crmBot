@@ -53,53 +53,37 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
         
-        // Создаём задачу
         const taskData = {
             name: ctx.session.name,
             description: ctx.session.description,
             buyer: user._id,
             creator: creatorId,
-            state: 'progress' // Устанавливаем статус "в работе"
+            state: 'progress'
         };
         
-        let createdTask;
-        let maxRetries = 5;
-        let retryCount = 0;
-        let success = false;
+        // Add optional fields if they exist in session
+        if (ctx.session.link_app) taskData.link_app = ctx.session.link_app;
+        if (ctx.session.example_creative) taskData.example_creative = ctx.session.example_creative;
+        if (ctx.session.workType) taskData.workType = ctx.session.workType;
+        if (ctx.session.points) taskData.points = ctx.session.points;
+        if (ctx.session.bonus) taskData.bonus = ctx.session.bonus;
         
-        while (!success && retryCount < maxRetries) {
+        let retryCount = 0;
+        const maxRetries = 3;
+        let success = false;
+        let task;
+        
+        // Try to create task with retry logic for duplicate names
+        while (retryCount < maxRetries && !success) {
             try {
-                createdTask = await taskService.createTask(taskData);
+                task = await taskService.createTask(taskData);
                 success = true;
-                
-                // Отправляем уведомление креативщику
-                const creator = await userService.findById(creatorId);
-                if (creator) {
-                    try {
-                        const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
-                        await ctx.telegram.sendMessage(creator.tg_id, notificationText);
-                        console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
-                    } catch (err) {
-                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
-                    }
-                    
-                    await ctx.reply(
-                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
-                        await start(ctx.from.id)
-                    );
-                } else {
-                    await ctx.reply(
-                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику`,
-                        await start(ctx.from.id)
-                    );
-                }
-                
             } catch (error) {
                 if (error.message.includes('duplicate key error') && error.message.includes('name')) {
                     retryCount++;
                     const nameParts = taskData.name.split('_');
                     const currentCounter = parseInt(nameParts.pop()) || 0;
-                    nameParts.push((currentCounter + retryCount).toString());
+                    nameParts.push((currentCounter + 1).toString());
                     taskData.name = nameParts.join('_');
                 } else {
                     throw error;
@@ -110,9 +94,51 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
         if (!success) {
             console.error("Не удалось создать задачу после нескольких попыток");
             await ctx.reply("Произошла ошибка при создании задачи.", await start(ctx.from.id));
+            return;
         }
         
-        // Очищаем сессию и выходим из сцены
+        // Send notification to creator
+        const creator = await userService.findById(creatorId);
+        if (creator) {
+            try {
+                const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
+                const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
+                
+                // Check if this is a task type that requires expected time
+                if (taskData.workType && 
+                    (taskData.workType.includes('Уник') || 
+                     taskData.workType.includes('уник') ||
+                     taskData.workType.includes('ТЗ'))) {
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id, 
+                        `${notificationText}\n\nПожалуйста, установите ожидаемое время выполнения:`, 
+                        setExpectedTimeKeyboard(task._id)
+                    );
+                } else {
+                    await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                }
+                
+                console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                
+                await ctx.reply(
+                    `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
+                    await start(ctx.from.id)
+                );
+            } catch (err) {
+                console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                await ctx.reply(
+                    `✅ Задача "${taskData.name}" успешно создана, но не удалось отправить уведомление креативщику`,
+                    await start(ctx.from.id)
+                );
+            }
+        } else {
+            await ctx.reply(
+                `✅ Задача "${taskData.name}" успешно создана, но не удалось найти креативщика`,
+                await start(ctx.from.id)
+            );
+        }
+        
+        // Clear session and leave scene
         ctx.session = {};
         ctx.scene.leave();
         
