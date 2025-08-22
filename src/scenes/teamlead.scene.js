@@ -1,6 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const ruMessage = require('../lang/ru.json');
 const taskService = require('../services/task.service');
+const userService = require('../services/user.service');
 const pointsActions = require('../actions/points.actions');
 const { start } = require('../keyboards/start.keyboard');
 
@@ -39,9 +40,27 @@ teamleadScene.hears('📋 Задачи в работе', async (ctx) => {
             return ctx.scene.reenter();
         }
 
-        const taskList = allTasks.map((task, index) => 
-            `${index + 1}. ${task.name} - ${task.state === 'progress' ? 'В процессе' : 'Активна'} (${task.buyer?.name || 'Без баера'})`
-        ).join('\n');
+        // Fetch all unique buyer IDs first
+        const buyerIds = [...new Set(allTasks
+            .map(task => task.buyer)
+            .filter(Boolean)
+        )];
+
+        // Fetch all buyers' data
+        const buyers = await Promise.all(
+            buyerIds.map(id => userService.findUserByTelegramId(id))
+        );
+        const buyerMap = buyers.reduce((acc, buyer) => ({
+            ...acc,
+            [buyer.tg_id]: buyer.username
+        }), {});
+
+        const taskList = allTasks.map((task, index) => {
+            const buyerInfo = task.buyer && buyerMap[task.buyer] 
+                ? `@${buyerMap[task.buyer]}` 
+                : 'Без баера';
+            return `${index + 1}. ${task.name} - ${task.state === 'progress' ? 'В процессе' : 'Активна'} (${buyerInfo})`;
+        }).join('\n');
 
         await ctx.reply(`Задачи в работе (всего: ${allTasks.length}):\n\n${taskList}`);
         return ctx.scene.reenter();
