@@ -1,7 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const ruMessage = require('../lang/ru.json');
 const taskService = require('../services/task.service');
-const { showPeriodSelector } = require('../actions/points.actions');
+const pointsActions = require('../actions/points.actions');
 const { start } = require('../keyboards/start.keyboard');
 
 const teamleadScene = new Scenes.BaseScene('TEAMLEAD_SCENE');
@@ -19,7 +19,7 @@ teamleadScene.enter(async (ctx) => {
 
 // Handle report generation
 teamleadScene.hears('🏆 Собрать отчёт', async (ctx) => {
-    await showPeriodSelector(ctx);
+    await pointsActions.showPeriodSelector(ctx);
     return ctx.scene.leave();
 });
 

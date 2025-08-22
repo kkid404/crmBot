@@ -85,4 +85,10 @@ const actions = bot => {
   bot.hears(reSingle, handleSingleDate);
 };
 
-module.exports = { actions };
+module.exports = { 
+  actions,
+  showPeriodSelector,
+  handleGenerate,
+  handleSingleDate,
+  handleRange
+};
