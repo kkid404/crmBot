@@ -11,7 +11,6 @@ const { pointsActions } = require('./src/actions/points.actions');
 const errorHandler = require('./src/middlewares/errorHandler.middleware');
 const { startDeadlineChecker } = require('./src/services/deadlineChecker.service');
 
-
 const botToken = process.env.TELEGRAM_TOKEN;
 
 if (!botToken) {
@@ -60,6 +59,11 @@ commandsFiles.forEach(file => {
   } else {
     bot.command(command.command, command.action);
   }
+});
+
+// Team lead menu button handler
+bot.hears('👨\u200d💼 Меню teamlead', (ctx) => {
+    return ctx.scene.enter('TEAMLEAD_SCENE');
 });
 
 // Регистрация обработчиков

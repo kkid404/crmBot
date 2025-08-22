@@ -13,7 +13,10 @@ async function start(tgId) {
         // Универсальная buyer-клавиатура
         const buyerButtons = [...Object.values(ruMessage.keyboards.startBuyer), "📝 Быстрое ТЗ"];
 
-        if (user.position === "buyer") {
+        if (user.position === "buyer" && user.role === "teamlead") {
+            // For buyers who are also team leads
+            keyboardLayout = [...buyerButtons, "👨‍💼 Меню teamlead"];
+        } else if (user.position === "buyer") {
             keyboardLayout = buyerButtons;
         } else if (user.position === "owner") {
             // owner получает buyer-кнопки + owner-кнопки
