@@ -26,17 +26,24 @@ teamleadScene.hears('🏆 Собрать отчёт', async (ctx) => {
 // Handle tasks in progress
 teamleadScene.hears('📋 Задачи в работе', async (ctx) => {
     try {
-        const tasks = await taskService.getTasksInProgress();
-        if (tasks.length === 0) {
-            await ctx.reply('Нет задач в работе');
+        // Get tasks with 'active' or 'progress' state
+        const [activeTasks, progressTasks] = await Promise.all([
+            taskService.getTasksByState('active'),
+            taskService.getTasksByState('progress')
+        ]);
+
+        const allTasks = [...(activeTasks || []), ...(progressTasks || [])];
+        
+        if (allTasks.length === 0) {
+            await ctx.reply('Нет задач в работе (ни активных, ни в процессе)');
             return ctx.scene.reenter();
         }
 
-        const taskList = tasks.map((task, index) => 
-            `${index + 1}. ${task.name} - ${task.status || 'В работе'}`
+        const taskList = allTasks.map((task, index) => 
+            `${index + 1}. ${task.name} - ${task.state === 'progress' ? 'В процессе' : 'Активна'} (${task.buyer?.name || 'Без баера'})`
         ).join('\n');
 
-        await ctx.reply(`Задачи в работе:\n\n${taskList}`);
+        await ctx.reply(`Задачи в работе (всего: ${allTasks.length}):\n\n${taskList}`);
         return ctx.scene.reenter();
     } catch (error) {
         console.error('Error getting tasks in progress:', error);
