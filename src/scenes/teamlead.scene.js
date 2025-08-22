@@ -24,51 +24,9 @@ teamleadScene.hears('🏆 Собрать отчёт', async (ctx) => {
     return ctx.scene.leave();
 });
 
-// Handle tasks in progress
+// Handle tasks in progress (redirect to unified scene)
 teamleadScene.hears('📋 Задачи в работе', async (ctx) => {
-    try {
-        // Get tasks with 'active' or 'progress' state
-        const [activeTasks, progressTasks] = await Promise.all([
-            taskService.getTasksByState('active'),
-            taskService.getTasksByState('progress')
-        ]);
-
-        const allTasks = [...(activeTasks || []), ...(progressTasks || [])];
-        
-        if (allTasks.length === 0) {
-            await ctx.reply('Нет задач в работе (ни активных, ни в процессе)');
-            return ctx.scene.reenter();
-        }
-
-        // Fetch all unique buyer IDs first
-        const buyerIds = [...new Set(allTasks
-            .map(task => task.buyer)
-            .filter(Boolean)
-        )];
-
-        // Fetch all buyers' data
-        const buyers = await Promise.all(
-            buyerIds.map(id => userService.findUserByTelegramId(id))
-        );
-        const buyerMap = buyers.reduce((acc, buyer) => ({
-            ...acc,
-            [buyer.tg_id]: buyer.username
-        }), {});
-
-        const taskList = allTasks.map((task, index) => {
-            const buyerInfo = task.buyer && buyerMap[task.buyer] 
-                ? `@${buyerMap[task.buyer]}` 
-                : 'Без баера';
-            return `${index + 1}. ${task.name} - ${task.state === 'progress' ? 'В процессе' : 'Активна'} (${buyerInfo})`;
-        }).join('\n');
-
-        await ctx.reply(`Задачи в работе (всего: ${allTasks.length}):\n\n${taskList}`);
-        return ctx.scene.reenter();
-    } catch (error) {
-        console.error('Error getting tasks in progress:', error);
-        await ctx.reply('Произошла ошибка при получении задач');
-        return ctx.scene.reenter();
-    }
+    return ctx.scene.enter('adminTasksInProgressScene');
 });
 
 // Handle back to buyer menu

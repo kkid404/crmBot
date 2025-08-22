@@ -134,8 +134,8 @@ adminTasksInProgressScene.enter(async (ctx) => {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
         
-        // Проверяем, является ли пользователь админом
-        if (!user || user.role !== 'admin') {
+        // Проверяем, что у пользователя есть доступ (админ или тимлид)
+        if (!user || !['admin', 'teamlead'].includes(user.role)) {
             await ctx.reply(ruMessage.messages.errors.error_protected, await start(ctx.from.id));
             ctx.scene.leave();
             return;
