@@ -41,16 +41,20 @@ async function handleText(ctx) {
     // Обработка ввода имени креативщика
     if (ctx.session.awaitingCreatorUsername) {
         try {
-            const username = userInput.trim().replace('@', ''); // Удаляем @ если он есть
-            
-            // Ищем пользователя по username
-            const allUsers = await userService.getAll();
-            const creator = allUsers.find(user => 
-                user.username === username && user.position === 'creator'
-            );
-            
-            if (!creator) {
-                await ctx.reply("⚠️ Креативщик с таким username не найден или это не креативщик. Пожалуйста, проверьте имя и попробуйте снова.");
+            const id = userInput.trim();
+
+            // Простая валидация ObjectId (24-х значное hex)
+            const isObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+            if (!isObjectId) {
+                await ctx.reply("❌ Неверный формат _id. Ожидается 24-символьная hex-строка. Попробуйте снова.");
+                return;
+            }
+
+            // Ищем пользователя по _id
+            const creator = await userService.findById(id);
+
+            if (!creator || creator.position !== 'creator') {
+                await ctx.reply("⚠️ Пользователь с таким _id не найден или это не креативщик. Пожалуйста, проверьте _id и попробуйте снова.");
                 return;
             }
             
@@ -285,7 +289,7 @@ writeTTScene.action('no_example', async (ctx) => {
 writeTTScene.action('assign_yes', async (ctx) => {
     try {
         ctx.session.awaitingCreatorUsername = true;
-        await ctx.reply("Введите username креативщика (без символа @):");
+        await ctx.reply("Введите _id креативщика:");
     } catch (error) {
         console.error("Ошибка:", error);
         await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
