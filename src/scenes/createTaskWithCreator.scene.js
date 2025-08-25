@@ -121,7 +121,7 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
                 console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
                 
                 await ctx.reply(
-                    `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
+                    `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator._id}`,
                     await start(ctx.from.id)
                 );
             } catch (err) {
