@@ -91,7 +91,7 @@ async function handleText(ctx) {
                     }
                     
                     await ctx.reply(
-                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator.username}`,
+                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator._id}`,
                         await start(ctx.from.id)
                     );
                 } catch (error) {
