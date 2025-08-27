@@ -10,6 +10,7 @@ const { replyCreative } = require('../keyboards/replyCreative.keyboard');
 const { doneTask } = require('../keyboards/doneTask.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const { Markup } = require('telegraf');
+const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
 
 
 
@@ -739,14 +740,22 @@ ${rejectionMessage}
                 };
 
                 try {
-                    await taskService.createTask(data);
+                    const createdTask = await taskService.createTask(data);
+                    console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
                     await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
+                    // Prompt creator to set expected time for the new task
+                    console.log(`[Reply->UNIQ] Sending expected time prompt to creator for task ${createdTask?._id}`);
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
+                        setExpectedTimeKeyboard(createdTask?._id)
+                    );
+                    // Inform creator about new task as before
+                    await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 } catch (error) {
                     console.log(error);
                     await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
                 }
-
-                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 await ctx.reply(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
@@ -785,14 +794,22 @@ ${rejectionMessage}
                 };
 
                 try {
-                    await taskService.createTask(dataDU);
+                    const createdTaskDU = await taskService.createTask(dataDU);
+                    console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
                     await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
+                    // Prompt creator to set expected time for the new task
+                    console.log(`[Reply->DEEP_UNIQ] Sending expected time prompt to creator for task ${createdTaskDU?._id}`);
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
+                        setExpectedTimeKeyboard(createdTaskDU?._id)
+                    );
+                    // Inform creator about new task as before
+                    await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 } catch (error) {
                     console.log(error);
                     await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
                 }
-
-                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
                 break;
@@ -856,7 +873,15 @@ ${rejectionMessage}
         };
 
         try {
-            await taskService.createTask(newTaskAdaptiv);
+            const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
+            console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
+            // Prompt creator to set expected time for the new task
+            console.log(`[Reply->ADAPTIV] Sending expected time prompt to creator for task ${createdAdaptiv?._id}`);
+            await ctx.telegram.sendMessage(
+                creator.tg_id,
+                `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
+                setExpectedTimeKeyboard(createdAdaptiv?._id)
+            );
             await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
             await ctx.reply(`Вы выбрали креатив: Адаптив. Новый креатив создан с именем ${newName}`);
             ctx.session = {};
