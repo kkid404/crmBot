@@ -104,21 +104,14 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
                 const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
                 const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
                 
-                // Check if this is a task type that requires expected time
-                if (taskData.workType && 
-                    (taskData.workType.includes('Уник') || 
-                     taskData.workType.includes('уник') ||
-                     taskData.workType.includes('ТЗ'))) {
-                    await ctx.telegram.sendMessage(
-                        creator.tg_id, 
-                        `${notificationText}\n\nПожалуйста, установите ожидаемое время выполнения:`, 
-                        setExpectedTimeKeyboard(task._id)
-                    );
-                } else {
-                    await ctx.telegram.sendMessage(creator.tg_id, notificationText);
-                }
+                // Always prompt to set expected time regardless of workType
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `${notificationText}\n\nПожалуйста, установите ожидаемое время выполнения:`,
+                    setExpectedTimeKeyboard(task._id)
+                );
                 
-                console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                console.log(`Уведомление отправлено креативщику ${creator._id} (${creator.tg_id})`);
                 
                 await ctx.reply(
                     `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator._id}`,
