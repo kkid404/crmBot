@@ -32,9 +32,22 @@ const { Stage } = Scenes;
 // Использование локальной сессии
 const localSession = new LocalSession({ database: 'session_db.json' });
 
-// Global handler for setting expected time from any context (after session/stage/checkUser)
+bot.use(localSession.middleware());
+
+// Подготовка Stage для сцен
+const stage = new Stage();
+bot.use(stage.middleware());
+
+// Глобальное middleware проверки пользователя
+bot.use(checkUser);
+
+
+// Global handler for setting expected time from any context (must be AFTER session/stage/checkUser)
 bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
   try {
+    // Ensure session exists
+    if (!ctx.session) ctx.session = {};
+
     const taskIdFromCb = ctx.match && ctx.match[1] ? ctx.match[1] : null;
     console.log('[set_expected_time] callback_data match:', ctx.match);
     console.log('[set_expected_time] session before resolve:', {
@@ -58,15 +71,6 @@ bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
     try { await ctx.answerCbQuery('Ошибка при переходе к установке сроков.'); } catch {}
   }
 });
-
-bot.use(localSession.middleware());
-
-// Подготовка Stage для сцен
-const stage = new Stage();
-bot.use(stage.middleware());
-
-// Глобальное middleware проверки пользователя
-bot.use(checkUser);
 
 
 // Регистрация сцен
