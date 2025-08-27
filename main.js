@@ -31,6 +31,27 @@ const { Stage } = Scenes;
 
 // Использование локальной сессии
 const localSession = new LocalSession({ database: 'session_db.json' });
+
+// Global handler for setting expected time from any context (after session/stage/checkUser)
+bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
+  try {
+    const taskIdFromCb = ctx.match && ctx.match[1] ? ctx.match[1] : null;
+    const taskId = taskIdFromCb || ctx.session.selectedTask || ctx.session.taskIdForTimeSetting;
+
+    if (!taskId) {
+      await ctx.answerCbQuery('Не удалось определить задачу для установки срока.');
+      return;
+    }
+
+    ctx.session.taskIdForTimeSetting = taskId;
+    await ctx.scene.enter('setExpectedTimeScene');
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Error handling set_expected_time action:', error);
+    try { await ctx.answerCbQuery('Ошибка при переходе к установке сроков.'); } catch {}
+  }
+});
+
 bot.use(localSession.middleware());
 
 // Подготовка Stage для сцен

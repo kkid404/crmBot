@@ -15,6 +15,7 @@ const dayjs = require("dayjs");
 const ruLocale = require("dayjs/locale/ru.js");
 dayjs.locale(ruLocale);
 const forwardToSecondChat = require("../services/secondaryForward.service");
+const { setExpectedTimeKeyboard } = require("../keyboards/setExpectedTime.keyboard");
 
 const getTaskToModerateScene = new BaseScene("getTaskToModerateScene");
 
@@ -326,6 +327,13 @@ ${corrections}
         // --- Уведомления пользователям ---
         try {
           if (creator && creator.tg_id) {
+            // Prompt creator to set expected time before sending approval
+            await ctx.telegram.sendMessage(
+              creator.tg_id,
+              `🔔 Для задачи "${finalizedTask.name}" укажите дату и время сдачи:`,
+              setExpectedTimeKeyboard(finalizedTask._id)
+            );
+
             await ctx.telegram.sendMessage(
               creator.tg_id,
               `✅ ${finalizedTask.name} Одобрено!`
