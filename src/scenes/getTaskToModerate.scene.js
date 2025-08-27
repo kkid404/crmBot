@@ -328,15 +328,27 @@ ${corrections}
         try {
           if (creator && creator.tg_id) {
             // Prompt creator to set expected time before sending approval
-            await ctx.telegram.sendMessage(
+            console.log(
+              `[Moderation->Creator] Sending expected time prompt: taskId=${finalizedTask._id}, taskName=${finalizedTask.name}, creatorId=${creator._id}, creatorTG=${creator.tg_id}`
+            );
+            const timeMsg = await ctx.telegram.sendMessage(
               creator.tg_id,
               `🔔 Для задачи "${finalizedTask.name}" укажите дату и время сдачи:`,
               setExpectedTimeKeyboard(finalizedTask._id)
             );
+            console.log(
+              `[Moderation->Creator] Expected time prompt sent. message_id=${timeMsg?.message_id}`
+            );
 
-            await ctx.telegram.sendMessage(
+            console.log(
+              `[Moderation->Creator] Sending approval message for task ${finalizedTask._id}`
+            );
+            const approveMsg = await ctx.telegram.sendMessage(
               creator.tg_id,
               `✅ ${finalizedTask.name} Одобрено!`
+            );
+            console.log(
+              `[Moderation->Creator] Approval message sent. message_id=${approveMsg?.message_id}`
             );
           } else {
             console.error(
@@ -345,8 +357,8 @@ ${corrections}
           }
         } catch (error) {
           console.error(
-            `Failed to send approval message to creator for task ${finalizedTask.name}:`,
-            error.message
+            `Failed to send messages to creator for task ${finalizedTask.name}:`,
+            error
           );
         }
 

@@ -36,7 +36,13 @@ const localSession = new LocalSession({ database: 'session_db.json' });
 bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
   try {
     const taskIdFromCb = ctx.match && ctx.match[1] ? ctx.match[1] : null;
+    console.log('[set_expected_time] callback_data match:', ctx.match);
+    console.log('[set_expected_time] session before resolve:', {
+      selectedTask: ctx.session?.selectedTask,
+      taskIdForTimeSetting: ctx.session?.taskIdForTimeSetting,
+    });
     const taskId = taskIdFromCb || ctx.session.selectedTask || ctx.session.taskIdForTimeSetting;
+    console.log('[set_expected_time] resolved taskId:', taskId);
 
     if (!taskId) {
       await ctx.answerCbQuery('Не удалось определить задачу для установки срока.');
@@ -44,6 +50,7 @@ bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
     }
 
     ctx.session.taskIdForTimeSetting = taskId;
+    console.log('[set_expected_time] entering setExpectedTimeScene with taskId:', taskId);
     await ctx.scene.enter('setExpectedTimeScene');
     await ctx.answerCbQuery();
   } catch (error) {
