@@ -327,18 +327,24 @@ ${corrections}
         // --- Уведомления пользователям ---
         try {
           if (creator && creator.tg_id) {
-            // Prompt creator to set expected time before sending approval
-            console.log(
-              `[Moderation->Creator] Sending expected time prompt: taskId=${finalizedTask._id}, taskName=${finalizedTask.name}, creatorId=${creator._id}, creatorTG=${creator.tg_id}`
-            );
-            const timeMsg = await ctx.telegram.sendMessage(
-              creator.tg_id,
-              `🔔 Для задачи "${finalizedTask.name}" укажите дату и время сдачи:`,
-              setExpectedTimeKeyboard(finalizedTask._id)
-            );
-            console.log(
-              `[Moderation->Creator] Expected time prompt sent. message_id=${timeMsg?.message_id}`
-            );
+            // Send expected time prompt ONLY if deadline not set and task not done
+            if (!finalizedTask.expectedDate && finalizedTask.state !== 'done') {
+              console.log(
+                `[Moderation->Creator] Sending expected time prompt: taskId=${finalizedTask._id}, taskName=${finalizedTask.name}, creatorId=${creator._id}, creatorTG=${creator.tg_id}`
+              );
+              const timeMsg = await ctx.telegram.sendMessage(
+                creator.tg_id,
+                `🔔 Для задачи "${finalizedTask.name}" укажите дату и время сдачи:`,
+                setExpectedTimeKeyboard(finalizedTask._id)
+              );
+              console.log(
+                `[Moderation->Creator] Expected time prompt sent. message_id=${timeMsg?.message_id}`
+              );
+            } else {
+              console.log(
+                `[Moderation->Creator] Skipping expected time prompt (already set or task done). taskId=${finalizedTask._id}, state=${finalizedTask.state}`
+              );
+            }
 
             console.log(
               `[Moderation->Creator] Sending approval message for task ${finalizedTask._id}`
