@@ -1,25 +1,4 @@
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 секунда
-
-async function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function retryOperation(operation, maxRetries = MAX_RETRIES, delay = RETRY_DELAY) {
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            return await operation();
-        } catch (error) {
-            if (i === maxRetries - 1) throw error; // Если это последняя попытка, пробрасываем ошибку
-            if (error.code === 'ECONNRESET' || error.message === 'read ECONNRESET') {
-                console.log(`Попытка ${i + 1} из ${maxRetries} не удалась, повторяем через ${delay}мс...`);
-                await sleep(delay);
-                continue;
-            }
-            throw error; // Если ошибка не ECONNRESET, пробрасываем её сразу
-        }
-    }
-}
+const { retryOperation } = require('../utils/retry.util');
 
 const errorHandler = async (ctx, next) => {
     try {
@@ -74,4 +53,4 @@ const errorHandler = async (ctx, next) => {
     }
 };
 
-module.exports = errorHandler; 
+module.exports = errorHandler;

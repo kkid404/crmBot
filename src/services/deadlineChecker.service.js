@@ -1,6 +1,7 @@
 const taskService = require('./task.service');
 const UserService = require('./user.service');
 const User = require('../databases/user.model');
+const { retryOperation } = require('../utils/retry.util');
 
 // Объект для хранения информации об отправленных уведомлениях
 // Формат: { taskId: timestamp }
@@ -151,7 +152,7 @@ async function notifyAdminsAndCreator(bot, task, diffMs) {
     for (const tgId of recipients) {
         try {
             log(`Отправка сообщения пользователю ${tgId}: ${msg}`);
-            await bot.telegram.sendMessage(tgId, msg);
+            await retryOperation(async () => await bot.telegram.sendMessage(tgId, msg));
             log(`Сообщение успешно отправлено пользователю ${tgId}`);
         } catch (err) {
             console.error(`Не удалось отправить уведомление пользователю ${tgId}:`, err.message);
