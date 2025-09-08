@@ -565,12 +565,12 @@ watchReadyTzScene.action(/^reply_/, async (ctx) => {
 
     // Сохраняем тип креатива в сессии для последующего использования
     ctx.session.replyType = replyType;
-    
-    // Запрашиваем у пользователя новую ссылку на приложение
-    await ctx.editMessageText('Введите новую ссылку на приложение:');
-    
-    // Устанавливаем флаг ожидания ссылки
-    ctx.session.awaitingAppLink = true;
+
+    // Запрашиваем у пользователя комментарий, что нужно сделать
+    await ctx.editMessageText('✍️ Опишите, что нужно сделать по этому креативу:');
+
+    // Устанавливаем флаг ожидания комментария
+    ctx.session.awaitingComment = true;
     
     await ctx.answerCbQuery();
 });
@@ -673,17 +673,14 @@ ${rejectionMessage}
         }
     }
     
-    // Проверяем, ожидаем ли мы ссылку на приложение
-    if (ctx.session.awaitingAppLink) {
-        // Получаем новую ссылку из сообщения пользователя
-        const newAppLink = ctx.message.text;
-        
-        // Сохраняем ссылку в сессии
-        ctx.session.newAppLink = newAppLink;
-        
-        // Сбрасываем флаг ожидания ссылки
-        ctx.session.awaitingAppLink = false;
-        
+    // Проверяем, ожидаем ли мы комментарий от пользователя для нового ответа
+    if (ctx.session.awaitingComment) {
+        const commentText = ctx.message.text;
+
+        // Сохраняем и сбрасываем флаг ожидания комментария
+        ctx.session.userComment = commentText;
+        ctx.session.awaitingComment = false;
+
         // Получаем данные из сессии
         const { replyType, selectedTask } = ctx.session;
         const taskId = selectedTask;
@@ -707,27 +704,27 @@ ${rejectionMessage}
 
         const creator = await userService.findById(task.creator);
         if (!creator) {
-            await ctx.reply("Создатель задания не найден.");
+            await ctx.reply("Креативщик не найден.");
             return;
         }
 
-        // Переменная для создания нового имени креатива (номер уникального креатива по счету)
+        // Переменная для создания нового имени креатива (номер по счету)
         let newName;
+        // Базовое описание с учетом комментария заказчика
+        const commentBlock = `\n\n📝 Комментарий заказчика:\n${commentText}`;
 
-        // В зависимости от типа креатива, формируем имя и сохраняем данные
-        switch (replyType) {
-            case 'uniq':
-                // Логика для "Уник"
-                const uniqCount = await taskService.getTaskSpecificUniqCount(task.name); // Функция для подсчета количества уникальных креативов для этого конкретного задания
+        try {
+            if (replyType === 'uniq') {
+                const uniqCount = await taskService.getTaskSpecificUniqCount(task.name);
                 newName = `${task.name}_U_${uniqCount + 1}`;
 
                 const data = {
                     name: newName,
-                    link_app: newAppLink, // Используем новую ссылку
-                    description: task.description,
+                    link_app: task.link_app,
+                    description: `${task.description}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
-                    creator: creator._id, 
+                    creator: creator._id,
                     state: 'progress',
                     points: null,
                     completionDate: null,
@@ -739,49 +736,68 @@ ${rejectionMessage}
                     updatedAt: new Date(),
                 };
 
-                try {
-                    const createdTask = await taskService.createTask(data);
-                    console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
-                    await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
-                    // Prompt creator to set expected time for the new task
-                    console.log(`[Reply->UNIQ] Sending expected time prompt to creator for task ${createdTask?._id}`);
-                    await ctx.telegram.sendMessage(
-                        creator.tg_id,
-                        `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
-                        setExpectedTimeKeyboard(createdTask?._id)
-                    );
-                    // Inform creator about new task as before
-                    await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-                } catch (error) {
-                    console.log(error);
-                    await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-                }
+                const createdTask = await taskService.createTask(data);
+                console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
+                await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdTask?._id)
+                );
+                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 await ctx.reply(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
-                break;
+                return;
+            }
 
-            case 'adaptiv':
-               // Логика для "Адаптив"
-                // Задаем вопрос "Что адаптировать?", но только после получения новой ссылки
-                await ctx.reply("Что адаптировать?");
+            if (replyType === 'adaptiv') {
+                const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name);
+                newName = `${task.name}_A_${adaptivCount + 1}`;
 
-                // Ожидаем ответа от пользователя, но сохраняем информацию, что после этого шага мы в режиме адаптива
-                ctx.session.step = 'adaptiv_what'; // Устанавливаем текущий шаг для адаптива
-                break;
+                const newTaskAdaptiv = {
+                    name: newName,
+                    link_app: task.link_app,
+                    description: `${task.description}${commentBlock}`,
+                    example_creative: task.example_creative,
+                    buyer: user._id,
+                    creator: creator._id,
+                    state: 'progress',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
 
-            case 'deep_uniq':
-                // Логика для "Глубокий уник"
-                const deepUniqCount = await taskService.getTaskSpecificDeepUniqCount(task.name); // Функция для подсчета количества глубоких уникальных креативов для этого конкретного задания
+                const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
+                console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdAdaptiv?._id)
+                );
+                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
+                await ctx.reply(`Вы выбрали креатив: Адаптив. Новый креатив создан с именем ${newName}`);
+                ctx.session = {};
+                ctx.scene.leave();
+                return;
+            }
+
+            if (replyType === 'deep_uniq') {
+                const deepUniqCount = await taskService.getTaskSpecificDeepUniqCount(task.name);
                 newName = `DU_${task.name}_${deepUniqCount + 1}`;
 
                 const dataDU = {
                     name: newName,
-                    link_app: newAppLink,
-                    description: task.description,
+                    link_app: task.link_app,
+                    description: `${task.description}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
-                    creator: creator._id, 
+                    creator: creator._id,
                     state: 'progress',
                     points: null,
                     completionDate: null,
@@ -793,31 +809,29 @@ ${rejectionMessage}
                     updatedAt: new Date(),
                 };
 
-                try {
-                    const createdTaskDU = await taskService.createTask(dataDU);
-                    console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
-                    await ctx.reply(ruMessage.messages.writeTT.queued.replace("{name}", newName), await start(ctx.from.id));
-                    // Prompt creator to set expected time for the new task
-                    console.log(`[Reply->DEEP_UNIQ] Sending expected time prompt to creator for task ${createdTaskDU?._id}`);
-                    await ctx.telegram.sendMessage(
-                        creator.tg_id,
-                        `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
-                        setExpectedTimeKeyboard(createdTaskDU?._id)
-                    );
-                    // Inform creator about new task as before
-                    await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-                } catch (error) {
-                    console.log(error);
-                    await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
-                }
+                const createdTaskDU = await taskService.createTask(dataDU);
+                console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
+                await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdTaskDU?._id)
+                );
+                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
-                break;
+                return;
+            }
 
-            default:
-                await ctx.reply("Неверный выбор.");
+            await ctx.reply('Неверный выбор.');
+            return;
+        } catch (error) {
+            console.error('Ошибка при создании нового задания:', error);
+            await ctx.reply(ruMessage.messages.errors?.writeTT || 'Ошибка при создании нового задания.');
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
         }
-        return; // Важно выйти из обработчика
     }
 
     // Получаем данные из сессии
@@ -834,82 +848,14 @@ ${rejectionMessage}
         return;
     }
 
-    if (ctx.session.step === 'adaptiv_what') {
-        const adaptivText = ctx.message.text;
-
-        // Получаем данные задания
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
-
-        if (!task) {
-            await ctx.reply("Задача не найдена.");
-            return;
-        }
-
-        // Формируем новое описание, добавляя текст адаптации в начало
-        const newDescription = `${adaptivText} ${task.description}`;
-
-        // Генерируем новое имя с префиксом "A_" и увеличением номера креатива
-        const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name); // Функция для подсчета количества адаптивных креативов для этого конкретного задания
-        const newName = `${task.name}_A_${adaptivCount + 1}`;
-        const creator = await userService.findById(task.creator);
-        // Создание нового задания с обновленным описанием
-        const newTaskAdaptiv = {
-            name: newName,
-            link_app: ctx.session.newAppLink, // Используем новую ссылку на приложение
-            description: newDescription,
-            example_creative: task.example_creative,
-            buyer: user._id,
-            creator: creator._id, 
-            state: 'progress',
-            points: null,
-            completionDate: null,
-            CTR: null,
-            bonus: null,
-            result: null,
-            version: 1,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-
-        try {
-            const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
-            console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
-            // Prompt creator to set expected time for the new task
-            console.log(`[Reply->ADAPTIV] Sending expected time prompt to creator for task ${createdAdaptiv?._id}`);
-            await ctx.telegram.sendMessage(
-                creator.tg_id,
-                `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
-                setExpectedTimeKeyboard(createdAdaptiv?._id)
-            );
-            await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
-            await ctx.reply(`Вы выбрали креатив: Адаптив. Новый креатив создан с именем ${newName}`);
-            ctx.session = {};
-            ctx.scene.leave();
-        } catch (error) {
-            console.log(error);
-            await ctx.reply("Ошибка при создании нового задания.");
-            ctx.session = {};
-            ctx.scene.leave();
-        }
-
-        // Завершаем шаг
-        ctx.session.step = null; // Сбрасываем шаг
-        return;
-    }
+    // Шаг адаптива через отдельный вопрос больше не используется, т.к. комментарий запрашивается единообразно выше
 
     // Если нет выбранной задачи или нет "шага" редактирования — выходим
     if (!selectedTask || !step) {
         // Проверяем текущее состояние сцены и возвращаем пользователю информацию
         let currentState = "Просмотр задач";
         
-        if (ctx.session.awaitingAppLink) {
-            currentState = "Ожидание ввода новой ссылки на приложение";
-            await ctx.reply("Пожалуйста, введите новую ссылку на приложение.");
-        } else if (ctx.session.step === 'adaptiv_what') {
-            currentState = "Ожидание ввода текста для адаптации";
-            await ctx.reply("Пожалуйста, введите текст для адаптации.");
-        } else if (ctx.session.step === 1) {
+        if (ctx.session.step === 1) {
             currentState = "Ожидание ввода CTR";
             await ctx.reply("Пожалуйста, введите CTR для креатива.");
         } else if (ctx.session.step === 2) {
