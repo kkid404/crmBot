@@ -53,7 +53,17 @@ class TableUpdaterService {
                 });
             }
 
-            // 4. Export employee schedule with proper clearing
+            // 4. Export "Выполненные креативы new" (как «Креативы в работе») в отдельную таблицу
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Updating separate spreadsheet: Выполненные креативы new ...');
+            try {
+                const url = await taskController.exportProgressLikeToNewSpreadsheet();
+                links.taskSheets.push({ name: 'Выполненные креативы new', url });
+            } catch (e) {
+                console.error('Failed to export "Выполненные креативы new":', e.message);
+            }
+
+            // 5. Export employee schedule with proper clearing
             await new Promise(resolve => setTimeout(resolve, 1000));
             console.log('Updating employee schedule table...');
             const scheduleResult = await this.updateEmployeeSchedule();

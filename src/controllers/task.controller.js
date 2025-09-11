@@ -523,3 +523,54 @@ module.exports = {
     exportTasksDoneCsv,
     exportAllTasksCsv
 };
+// --- keep exports object above ---
+
+// Отдельная таблица «Выполненные креативы new» с функционалом как у «Креативы в работе»
+async function exportProgressLikeToNewSpreadsheet () {
+    try {
+        console.log('Экспорт «Выполненные креативы new»: структура как у «Креативы в работе»');
+
+        const tasks = await Task.find({ state: { $in: ['progress','active'] } })
+            .populate('buyer').populate('creator')
+            .sort({ createdAt: -1 });
+
+        const spreadsheetId = await googleSheets.getOrCreateSpreadsheet(
+            'Выполненные креативы new',
+            process.env.NEW_PROGRESS_SPREADSHEET_ID
+        );
+
+        try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Лист 1'); } catch (_) {}
+
+        const sheetName = 'Креативы в работе';
+        await googleSheets.addSheet(spreadsheetId, sheetName);
+
+        await googleSheets.sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `${sheetName}!A:Z`,
+        });
+
+        // Без колонок «Заказчик» и «Исполнитель»
+        const headers = [
+            'Дата создания','Название','Вид работы','Дата план выдачи','Статус'
+        ];
+
+        const values = [
+            headers,
+            ...tasks.map(t => [
+                t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                t.name?.toString() || 'Без названия',
+                t.workType?.toString() || 'Не указан',
+                t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                t.state === 'progress' ? 'В работе' : 'Активно'
+            ])
+        ];
+
+        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+    } catch (error) {
+        throw new Error(`Ошибка экспорта «Выполненные креативы new»: ${error.message}`);
+    }
+}
+
+module.exports.exportProgressLikeToNewSpreadsheet = exportProgressLikeToNewSpreadsheet;
