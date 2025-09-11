@@ -530,10 +530,6 @@ async function exportProgressLikeToNewSpreadsheet () {
     try {
         console.log('Экспорт «Выполненные креативы new»: структура как у «Креативы в работе»');
 
-        const tasks = await Task.find({ state: { $in: ['progress','active'] } })
-            .populate('buyer').populate('creator')
-            .sort({ createdAt: -1 });
-
         const spreadsheetId = await googleSheets.getOrCreateSpreadsheet(
             'Выполненные креативы new',
             process.env.NEW_PROGRESS_SPREADSHEET_ID
@@ -541,31 +537,100 @@ async function exportProgressLikeToNewSpreadsheet () {
 
         try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Лист 1'); } catch (_) {}
 
-        const sheetName = 'Креативы в работе';
-        await googleSheets.addSheet(spreadsheetId, sheetName);
+        // ---------- Лист 1: Креативы в работе ----------
+        {
+            const inProgress = await Task.find({ state: { $in: ['progress','active'] } })
+                .populate('buyer').populate('creator')
+                .sort({ createdAt: -1 });
 
-        await googleSheets.sheets.spreadsheets.values.clear({
-            spreadsheetId,
-            range: `${sheetName}!A:Z`,
-        });
+            const sheetName = 'Креативы в работе';
+            await googleSheets.addSheet(spreadsheetId, sheetName);
+            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
 
-        // Без колонок «Заказчик» и «Исполнитель»
-        const headers = [
-            'Дата создания','Название','Вид работы','Дата план выдачи','Статус'
-        ];
+            const headers = ['Дата создания','Название','Вид работы','Дата план выдачи','Статус'];
+            const values = [
+                headers,
+                ...inProgress.map(t => [
+                    t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                    t.name?.toString() || 'Без названия',
+                    t.workType?.toString() || 'Не указан',
+                    t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                    t.state === 'progress' ? 'В работе' : 'Активно'
+                ])
+            ];
+            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+        }
 
-        const values = [
-            headers,
-            ...tasks.map(t => [
-                t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
-                t.name?.toString() || 'Без названия',
-                t.workType?.toString() || 'Не указан',
-                t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
-                t.state === 'progress' ? 'В работе' : 'Активно'
-            ])
-        ];
+        // ---------- Лист 2: Выполненные креативы ----------
+        {
+            const doneTasks = await Task.find({ state: 'done' })
+                .populate('buyer').populate('creator')
+                .sort({ completionDate: -1 });
 
-        await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+            const sheetName = 'Выполненные креативы';
+            await googleSheets.addSheet(spreadsheetId, sheetName);
+            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
+
+            const headers = ['Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
+            const values = [
+                headers,
+                ...doneTasks.map(t => [
+                    t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                    t.name?.toString() || 'Без названия',
+                    t.workType?.toString() || 'Не указан',
+                    t.points || 0,
+                    t.bonus || 0,
+                    t.CTR || 0,
+                    t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                    t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
+                ])
+            ];
+            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+        }
+
+        // ---------- Лист 3: Все креативы ----------
+        {
+            const allTasks = await Task.find({})
+                .populate('buyer').populate('creator')
+                .sort([
+                    ['state', 1],
+                    ['completionDate', -1],
+                    ['createdAt', -1]
+                ]);
+
+            const getStatusText = (state) => {
+                switch (state) {
+                    case 'active': return 'Активно';
+                    case 'progress': return 'В работе';
+                    case 'wait': return 'На проверке';
+                    case 'done': return 'Выполнено';
+                    case 'failed': return 'Отклонено';
+                    case 'canceled': return 'Отменено';
+                    default: return state || 'Неизвестно';
+                }
+            };
+
+            const sheetName = 'Все креативы';
+            await googleSheets.addSheet(spreadsheetId, sheetName);
+            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
+
+            const headers = ['Статус','Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
+            const values = [
+                headers,
+                ...allTasks.map(t => [
+                    getStatusText(t.state),
+                    t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                    t.name?.toString() || 'Без названия',
+                    t.workType?.toString() || 'Не указан',
+                    t.points || 0,
+                    t.bonus || 0,
+                    t.CTR || 0,
+                    t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                    t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
+                ])
+            ];
+            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+        }
 
         return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
     } catch (error) {
