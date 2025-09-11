@@ -536,30 +536,8 @@ async function exportProgressLikeToNewSpreadsheet () {
         );
 
         try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Лист 1'); } catch (_) {}
-
-        // ---------- Лист 1: Креативы в работе ----------
-        {
-            const inProgress = await Task.find({ state: { $in: ['progress','active'] } })
-                .populate('buyer').populate('creator')
-                .sort({ createdAt: -1 });
-
-            const sheetName = 'Креативы в работе';
-            await googleSheets.addSheet(spreadsheetId, sheetName);
-            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
-
-            const headers = ['Дата создания','Название','Вид работы','Дата план выдачи','Статус'];
-            const values = [
-                headers,
-                ...inProgress.map(t => [
-                    t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
-                    t.name?.toString() || 'Без названия',
-                    t.workType?.toString() || 'Не указан',
-                    t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
-                    t.state === 'progress' ? 'В работе' : 'Активно'
-                ])
-            ];
-            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
-        }
+        // Гарантированно удаляем общий лист "Креативы в работе", если существует
+        try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Креативы в работе'); } catch (_) {}
 
         // ---------- Лист 2: Выполненные креативы ----------
         {
@@ -586,6 +564,63 @@ async function exportProgressLikeToNewSpreadsheet () {
                 ])
             ];
             await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
+
+            // Пер-креативщик листы (как в общей таблице), но без колонок Заказчик/Исполнитель
+            const tasksByCreator = doneTasks.reduce((acc, task) => {
+                const creatorName = task.creator?.username || 'Без исполнителя';
+                if (!acc[creatorName]) acc[creatorName] = [];
+                acc[creatorName].push(task);
+                return acc;
+            }, {});
+
+            for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
+                const safeCreatorName = creatorName.replace(/[\[\]\/\?]/g, '_');
+                const creatorSheetName = `${sheetName} - ${safeCreatorName}`;
+
+                await googleSheets.addSheet(spreadsheetId, creatorSheetName);
+                await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${creatorSheetName}!A:Z` });
+
+                const creatorHeaders = ['Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
+                const creatorValues = [
+                    creatorHeaders,
+                    ...creatorTasks.map(t => [
+                        t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                        t.name?.toString() || 'Без названия',
+                        t.workType?.toString() || 'Не указан',
+                        t.points || 0,
+                        t.bonus || 0,
+                        t.CTR || 0,
+                        t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                        t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
+                    ])
+                ];
+
+                await googleSheets.writeData(spreadsheetId, `${creatorSheetName}!A1`, creatorValues);
+
+                // Жирные заголовки
+                try {
+                    const creatorSpreadsheet = await googleSheets.sheets.spreadsheets.get({
+                        spreadsheetId,
+                        fields: 'sheets(properties(sheetId,title))',
+                    });
+                    const creatorSheet = creatorSpreadsheet.data.sheets.find(s => s.properties.title === creatorSheetName);
+                    if (creatorSheet) {
+                        const creatorSheetId = creatorSheet.properties.sheetId;
+                        await googleSheets.sheets.spreadsheets.batchUpdate({
+                            spreadsheetId,
+                            requestBody: {
+                                requests: [{
+                                    repeatCell: {
+                                        range: { sheetId: creatorSheetId, startRowIndex: 0, endRowIndex: 1 },
+                                        cell: { userEnteredFormat: { textFormat: { bold: true } } },
+                                        fields: 'userEnteredFormat.textFormat.bold'
+                                    }
+                                }]
+                            }
+                        });
+                    }
+                } catch (_) {}
+            }
         }
 
         // ---------- Лист 3: Все креативы ----------
