@@ -714,6 +714,12 @@ ${rejectionMessage}
         const commentBlock = `\n\n📝 Комментарий заказчика:\n${commentText}`;
         // Дата и время запроса (для однозначной привязки комментария)
         const commentDate = new Date().toLocaleString('ru-RU');
+        // Базовое описание без предыдущих комментариев заказчика
+        let baseDescription = String(task.description || '');
+        // Отсекаем всё после первого маркера комментария (если он был)
+        baseDescription = baseDescription.split('\n📝 Комментарий заказчика:')[0];
+        // Удаляем возможную висящую строку даты запроса в конце
+        baseDescription = baseDescription.replace(/\n📅 Дата запроса:.*$/, '');
 
         try {
             if (replyType === 'uniq') {
@@ -723,7 +729,7 @@ ${rejectionMessage}
                 const data = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
@@ -783,7 +789,7 @@ ${rejectionMessage}
                 const newTaskAdaptiv = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
@@ -841,7 +847,7 @@ ${rejectionMessage}
                 const dataDU = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
