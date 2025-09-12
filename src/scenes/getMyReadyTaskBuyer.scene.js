@@ -789,7 +789,7 @@ ${rejectionMessage}
                     creator: creator._id,
                     state: 'progress',
                     points: null,
-                    completionDate: null,0
+                    completionDate: null,
                     CTR: null,
                     bonus: null,
                     result: null,
