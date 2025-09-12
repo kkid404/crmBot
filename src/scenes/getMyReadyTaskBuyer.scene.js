@@ -741,12 +741,35 @@ ${rejectionMessage}
                 const createdTask = await taskService.createTask(data);
                 console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
                 await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
+
+                // Compose detailed message for creator: first new task, then original
+                const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
+                    `📌 Название: ${createdTask?.name}\n` +
+                    `🔗 Приложение: ${createdTask?.link_app}\n` +
+                    `📝 Описание: ${createdTask?.description}\n` +
+                    `📅 Создано: ${(createdTask?.createdAt ? new Date(createdTask.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+
+                const hasMediaOld = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfo = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOld || 0}\n` +
+                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+
+                const composed = `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
+
+                await ctx.telegram.sendMessage(creator.tg_id, composed);
+
+                // Prompt to set expected time
                 await ctx.telegram.sendMessage(
                     creator.tg_id,
                     `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
                     setExpectedTimeKeyboard(createdTask?._id)
                 );
-                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 await ctx.reply(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
@@ -766,7 +789,7 @@ ${rejectionMessage}
                     creator: creator._id,
                     state: 'progress',
                     points: null,
-                    completionDate: null,
+                    completionDate: null,0
                     CTR: null,
                     bonus: null,
                     result: null,
@@ -777,12 +800,34 @@ ${rejectionMessage}
 
                 const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
                 console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
+
+                // Compose detailed message for creator: first new task, then original
+                const newTaskInfoA = `🆕 Новая задача (ADAPTIV)\n\n` +
+                    `📌 Название: ${createdAdaptiv?.name}\n` +
+                    `🔗 Приложение: ${createdAdaptiv?.link_app}\n` +
+                    `📝 Описание: ${createdAdaptiv?.description}\n` +
+                    `📅 Создано: ${(createdAdaptiv?.createdAt ? new Date(createdAdaptiv.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+
+                const hasMediaOldA = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfoA = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOldA || 0}\n` +
+                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+
+                const composedA = `${newTaskInfoA}\n\n— — —\n\n${oldTaskInfoA}`;
+                await ctx.telegram.sendMessage(creator.tg_id, composedA);
+
+                // Prompt to set expected time
                 await ctx.telegram.sendMessage(
                     creator.tg_id,
                     `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
                     setExpectedTimeKeyboard(createdAdaptiv?._id)
                 );
-                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 await ctx.reply(`Вы выбрали креатив: Адаптив. Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
@@ -814,12 +859,34 @@ ${rejectionMessage}
                 const createdTaskDU = await taskService.createTask(dataDU);
                 console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
                 await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
+
+                // Compose detailed message for creator: first new task, then original
+                const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +
+                    `📌 Название: ${createdTaskDU?.name}\n` +
+                    `🔗 Приложение: ${createdTaskDU?.link_app}\n` +
+                    `📝 Описание: ${createdTaskDU?.description}\n` +
+                    `📅 Создано: ${(createdTaskDU?.createdAt ? new Date(createdTaskDU.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+
+                const hasMediaOldDU = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfoDU = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOldDU || 0}\n` +
+                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+
+                const composedDU = `${newTaskInfoDU}\n\n— — —\n\n${oldTaskInfoDU}`;
+                await ctx.telegram.sendMessage(creator.tg_id, composedDU);
+
+                // Prompt to set expected time
                 await ctx.telegram.sendMessage(
                     creator.tg_id,
                     `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
                     setExpectedTimeKeyboard(createdTaskDU?._id)
                 );
-                await ctx.telegram.sendMessage(creator.tg_id, `⏱️ Поступило новое задание ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
                 return;
