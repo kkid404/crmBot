@@ -664,7 +664,6 @@ const formatTaskInfo = (task, creatorName) => {
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-👤 Исполнитель: ${creatorName || 'не назначен'}
 ${dateInfo}📅 Дата создания: ${task.createdAt.toLocaleDateString()}
     `;
 }
