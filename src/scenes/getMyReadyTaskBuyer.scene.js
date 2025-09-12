@@ -712,6 +712,8 @@ ${rejectionMessage}
         let newName;
         // Базовое описание с учетом комментария заказчика
         const commentBlock = `\n\n📝 Комментарий заказчика:\n${commentText}`;
+        // Дата и время запроса (для однозначной привязки комментария)
+        const commentDate = new Date().toLocaleString('ru-RU');
 
         try {
             if (replyType === 'uniq') {
@@ -721,7 +723,7 @@ ${rejectionMessage}
                 const data = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}${commentBlock}`,
+                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
@@ -758,7 +760,7 @@ ${rejectionMessage}
                 const newTaskAdaptiv = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}${commentBlock}`,
+                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
@@ -794,7 +796,7 @@ ${rejectionMessage}
                 const dataDU = {
                     name: newName,
                     link_app: task.link_app,
-                    description: `${task.description}${commentBlock}`,
+                    description: `${task.description}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
                     example_creative: task.example_creative,
                     buyer: user._id,
                     creator: creator._id,
