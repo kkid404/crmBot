@@ -751,8 +751,7 @@ ${rejectionMessage}
                 // Compose detailed message for creator: first new task, then original
                 const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
                     `📌 Название: ${createdTask?.name}\n` +
-                    `🔗 Приложение: ${createdTask?.link_app}\n` +
-                    `📝 Описание: ${createdTask?.description}\n` +
+                    `📝 Комментарий заказчика:\n${commentText}\n` +
                     `📅 Создано: ${(createdTask?.createdAt ? new Date(createdTask.createdAt) : new Date()).toLocaleString('ru-RU')}`;
 
                 const hasMediaOld = Array.isArray(task.example_creative)
@@ -810,8 +809,7 @@ ${rejectionMessage}
                 // Compose detailed message for creator: first new task, then original
                 const newTaskInfoA = `🆕 Новая задача (ADAPTIV)\n\n` +
                     `📌 Название: ${createdAdaptiv?.name}\n` +
-                    `🔗 Приложение: ${createdAdaptiv?.link_app}\n` +
-                    `📝 Описание: ${createdAdaptiv?.description}\n` +
+                    `📝 Комментарий заказчика:\n${commentText}\n` +
                     `📅 Создано: ${(createdAdaptiv?.createdAt ? new Date(createdAdaptiv.createdAt) : new Date()).toLocaleString('ru-RU')}`;
 
                 const hasMediaOldA = Array.isArray(task.example_creative)
@@ -869,8 +867,7 @@ ${rejectionMessage}
                 // Compose detailed message for creator: first new task, then original
                 const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +
                     `📌 Название: ${createdTaskDU?.name}\n` +
-                    `🔗 Приложение: ${createdTaskDU?.link_app}\n` +
-                    `📝 Описание: ${createdTaskDU?.description}\n` +
+                    `📝 Комментарий заказчика:\n${commentText}\n` +
                     `📅 Создано: ${(createdTaskDU?.createdAt ? new Date(createdTaskDU.createdAt) : new Date()).toLocaleString('ru-RU')}`;
 
                 const hasMediaOldDU = Array.isArray(task.example_creative)
