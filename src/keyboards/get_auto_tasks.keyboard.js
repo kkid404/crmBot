@@ -23,6 +23,7 @@ const autoTasks = async () => {
                 roundTasks: {},
                 processedTaskIds: []
             });
+            await roundState.save();
         }
 
         // Проверяем, нужен ли новый круг
