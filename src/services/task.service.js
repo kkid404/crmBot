@@ -53,12 +53,12 @@ class TaskService {
     static async getUserTasks(userId, role = '', state) {
         try {
             const query = {};
-    
+
             // Добавляем фильтр по статусу, если он указан
             if (state) {
                 query.state = state;
             }
-    
+
             // Фильтруем по роли, если она указана
             if (role) {
                 if (role === 'buyer') {
@@ -69,14 +69,14 @@ class TaskService {
                     throw new Error('Указана неверная роль. Допустимые значения: "creator", "buyer".');
                 }
             }
-    
+
             // Выполняем поиск задач
             return await Task.find(query).populate('buyer').populate('creator').lean();
         } catch (error) {
             throw new Error(`Ошибка получения задач для пользователя: ${error.message}`);
         }
     }
-    
+
 
     static async getAll() {
         return Task.find({})
@@ -112,7 +112,7 @@ class TaskService {
     static async updateTaskVersion(taskId) {
         const task = await Task.findById(taskId);
         if (task) {
-            task.version = 1; 
+            task.version = 1;
             await task.save();
         }
     }
@@ -167,7 +167,7 @@ class TaskService {
             throw new Error(`Ошибка при подсчете адаптивных креативов: ${error.message}`);
         }
     }
-    
+
     // Метод для подсчета количества адаптивных креативов для конкретного базового имени задачи
     static async getTaskSpecificAdaptivCount(baseName) {
         try {
@@ -180,101 +180,121 @@ class TaskService {
     }
 
     /**
-     * Метод для автоматического выбора задачи с чередованием баеров по круговой системе.
-     * Выбирает по одной задаче для каждого баера, у которого есть активные задачи,
-     * прежде чем начать новый круг.
-     * @param {string} creatorId - ID креативщика (сохранено для совместимости, но не используется в логике выбора).
-     * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач.
-     */
+   * Метод для автоматического выбора задачи с чередованием баеров по круговой системе.
+   * Выбирает по одной задаче для каждого баера, у которого есть активные задачи,
+   * прежде чем начать новый круг.
+   * @param {string} creatorId - ID креативщика (сохранено для совместимости, но не используется в логике выбора).
+   * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач.
+   */
     static async getAutoAssignedTask(creatorId) {
         try {
-            const activeTasks = await Task.find({ state: 'active' }).populate('buyer');
-            if (!activeTasks || activeTasks.length === 0) return null;
-    
-            // Группируем задачи по buyer._id
-            const tasksByBuyer = {};
-            activeTasks.forEach(task => {
-                if (task.buyer && task.buyer._id) {
-                    const buyerId = task.buyer._id.toString();
-                    if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
-                    tasksByBuyer[buyerId].push(task);
-                }
-            });
-    
-            const allBuyerIdsWithActiveTasks = Object.keys(tasksByBuyer).sort();
-            if (allBuyerIdsWithActiveTasks.length === 0) return null;
-    
-            // Получаем состояние очереди из БД
             let roundState = await RoundState.findOne({ key: 'autoAssignQueue' });
             if (!roundState) {
-                roundState = new RoundState({ key: 'autoAssignQueue', processedBuyers: [] });
-            }
-    
-            const processedBuyers = new Set(roundState.processedBuyers);
-    
-            // Определяем подходящих покупателей
-            let eligibleBuyerIds = allBuyerIdsWithActiveTasks.filter(
-                buyerId => !processedBuyers.has(buyerId)
-            );
-    
-            // Если все обработаны — начинаем новый раунд
-            if (eligibleBuyerIds.length === 0) {
-                processedBuyers.clear();
-                roundState.processedBuyers = [];
+                roundState = new RoundState({
+                    key: 'autoAssignQueue',
+                    processedBuyers: [],
+                    roundStartTime: new Date()
+                });
                 await roundState.save();
-                eligibleBuyerIds = allBuyerIdsWithActiveTasks;
             }
-    
-            if (eligibleBuyerIds.length === 0) return null;
-    
-            const selectedBuyerId = eligibleBuyerIds[0];
-            const buyerTasks = tasksByBuyer[selectedBuyerId];
-    
-            if (!buyerTasks || buyerTasks.length === 0) {
+
+            // 🛠 Восстанавливаем roundStartTime, если он отсутствует (например, в старых документах)
+            if (!roundState.roundStartTime) {
+                const oldestTask = await Task.findOne({ state: 'active' }).sort({ createdAt: 1 });
+                roundState.roundStartTime = oldestTask ? oldestTask.createdAt : new Date();
+                await roundState.save();
+            }
+
+            while (true) {
+                // Загружаем все активные задачи
+                const activeTasks = await Task.find({ state: 'active' }).populate('buyer');
+                if (!activeTasks || activeTasks.length === 0) {
+                    return null; // Нет задач вообще
+                }
+
+                // Группируем задачи по buyer._id
+                const tasksByBuyer = {};
+                for (const task of activeTasks) {
+                    if (task?.buyer?._id) {
+                        const buyerId = task.buyer._id.toString();
+                        if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
+                        tasksByBuyer[buyerId].push(task);
+                    }
+                }
+
+                let allBuyerIdsWithActiveTasks = Object.keys(tasksByBuyer).sort();
+                if (allBuyerIdsWithActiveTasks.length === 0) {
+                    return null; // Задачи есть, но без валидных баеров
+                }
+
+                const processedBuyers = new Set(roundState.processedBuyers);
+
+                // Находим баеров, которые ещё не получили задачу в этом круге
+                let eligibleBuyerIds = allBuyerIdsWithActiveTasks.filter(
+                    buyerId => !processedBuyers.has(buyerId)
+                );
+
+                // Если все баеры уже обработаны — начинаем новый раунд
+                if (eligibleBuyerIds.length === 0) {
+                    roundState.processedBuyers = [];
+                    roundState.roundStartTime = new Date();
+                    await roundState.save();
+                    continue; // начинаем новый круг
+                }
+
+                // Берём первого доступного баера
+                const selectedBuyerId = eligibleBuyerIds[0];
+                const buyerTasks = tasksByBuyer[selectedBuyerId];
+
+                if (!buyerTasks || buyerTasks.length === 0) {
+                    // Баер без задач — помечаем его как обработанного и пробуем снова
+                    processedBuyers.add(selectedBuyerId);
+                    roundState.processedBuyers = Array.from(processedBuyers);
+                    await roundState.save();
+                    continue;
+                }
+
+                // Сортируем задачи баера по дате создания и берём самую старую
+                buyerTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                const selectedTask = buyerTasks[0];
+
+                // Обновляем состояние раунда
                 processedBuyers.add(selectedBuyerId);
                 roundState.processedBuyers = Array.from(processedBuyers);
                 await roundState.save();
-                return this.getAutoAssignedTask(creatorId);
+
+                return selectedTask;
             }
-    
-            // Сортируем задачи по дате создания
-            buyerTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-            const selectedTask = buyerTasks[0];
-    
-            // Обновляем состояние очереди
-            processedBuyers.add(selectedBuyerId);
-            roundState.processedBuyers = Array.from(processedBuyers);
-            await roundState.save();
-    
-            return selectedTask;
-    
         } catch (error) {
             console.error('Ошибка при автоматическом выборе задачи:', error);
             return null;
         }
     }
-    
+
+
     // Метод для установки бонуса по умолчанию для задач без бонуса
     static async setDefaultBonus(defaultBonus = 500, timeFrame = 30) {
         try {
             // Вычисляем дату, раньше которой будем искать задачи (например, старше 30 дней)
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - timeFrame);
-            
+
             // Находим все задачи со статусом "done", у которых нет бонуса (bonus === null)
             // и которые были выполнены раньше указанной даты (т.е. старше чем timeFrame дней)
             const result = await Task.updateMany(
-                { 
+                {
                     state: 'done',
                     bonus: null,
                     completionDate: { $lt: cutoffDate }
                 },
-                { $set: { 
-                    bonus: defaultBonus,
-                    isPenaltyBonus: true 
-                }}
+                {
+                    $set: {
+                        bonus: defaultBonus,
+                        isPenaltyBonus: true
+                    }
+                }
             );
-            
+
             return {
                 success: true,
                 message: `Штрафной бонус ${defaultBonus} установлен для ${result.modifiedCount} задач`,
@@ -291,35 +311,35 @@ class TaskService {
         }
     }
 
-   static async assignTask(taskId, creatorId, expectedDate, expectedTime) {
+    static async assignTask(taskId, creatorId, expectedDate, expectedTime) {
         try {
             return await Task.findOneAndUpdate(
-            {
-                _id: taskId,
+                {
+                    _id: taskId,
 
-                // задача считается свободной, если ещё НЕ в progress
-                state: { $ne: 'progress' },
+                    // задача считается свободной, если ещё НЕ в progress
+                    state: { $ne: 'progress' },
 
-                // а поле creator либо отсутствует, либо равно null
-                $or: [
-                { creator: null },
-                { creator: { $exists: false } }
-                ]
-            },
-            {
-                $set: {
-                state:        'progress',
-                creator:      creatorId,
-                expectedDate: expectedDate,
-                expectedTime: expectedTime
-                }
-            },
-            { new: true }
+                    // а поле creator либо отсутствует, либо равно null
+                    $or: [
+                        { creator: null },
+                        { creator: { $exists: false } }
+                    ]
+                },
+                {
+                    $set: {
+                        state: 'progress',
+                        creator: creatorId,
+                        expectedDate: expectedDate,
+                        expectedTime: expectedTime
+                    }
+                },
+                { new: true }
             ).populate('buyer').populate('creator');
         } catch (error) {
             throw new Error(`Ошибка назначения задачи: ${error.message}`);
         }
-        }
+    }
 }
 
 module.exports = TaskService;
