@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Task = require('../databases/task.model');
 const RoundState = require('../databases/roundState.model');
 
@@ -179,98 +180,103 @@ class TaskService {
         }
     }
 
-    /**
-   * Метод для автоматического выбора задачи с чередованием баеров по круговой системе.
-   * Выбирает по одной задаче для каждого баера, у которого есть активные задачи,
-   * прежде чем начать новый круг.
-   * @param {string} creatorId - ID креативщика (сохранено для совместимости, но не используется в логике выбора).
-   * @returns {Promise<Object|null>} Выбранная задача или null, если нет подходящих задач.
-   */
-    static async getAutoAssignedTask(creatorId) {
-        try {
-            let roundState = await RoundState.findOne({ key: 'autoAssignQueue' });
-            if (!roundState) {
-                roundState = new RoundState({
-                    key: 'autoAssignQueue',
-                    processedBuyers: [],
-                    roundStartTime: new Date()
-                });
-                await roundState.save();
-            }
+   /**
+ * Метод для автоматического выбора задачи с чередованием баеров по круговой системе.
+ * Каждый круг формируется по актуальным задачам на момент начала круга.
+ * Новый круг начинается только когда все задачи текущего круга выданы.
+ * @param {string} creatorId - ID креативщика (не используется, оставлено для совместимости)
+ * @returns {Promise<Object|null>} Выбранная задача или null, если нет задач
+ */
+static async getAutoAssignedTask(creatorId) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+        let roundState = await RoundState.findOne({ key: 'autoAssignQueue' }).session(session);
 
-            // 🛠 Восстанавливаем roundStartTime, если он отсутствует (например, в старых документах)
-            if (!roundState.roundStartTime) {
-                const oldestTask = await Task.findOne({ state: 'active' }).sort({ createdAt: 1 });
-                roundState.roundStartTime = oldestTask ? oldestTask.createdAt : new Date();
-                await roundState.save();
-            }
-
-            while (true) {
-                // Загружаем все активные задачи
-                const activeTasks = await Task.find({ state: 'active' }).populate('buyer');
-                if (!activeTasks || activeTasks.length === 0) {
-                    return null; // Нет задач вообще
-                }
-
-                // Группируем задачи по buyer._id
-                const tasksByBuyer = {};
-                for (const task of activeTasks) {
-                    if (task?.buyer?._id) {
-                        const buyerId = task.buyer._id.toString();
-                        if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
-                        tasksByBuyer[buyerId].push(task);
-                    }
-                }
-
-                let allBuyerIdsWithActiveTasks = Object.keys(tasksByBuyer).sort();
-                if (allBuyerIdsWithActiveTasks.length === 0) {
-                    return null; // Задачи есть, но без валидных баеров
-                }
-
-                const processedBuyers = new Set(roundState.processedBuyers);
-
-                // Находим баеров, которые ещё не получили задачу в этом круге
-                let eligibleBuyerIds = allBuyerIdsWithActiveTasks.filter(
-                    buyerId => !processedBuyers.has(buyerId)
-                );
-
-                // Если все баеры уже обработаны — начинаем новый раунд
-                if (eligibleBuyerIds.length === 0) {
-                    roundState.processedBuyers = [];
-                    roundState.roundStartTime = new Date();
-                    await roundState.save();
-                    continue; // начинаем новый круг
-                }
-
-                // Берём первого доступного баера
-                const selectedBuyerId = eligibleBuyerIds[0];
-                const buyerTasks = tasksByBuyer[selectedBuyerId];
-
-                if (!buyerTasks || buyerTasks.length === 0) {
-                    // Баер без задач — помечаем его как обработанного и пробуем снова
-                    processedBuyers.add(selectedBuyerId);
-                    roundState.processedBuyers = Array.from(processedBuyers);
-                    await roundState.save();
-                    continue;
-                }
-
-                // Сортируем задачи баера по дате создания и берём самую старую
-                buyerTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                const selectedTask = buyerTasks[0];
-
-                // Обновляем состояние раунда
-                processedBuyers.add(selectedBuyerId);
-                roundState.processedBuyers = Array.from(processedBuyers);
-                await roundState.save();
-
-                return selectedTask;
-            }
-        } catch (error) {
-            console.error('Ошибка при автоматическом выборе задачи:', error);
-            return null;
+        if (!roundState) {
+            // Создаём новый документ, если его нет
+            roundState = new RoundState({
+                key: 'autoAssignQueue',
+                roundStartTime: new Date(),
+                roundTasks: {},
+                processedTaskIds: []
+            });
+            await roundState.save();
         }
-    }
 
+        // Если нет текущего круга или все задачи текущего круга выданы — формируем новый круг
+        let needNewRound = false;
+        if (!roundState.roundTasks || Object.keys(roundState.roundTasks).length === 0) {
+            needNewRound = true;
+        } else {
+            const allTaskIds = Object.values(roundState.roundTasks).flat();
+            const remaining = allTaskIds.filter(id => !roundState.processedTaskIds.includes(id));
+            if (remaining.length === 0) needNewRound = true;
+        }
+
+        if (needNewRound) {
+            // Берём все активные задачи
+            const activeTasks = await Task.find({ state: 'active' }).populate('buyer').session(session);
+            if (!activeTasks || activeTasks.length === 0) {
+                // Нет задач для нового круга
+                roundState.roundTasks = {};
+                roundState.processedTaskIds = [];
+                await roundState.save({ session });
+                await session.commitTransaction();
+                return null;
+            }
+
+            // Группируем задачи по баерам
+            const tasksByBuyer = {};
+            for (const task of activeTasks) {
+                if (task?.buyer?._id) {
+                    const buyerId = task.buyer._id.toString();
+                    if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
+                    tasksByBuyer[buyerId].push(task._id.toString());
+                }
+            }
+
+            roundState.roundTasks = tasksByBuyer;
+            roundState.processedTaskIds = [];
+            roundState.roundStartTime = new Date();
+            await roundState.save({ session });
+        }
+
+        // Выбираем задачу для выдачи
+        const allBuyerIds = Object.keys(roundState.roundTasks).sort();
+
+        for (const buyerId of allBuyerIds) {
+            const taskIds = roundState.roundTasks[buyerId];
+            // Находим первую задачу, которая ещё не была выдана
+            const nextTaskId = taskIds.find(id => !roundState.processedTaskIds.includes(id));
+            if (nextTaskId) {
+                // Получаем сам объект задачи
+                const task = await Task.findById(nextTaskId).populate('buyer').session(session).lean();
+                if (!task) continue; // на всякий случай, если задача удалена
+
+                // Добавляем в processedTaskIds
+                roundState.processedTaskIds.push(nextTaskId);
+                await roundState.save({ session });
+                await session.commitTransaction();
+                return task;
+            }
+        }
+
+        // Если дошли сюда — все задачи круга уже выданы, нужно будет новый круг на следующем вызове
+        await session.commitTransaction();
+        return null;
+
+    } catch (error) {
+        await session.abortTransaction();
+        console.error('Ошибка при автоматическом выборе задачи:', error);
+        return null;
+    } finally {
+        session.endSession();
+    }
+}
+
+// ...
 
     // Метод для установки бонуса по умолчанию для задач без бонуса
     static async setDefaultBonus(defaultBonus = 500, timeFrame = 30) {

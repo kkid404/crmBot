@@ -4,16 +4,22 @@ const RoundStateSchema = new mongoose.Schema({
     key: {
         type: String,
         required: true,
-        unique: true // всегда один документ на всю очередь
-    },
-    processedBuyers: {
-        type: [String], // массив ID покупателей
-        default: []
+        unique: true
     },
     roundStartTime: {
         type: Date,
-        default: null // чтобы можно было проверить и восстановить при первом запуске
+        default: null
+    },
+    roundTasks: {
+        type: Map, // ключ: buyerId, значение: массив taskId
+        of: [String],
+        default: {}
+    },
+    processedTaskIds: {
+        type: [String], // массив уже выданных задач текущего круга
+        default: []
     }
 });
 
 module.exports = mongoose.model('RoundState', RoundStateSchema);
+
