@@ -7,41 +7,44 @@ const userService = require('../services/user.service');
 const { Markup } = require('telegraf');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 
-// Функция для сборки текста задачи (вариант A: краткий новый блок + исходная задача)
+// Функция для сборки текста задачи
 function buildTaskInfo(task) {
-    // Определяем, есть ли медиафайлы (для блока исходной задачи)
-    const hasMedia = Array.isArray(task.example_creative)
-        ? task.example_creative.length > 0
+    // Определяем, есть ли медиафайлы
+    const hasMedia = Array.isArray(task.example_creative) 
+        ? task.example_creative.length > 0 
         : typeof task.example_creative === 'string' && task.example_creative.trim() !== '';
+    
+    // Формируем строку для отображения информации о примерах креатива
+    const exampleLine = hasMedia
+        ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
+        : "🎨 Примеры креатива: отсутствуют";
 
-    const examplesCount = hasMedia
-        ? (Array.isArray(task.example_creative) ? task.example_creative.length : 1)
-        : 0;
-
-    // Извлекаем последний комментарий заказчика из описания, если он есть
-    let lastComment = '—';
-    if (typeof task.description === 'string' && task.description.includes('📝 Комментарий заказчика:')) {
-        const match = task.description.match(/📝 Комментарий заказчика:\s*([\s\S]*)$/);
-        if (match && match[1]) {
-            lastComment = match[1].trim();
+    // Получаем информацию о пользователях
+    const buyerName = task.buyer?.username || 'Не указан';
+    const creatorName = task.creator?.username || 'Не назначен';
+    
+    // Формируем информацию о ожидаемой дате выполнения
+    let expectedDateInfo = "Не указана";
+    if (task.expectedDate) {
+        expectedDateInfo = task.expectedDate.toLocaleDateString();
+        if (task.expectedTime) {
+            expectedDateInfo += ` к ${task.expectedTime}`;
         }
     }
 
-    // Блок новой задачи (краткий)
-    const newTaskInfo = `🆕 Новая задача\n\n` +
-        `📌 Название: ${task.name}\n` +
-        `📝 Комментарий заказчика:\n${lastComment}\n` +
-        `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
-
-    // Блок исходной задачи (как справка)
-    const oldTaskInfo = `ℹ️ Исходная задача\n\n` +
-        `📌 Название: ${task.name}\n` +
-        `🔗 Приложение: ${task.link_app}\n` +
-        `📝 Описание: ${task.description || ''}\n` +
-        `🎨 Примеры креатива: ${examplesCount}\n` +
-        `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
-
-    return `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
+    // Формируем текст с информацией о задании
+    const taskInfo = `
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
+📝 Описание: ${task.description}
+${exampleLine}
+👨‍💼 Заказчик: ${buyerName}
+👨‍🎨 Креативщик: ${creatorName}
+📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
+    `;
+    
+    return taskInfo;
 }
 
 // Создаем клавиатуру для задач
