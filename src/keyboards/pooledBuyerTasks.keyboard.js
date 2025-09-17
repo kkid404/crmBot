@@ -24,7 +24,7 @@ async function refreshPool() {
             roundState = new RoundState({
                 key: ROUND_STATE_KEY,
                 roundStartTime: now,
-                roundTasks: new Map(),
+                roundTasks: {},
                 processedTaskIds: []
             });
             await roundState.save();
@@ -60,7 +60,7 @@ async function refreshPool() {
         // If we have no new tasks, check if we should start a new round
         if (oldestTaskByBuyer.size === 0) {
             // Check if we have any unprocessed tasks in the current round
-            const hasUnprocessedTasks = Array.from(roundState.roundTasks.entries())
+            const hasUnprocessedTasks = Object.entries(roundState.roundTasks)
                 .some(([buyerId, taskIds]) => 
                     taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
                 );
@@ -68,7 +68,7 @@ async function refreshPool() {
             if (!hasUnprocessedTasks) {
                 // Start a new round
                 roundState.processedTaskIds = [];
-                roundState.roundTasks = new Map();
+                roundState.roundTasks = {};
                 roundState.roundStartTime = now;
                 await roundState.save();
                 console.log('[pooledBuyerTasks.keyboard] Started a new round.');
@@ -80,64 +80,59 @@ async function refreshPool() {
             console.log('[pooledBuyerTasks.keyboard] No new tasks found, continuing with current round.');
         } else {
             // Update round state with new tasks
-            const newRoundTasks = new Map(roundState.roundTasks);
+            const newRoundTasks = { ...roundState.roundTasks };
             const tasksToAdd = [];
 
             for (const [buyerId, task] of oldestTaskByBuyer.entries()) {
                 const taskId = task._id.toString();
                 
                 // Add task to buyer's task list if not already there
-                if (!newRoundTasks.has(buyerId)) {
-                    newRoundTasks.set(buyerId, []);
+                if (!newRoundTasks[buyerId]) {
+                    newRoundTasks[buyerId] = [];
                 }
                 
-                if (!newRoundTasks.get(buyerId).includes(taskId)) {
-                    newRoundTasks.get(buyerId).push(taskId);
+                if (!newRoundTasks[buyerId].includes(taskId)) {
+                    newRoundTasks[buyerId].push(taskId);
                     tasksToAdd.push(task);
                 }
             }
 
             // Only update if we have new tasks
             if (tasksToAdd.length > 0) {
+                // Convert object back to plain object for storage
                 roundState.roundTasks = newRoundTasks;
                 await roundState.save();
             }
         }
 
-        // Ensure roundTasks is a Map
-        if (!(roundState.roundTasks instanceof Map)) {
-            if (typeof roundState.roundTasks === 'string') {
-                try {
-                    // If it's a string, try to parse it
-                    const parsed = JSON.parse(roundState.roundTasks);
-                    roundState.roundTasks = new Map(Object.entries(parsed));
-                } catch (e) {
-                    console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
-                    roundState.roundTasks = new Map();
-                }
-            } else if (roundState.roundTasks && typeof roundState.roundTasks === 'object') {
-                // If it's a plain object, convert to Map
-                roundState.roundTasks = new Map(Object.entries(roundState.roundTasks));
-            } else {
-                roundState.roundTasks = new Map();
+        // Ensure roundTasks is an object
+        if (!roundState.roundTasks || typeof roundState.roundTasks !== 'object') {
+            roundState.roundTasks = {};
+        } else if (typeof roundState.roundTasks === 'string') {
+            try {
+                // If it's a string, try to parse it
+                roundState.roundTasks = JSON.parse(roundState.roundTasks);
+            } catch (e) {
+                console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
+                roundState.roundTasks = {};
             }
         }
 
-        // Ensure all values in the Map are arrays
-        const validRoundTasks = new Map();
-        for (const [key, value] of roundState.roundTasks.entries()) {
+        // Ensure all values in the object are arrays of strings
+        const validRoundTasks = {};
+        for (const [key, value] of Object.entries(roundState.roundTasks)) {
             if (Array.isArray(value)) {
-                validRoundTasks.set(key, value);
+                validRoundTasks[key] = value.map(String);
             } else if (value) {
                 // If it's a single value, wrap it in an array
-                validRoundTasks.set(key, [String(value)]);
+                validRoundTasks[key] = [String(value)];
             }
         }
         roundState.roundTasks = validRoundTasks;
 
         // Build current pool from unprocessed tasks in round state
         const poolTasks = [];
-        for (const [buyerId, taskIds] of roundState.roundTasks.entries()) {
+        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
             for (const taskId of taskIds) {
                 const taskIdStr = String(taskId);
                 if (!roundState.processedTaskIds.includes(taskIdStr)) {
@@ -269,41 +264,52 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
         }
 
         // Ensure taskId is a string
-        const taskIdStr = String(taskId);
 
-        // Convert roundTasks to a proper Map if it's not already
-        if (!(roundState.roundTasks instanceof Map)) {
-            if (typeof roundState.roundTasks === 'object' && roundState.roundTasks !== null) {
-                roundState.roundTasks = new Map(Object.entries(roundState.roundTasks));
-            } else {
-                roundState.roundTasks = new Map();
+        // Ensure roundTasks is an object
+        if (typeof roundState.roundTasks === 'string') {
+            try {
+                roundState.roundTasks = JSON.parse(roundState.roundTasks);
+            } catch (e) {
+                console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
+                roundState.roundTasks = {};
+            }
+        } else if (!roundState.roundTasks || typeof roundState.roundTasks !== 'object') {
+            roundState.roundTasks = {};
+        }
+
+        // Convert taskIds to strings for comparison
+        const taskIdStrs = taskIds.map(String);
+        let modified = false;
+
+        // Mark tasks as processed
+        for (const taskId of taskIdStrs) {
+            if (!roundState.processedTaskIds.includes(taskId)) {
+                roundState.processedTaskIds.push(taskId);
+                modified = true;
             }
         }
 
-        // Add to processed tasks if not already there
-        if (!roundState.processedTaskIds.includes(taskIdStr)) {
-            roundState.processedTaskIds.push(taskIdStr);
-            
-            // Clean up the roundTasks by removing the processed task
-            for (const [buyerId, taskIds] of roundState.roundTasks.entries()) {
-                if (Array.isArray(taskIds)) {
-                    const filteredTasks = taskIds.filter(id => id !== taskIdStr);
+        // Clean up roundTasks by removing processed tasks
+        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
+            if (Array.isArray(taskIds)) {
+                const filteredTasks = taskIds.filter(id => !taskIdStrs.includes(id));
+                if (filteredTasks.length !== taskIds.length) {
                     if (filteredTasks.length === 0) {
-                        roundState.roundTasks.delete(buyerId);
-                    } else if (filteredTasks.length !== taskIds.length) {
-                        roundState.roundTasks.set(buyerId, filteredTasks);
+                        delete roundState.roundTasks[buyerId];
+                    } else {
+                        roundState.roundTasks[buyerId] = filteredTasks;
                     }
+                    modified = true;
                 }
             }
-            
-            await roundState.save();
-            console.log(`[pooledBuyerTasks.keyboard] Task ${taskIdStr} marked as processed in RoundState.`);
         }
 
-        // Also remove from current pool to prevent double processing
-        currentPool = currentPool.filter(task => task._id && task._id.toString() !== taskIdStr);
+        // Save only if there were changes
+        if (modified) {
+            await roundState.save();
+        }
     } catch (error) {
-        console.error(`[pooledBuyerTasks.keyboard] Error marking task ${taskId} as processed:`, error);
+        console.error('[pooledBuyerTasks.keyboard] Error marking task as processed:', error);
     }
 };
 
@@ -312,16 +318,53 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
  * @param {string[]} taskIds - Array of task IDs to mark as processed
  */
 async function markTasksAsProcessed(taskIds) {
+    if (!Array.isArray(taskIds) || taskIds.length === 0) return;
+
     try {
         const roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
         if (!roundState) return;
 
-        // Add new task IDs to processed list, avoiding duplicates
-        const newProcessed = [...new Set([...roundState.processedTaskIds, ...taskIds])];
-        
-        // Only update if there are new tasks to add
-        if (newProcessed.length > roundState.processedTaskIds.length) {
-            roundState.processedTaskIds = newProcessed;
+        // Ensure roundTasks is an object
+        if (typeof roundState.roundTasks === 'string') {
+            try {
+                roundState.roundTasks = JSON.parse(roundState.roundTasks);
+            } catch (e) {
+                console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
+                roundState.roundTasks = {};
+            }
+        } else if (!roundState.roundTasks || typeof roundState.roundTasks !== 'object') {
+            roundState.roundTasks = {};
+        }
+
+        // Convert taskIds to strings for comparison
+        const taskIdStrs = taskIds.map(String);
+        let modified = false;
+
+        // Mark tasks as processed
+        for (const taskId of taskIdStrs) {
+            if (!roundState.processedTaskIds.includes(taskId)) {
+                roundState.processedTaskIds.push(taskId);
+                modified = true;
+            }
+        }
+
+        // Clean up roundTasks by removing processed tasks
+        for (const [buyerId, buyerTaskIds] of Object.entries(roundState.roundTasks)) {
+            if (Array.isArray(buyerTaskIds)) {
+                const filteredTasks = buyerTaskIds.filter(id => !taskIdStrs.includes(id));
+                if (filteredTasks.length !== buyerTaskIds.length) {
+                    if (filteredTasks.length === 0) {
+                        delete roundState.roundTasks[buyerId];
+                    } else {
+                        roundState.roundTasks[buyerId] = filteredTasks;
+                    }
+                    modified = true;
+                }
+            }
+        }
+
+        // Save only if there were changes
+        if (modified) {
             await roundState.save();
             console.log(`[pooledBuyerTasks.keyboard] Marked ${taskIds.length} tasks as processed`);
         }
