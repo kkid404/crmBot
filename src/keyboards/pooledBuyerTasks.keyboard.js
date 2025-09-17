@@ -230,15 +230,37 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
         // Ensure taskId is a string
         const taskIdStr = String(taskId);
 
+        // Convert roundTasks to a proper Map if it's not already
+        if (!(roundState.roundTasks instanceof Map)) {
+            if (typeof roundState.roundTasks === 'object' && roundState.roundTasks !== null) {
+                roundState.roundTasks = new Map(Object.entries(roundState.roundTasks));
+            } else {
+                roundState.roundTasks = new Map();
+            }
+        }
+
         // Add to processed tasks if not already there
         if (!roundState.processedTaskIds.includes(taskIdStr)) {
             roundState.processedTaskIds.push(taskIdStr);
+            
+            // Clean up the roundTasks by removing the processed task
+            for (const [buyerId, taskIds] of roundState.roundTasks.entries()) {
+                if (Array.isArray(taskIds)) {
+                    const filteredTasks = taskIds.filter(id => id !== taskIdStr);
+                    if (filteredTasks.length === 0) {
+                        roundState.roundTasks.delete(buyerId);
+                    } else if (filteredTasks.length !== taskIds.length) {
+                        roundState.roundTasks.set(buyerId, filteredTasks);
+                    }
+                }
+            }
+            
             await roundState.save();
             console.log(`[pooledBuyerTasks.keyboard] Task ${taskIdStr} marked as processed in RoundState.`);
         }
 
         // Also remove from current pool to prevent double processing
-        currentPool = currentPool.filter(task => task._id && task._id.toString() === taskIdStr);
+        currentPool = currentPool.filter(task => task._id && task._id.toString() !== taskIdStr);
     } catch (error) {
         console.error(`[pooledBuyerTasks.keyboard] Error marking task ${taskId} as processed:`, error);
     }
