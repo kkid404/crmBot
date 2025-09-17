@@ -264,6 +264,7 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
         }
 
         // Ensure taskId is a string
+        const taskIdStr = String(taskId);
 
         // Ensure roundTasks is an object
         if (typeof roundState.roundTasks === 'string') {
@@ -277,23 +278,19 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
             roundState.roundTasks = {};
         }
 
-        // Convert taskIds to strings for comparison
-        const taskIdStrs = taskIds.map(String);
         let modified = false;
 
-        // Mark tasks as processed
-        for (const taskId of taskIdStrs) {
-            if (!roundState.processedTaskIds.includes(taskId)) {
-                roundState.processedTaskIds.push(taskId);
-                modified = true;
-            }
+        // Mark task as processed if not already
+        if (!roundState.processedTaskIds.includes(taskIdStr)) {
+            roundState.processedTaskIds.push(taskIdStr);
+            modified = true;
         }
 
-        // Clean up roundTasks by removing processed tasks
-        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
-            if (Array.isArray(taskIds)) {
-                const filteredTasks = taskIds.filter(id => !taskIdStrs.includes(id));
-                if (filteredTasks.length !== taskIds.length) {
+        // Clean up roundTasks by removing the processed task
+        for (const [buyerId, buyerTaskIds] of Object.entries(roundState.roundTasks)) {
+            if (Array.isArray(buyerTaskIds)) {
+                const filteredTasks = buyerTaskIds.filter(id => id !== taskIdStr);
+                if (filteredTasks.length !== buyerTaskIds.length) {
                     if (filteredTasks.length === 0) {
                         delete roundState.roundTasks[buyerId];
                     } else {
