@@ -200,9 +200,26 @@ const getKeyboard = async (isRetry = false) => {
 /**
  * Marks a task as selected from the current pool.
  * Updates the RoundState to mark the task as processed.
- * @param {string} taskId - The ID of the task selected.
+ * @param {string|object} taskIdOrCtx - The ID of the task selected or the context object
+ * @param {string} [taskIdParam] - Optional task ID if first param is context
  */
-const markTaskAsSelectedFromPool = async (taskId) => {
+const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
+    let taskId;
+    
+    // Handle both direct taskId call and context object call
+    if (typeof taskIdOrCtx === 'string' || taskIdOrCtx instanceof String) {
+        taskId = taskIdOrCtx;
+    } else if (taskIdOrCtx && taskIdParam) {
+        // If first param is context and second is taskId
+        taskId = taskIdParam;
+    } else if (taskIdOrCtx && taskIdOrCtx.match && typeof taskIdOrCtx.match === 'function') {
+        // If first param is context with match array (from regex handler)
+        taskId = taskIdOrCtx.match[0];
+    } else {
+        console.error('[pooledBuyerTasks.keyboard] Invalid parameters passed to markTaskAsSelectedFromPool');
+        return;
+    }
+
     try {
         const roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
         if (!roundState) {
@@ -210,15 +227,18 @@ const markTaskAsSelectedFromPool = async (taskId) => {
             return;
         }
 
+        // Ensure taskId is a string
+        const taskIdStr = String(taskId);
+
         // Add to processed tasks if not already there
-        if (!roundState.processedTaskIds.includes(taskId)) {
-            roundState.processedTaskIds.push(taskId);
+        if (!roundState.processedTaskIds.includes(taskIdStr)) {
+            roundState.processedTaskIds.push(taskIdStr);
             await roundState.save();
-            console.log(`[pooledBuyerTasks.keyboard] Task ${taskId} marked as processed in RoundState.`);
+            console.log(`[pooledBuyerTasks.keyboard] Task ${taskIdStr} marked as processed in RoundState.`);
         }
 
         // Also remove from current pool to prevent double processing
-        currentPool = currentPool.filter(task => task._id.toString() !== taskId);
+        currentPool = currentPool.filter(task => task._id && task._id.toString() === taskIdStr);
     } catch (error) {
         console.error(`[pooledBuyerTasks.keyboard] Error marking task ${taskId} as processed:`, error);
     }
