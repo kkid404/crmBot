@@ -104,17 +104,51 @@ async function refreshPool() {
             }
         }
 
+        // Ensure roundTasks is a Map
+        if (!(roundState.roundTasks instanceof Map)) {
+            if (typeof roundState.roundTasks === 'string') {
+                try {
+                    // If it's a string, try to parse it
+                    const parsed = JSON.parse(roundState.roundTasks);
+                    roundState.roundTasks = new Map(Object.entries(parsed));
+                } catch (e) {
+                    console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
+                    roundState.roundTasks = new Map();
+                }
+            } else if (roundState.roundTasks && typeof roundState.roundTasks === 'object') {
+                // If it's a plain object, convert to Map
+                roundState.roundTasks = new Map(Object.entries(roundState.roundTasks));
+            } else {
+                roundState.roundTasks = new Map();
+            }
+        }
+
+        // Ensure all values in the Map are arrays
+        const validRoundTasks = new Map();
+        for (const [key, value] of roundState.roundTasks.entries()) {
+            if (Array.isArray(value)) {
+                validRoundTasks.set(key, value);
+            } else if (value) {
+                // If it's a single value, wrap it in an array
+                validRoundTasks.set(key, [String(value)]);
+            }
+        }
+        roundState.roundTasks = validRoundTasks;
+
         // Build current pool from unprocessed tasks in round state
         const poolTasks = [];
         for (const [buyerId, taskIds] of roundState.roundTasks.entries()) {
             for (const taskId of taskIds) {
-                if (!roundState.processedTaskIds.includes(taskId)) {
-                    const task = allActiveTasks.find(t => t._id.toString() === taskId);
+                const taskIdStr = String(taskId);
+                if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                    const task = allActiveTasks.find(t => t._id && t._id.toString() === taskIdStr);
                     if (task) {
                         poolTasks.push(task);
                     } else {
                         // If task is not active anymore, mark it as processed
-                        roundState.processedTaskIds.push(taskId);
+                        if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                            roundState.processedTaskIds.push(taskIdStr);
+                        }
                     }
                 }
             }
@@ -123,9 +157,16 @@ async function refreshPool() {
         currentPool = poolTasks;
         console.log(`[pooledBuyerTasks.keyboard] Pool refreshed. Found ${currentPool.length} tasks in current round.`);
 
-        // Save any changes to processed tasks
+        // Save any changes to processed tasks and round state
         if (roundState.isModified()) {
-            await roundState.save();
+            try {
+                await roundState.save();
+            } catch (saveError) {
+                console.error('[pooledBuyerTasks.keyboard] Error saving round state:', saveError);
+                // If save fails, try to reset the round state
+                roundState.roundTasks = new Map();
+                await roundState.save();
+            }
         }
     } catch (error) {
         console.error('[pooledBuyerTasks.keyboard] Error refreshing pool with RoundState:', error);
