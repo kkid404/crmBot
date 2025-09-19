@@ -49,15 +49,30 @@ async function refreshPool() {
             return;
         }
 
-        // Find oldest task per buyer
+        // Find oldest task per buyer, but only if they don't have active tasks already
         const oldestTaskByBuyer = new Map();
+        const buyersWithActiveTasks = new Set();
+        
+        // First, identify buyers who already have active tasks in the current round
+        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
+            const hasActiveTask = taskIds.some(taskId => 
+                !roundState.processedTaskIds.includes(taskId)
+            );
+            if (hasActiveTask) {
+                buyersWithActiveTasks.add(buyerId);
+            }
+        }
+
+        // Then find the oldest unprocessed task for each buyer who doesn't have active tasks
         for (const task of allActiveTasks) {
             if (task?.buyer?._id) {
                 const buyerId = task.buyer._id.toString();
                 const taskId = task._id.toString();
                 
                 // Skip if this task is already processed in the current round
-                if (roundState.processedTaskIds.includes(taskId)) {
+                // or if buyer already has active tasks
+                if (roundState.processedTaskIds.includes(taskId) || 
+                    buyersWithActiveTasks.has(buyerId)) {
                     continue;
                 }
 
@@ -67,6 +82,17 @@ async function refreshPool() {
                     oldestTaskByBuyer.set(buyerId, task);
                 }
             }
+        }
+
+        // Check if there are any active tasks in the current round
+        const hasAnyActiveTasks = Object.values(roundState.roundTasks || {}).some(taskIds => 
+            taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
+        );
+
+        // If there are active tasks in current round, don't add new tasks
+        if (hasAnyActiveTasks) {
+            console.log('[pooledBuyerTasks.keyboard] Active tasks found in current round, not adding new tasks');
+            return;
         }
 
         // If we have no new tasks, check if we should start a new round
@@ -120,7 +146,7 @@ async function refreshPool() {
                 }
             }
 
-            // Only update if we have new tasks
+            // Only update if we have new tasks and no active tasks in current round
             if (tasksToAdd.length > 0) {
                 // Convert object back to plain object for storage
                 roundState.roundTasks = newRoundTasks;
