@@ -90,10 +90,10 @@ async function refreshPool() {
                 taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
             );
 
-        // If there are unprocessed tasks, don't add new ones
+        // If there are unprocessed tasks, don't add new ones but continue to show existing tasks
         if (hasUnprocessedTasks) {
             console.log('[pooledBuyerTasks.keyboard] Unprocessed tasks found in current round, not adding new tasks');
-            return;
+            // Continue to show existing tasks without adding new ones
         }
 
         // If we have no new tasks, check if we should start a new round
@@ -224,28 +224,56 @@ async function refreshPool() {
  * Refreshes the pool if it's empty.
  */
 const getKeyboard = async (isRetry = false) => {
-    // If pool is empty, try to refresh it
-    if (currentPool.length === 0) {
-        await refreshPool();
-        // If still no tasks, show exit button
-        if (currentPool.length === 0) {
-            return Markup.inlineKeyboard([
-                [Markup.button.callback('Выйти', 'back')]
-            ]);
+    // Always refresh the pool to get the latest tasks
+    await refreshPool();
+    
+    // Get all active tasks from the database
+    const allActiveTasks = await taskService.getTasksActive();
+    
+    // Get current round state
+    const roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
+    
+    // If no round state, initialize it
+    if (!roundState) {
+        await refreshPool(); // This will create a new round state
+        return getKeyboard(true);
+    }
+    
+    // Build current pool from unprocessed tasks in round state
+    const availableTasks = [];
+    if (roundState.roundTasks) {
+        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
+            for (const taskId of taskIds) {
+                const taskIdStr = String(taskId);
+                if (!roundState.processedTaskIds?.includes(taskIdStr)) {
+                    const task = allActiveTasks.find(t => t._id && t._id.toString() === taskIdStr);
+                    if (task) {
+                        availableTasks.push(task);
+                    }
+                }
+            }
         }
     }
+    
+    // Update current pool
+    currentPool = availableTasks;
+    
+    // If no tasks available, show message
+    if (availableTasks.length === 0) {
+        return Markup.inlineKeyboard([
+            [Markup.button.callback('Нет доступных задач. Нажмите для обновления', 'refresh_tasks')],
+            [Markup.button.callback('Выйти', 'back')]
+        ]);
+    }
 
-    // Get fresh task states from database
-    const availableTasks = [];
+    // Verify tasks are still active
     const tasksToRemove = [];
     
     // Process tasks in parallel for better performance
-    await Promise.all(currentPool.map(async (task) => {
+    await Promise.all(availableTasks.map(async (task) => {
         try {
             const freshTask = await taskService.findTaskById(task._id);
-            if (freshTask && freshTask.state === 'active') {
-                availableTasks.push(freshTask);
-            } else {
+            if (!freshTask || freshTask.state !== 'active') {
                 tasksToRemove.push(task._id.toString());
             }
         } catch (error) {
@@ -256,15 +284,16 @@ const getKeyboard = async (isRetry = false) => {
 
     // Remove tasks that are no longer active
     if (tasksToRemove.length > 0) {
-        currentPool = currentPool.filter(task => !tasksToRemove.includes(task._id.toString()));
+        currentPool = availableTasks.filter(task => !tasksToRemove.includes(task._id.toString()));
         // Mark these tasks as processed in the database
         await markTasksAsProcessed(tasksToRemove);
     }
 
-    // If no tasks available after refresh, try once more or show exit
-    if (availableTasks.length === 0) {
+    // If no tasks available after refresh, show message
+    if (currentPool.length === 0) {
         if (isRetry) {
             return Markup.inlineKeyboard([
+                [Markup.button.callback('Нет доступных задач. Нажмите для обновления', 'refresh_tasks')],
                 [Markup.button.callback('Выйти', 'back')]
             ]);
         }
@@ -272,12 +301,13 @@ const getKeyboard = async (isRetry = false) => {
         return getKeyboard(true);
     }
 
-    const buttons = availableTasks.map(task => {
+    const buttons = currentPool.map(task => {
         const taskDisplayName = task.name && task.name.length > 25 ? task.name.substring(0, 22) + "..." : (task.name || 'Без имени');
         return [Markup.button.callback(`${taskDisplayName}`, `${task._id.toString()}`)];
     });
 
-    // buttons.push([Markup.button.callback('Обновить', 'pool_refresh_manual')]);
+    // Add refresh and exit buttons
+    buttons.push([Markup.button.callback('Обновить', 'refresh_tasks')]);
     buttons.push([Markup.button.callback('Выйти', 'back')]);
 
     return Markup.inlineKeyboard(buttons);
