@@ -5,6 +5,7 @@ const RoundState = require('../databases/roundState.model');
 // In-memory cache for the current pool and processed tasks
 let currentPool = []; // Cached task objects for the current round
 const ROUND_STATE_KEY = 'taskPoolRounds'; // Key for storing round state in DB
+let isInitialized = false; // Track if the pool has been initialized
 
 /**
  * Refreshes the task pool using RoundState for managing rounds.
@@ -12,8 +13,7 @@ const ROUND_STATE_KEY = 'taskPoolRounds'; // Key for storing round state in DB
  */
 async function refreshPool() {
     console.log('[pooledBuyerTasks.keyboard] Refreshing task pool with RoundState...');
-    currentPool = [];
-
+    
     try {
         // Get or create round state
         let roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
@@ -28,6 +28,18 @@ async function refreshPool() {
                 processedTaskIds: []
             });
             await roundState.save();
+        }
+        
+        // If we already have tasks in the pool and they haven't been processed, keep them
+        if (currentPool.length > 0 && isInitialized) {
+            console.log('[pooledBuyerTasks.keyboard] Using existing pool from memory');
+            return;
+        }
+        
+        // Clear the current pool only if we're initializing fresh
+        if (!isInitialized) {
+            currentPool = [];
+            isInitialized = true;
         }
 
         // Get all active tasks
@@ -65,15 +77,26 @@ async function refreshPool() {
                     taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
                 );
 
-            if (!hasUnprocessedTasks) {
-                // Start a new round
+            // Check if there are any unprocessed tasks in the database for current round
+            const hasUnprocessedInDB = await taskService.getTasksActive({
+                _id: { $in: Object.values(roundState.roundTasks).flat() },
+                state: { $nin: ['done', 'progress'] } // Исключаем задачи в статусах done и progress
+            });
+
+            if (!hasUnprocessedTasks && currentPool.length === 0 && (!hasUnprocessedInDB || hasUnprocessedInDB.length === 0)) {
+                // Only start a new round if:
+                // 1. No unprocessed tasks in round state
+                // 2. No tasks in current pool
+                // 3. No unprocessed tasks in database for current round
                 roundState.processedTaskIds = [];
                 roundState.roundTasks = {};
                 roundState.roundStartTime = now;
                 await roundState.save();
-                console.log('[pooledBuyerTasks.keyboard] Started a new round.');
+                console.log('[pooledBuyerTasks.keyboard] Verified all tasks processed, starting a new round.');
                 // Recursively call to process the new round
                 return refreshPool();
+            } else if (hasUnprocessedInDB?.length > 0) {
+                console.log(`[pooledBuyerTasks.keyboard] Found ${hasUnprocessedInDB.length} unprocessed tasks in database, continuing current round.`);
             }
             
             // If we have unprocessed tasks, continue with the current round
