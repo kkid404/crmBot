@@ -2,10 +2,9 @@ const { Markup } = require('telegraf');
 const taskService = require('../services/task.service');
 const RoundState = require('../databases/roundState.model');
 
-// In-memory cache for the current pool and processed tasks
-let currentPool = []; // Cached task objects for the current round
+// Global variable to store the current pool of tasks
+let currentPool = []; // Current task pool (not cached between requests)
 const ROUND_STATE_KEY = 'taskPoolRounds'; // Key for storing round state in DB
-let isInitialized = false; // Track if the pool has been initialized
 
 /**
  * Refreshes the task pool using RoundState for managing rounds.
@@ -30,17 +29,8 @@ async function refreshPool() {
             await roundState.save();
         }
         
-        // If we already have tasks in the pool and they haven't been processed, keep them
-        if (currentPool.length > 0 && isInitialized) {
-            console.log('[pooledBuyerTasks.keyboard] Using existing pool from memory');
-            return;
-        }
-        
-        // Clear the current pool only if we're initializing fresh
-        if (!isInitialized) {
-            currentPool = [];
-            isInitialized = true;
-        }
+        // Always clear the current pool to force refresh
+        currentPool = [];
 
         // Get all active tasks
         const allActiveTasks = await taskService.getTasksActive();
@@ -90,44 +80,72 @@ async function refreshPool() {
                 taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
             );
 
-        // If there are unprocessed tasks, don't add new ones but continue to show existing tasks
+        // If there are unprocessed tasks, don't start a new round
         if (hasUnprocessedTasks) {
-            console.log('[pooledBuyerTasks.keyboard] Unprocessed tasks found in current round, not adding new tasks');
-            // Continue to show existing tasks without adding new ones
+            console.log('[pooledBuyerTasks.keyboard] Unprocessed tasks found in current round, not starting new round');
+            
+            // Check if any of the unprocessed tasks are still active
+            const unprocessedTasks = [];
+            for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
+                for (const taskId of taskIds) {
+                    const taskIdStr = String(taskId);
+                    if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                        unprocessedTasks.push(taskIdStr);
+                    }
+                }
+            }
+            
+            // Check if any unprocessed tasks are still active
+            const activeUnprocessedTasks = await taskService.getTasksActive({
+                _id: { $in: unprocessedTasks },
+                state: 'active'
+            });
+            
+            // If there are still active unprocessed tasks, don't start a new round
+            if (activeUnprocessedTasks && activeUnprocessedTasks.length > 0) {
+                console.log(`[pooledBuyerTasks.keyboard] Found ${activeUnprocessedTasks.length} active unprocessed tasks, not starting new round`);
+                // Update current pool with active unprocessed tasks
+                currentPool = activeUnprocessedTasks;
+                return;
+            } else {
+                console.log('[pooledBuyerTasks.keyboard] No active unprocessed tasks found, can start new round');
+            }
         }
 
         // If we have no new tasks, check if we should start a new round
         if (oldestTaskByBuyer.size === 0) {
-            // Check if we have any unprocessed tasks in the current round
-            const hasUnprocessedTasks = Object.entries(roundState.roundTasks)
-                .some(([buyerId, taskIds]) => 
-                    taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
-                );
+            // Get all unprocessed task IDs from current round
+            const unprocessedTaskIds = [];
+            for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
+                for (const taskId of taskIds) {
+                    const taskIdStr = String(taskId);
+                    if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                        unprocessedTaskIds.push(taskIdStr);
+                    }
+                }
+            }
 
-            // Check if there are any unprocessed tasks in the database for current round
-            const hasUnprocessedInDB = await taskService.getTasksActive({
-                _id: { $in: Object.values(roundState.roundTasks).flat() },
-                state: { $nin: ['done', 'progress'] } // Исключаем задачи в статусах done и progress
-            });
+            // Check if any unprocessed tasks are still active
+            const activeUnprocessedTasks = unprocessedTaskIds.length > 0 ? 
+                await taskService.getTasksActive({
+                    _id: { $in: unprocessedTaskIds },
+                    state: 'active'
+                }) : [];
 
-            if (!hasUnprocessedTasks && currentPool.length === 0 && (!hasUnprocessedInDB || hasUnprocessedInDB.length === 0)) {
-                // Only start a new round if:
-                // 1. No unprocessed tasks in round state
-                // 2. No tasks in current pool
-                // 3. No unprocessed tasks in database for current round
+            // Only start a new round if there are no active unprocessed tasks
+            if (activeUnprocessedTasks.length === 0) {
+                console.log('[pooledBuyerTasks.keyboard] No active unprocessed tasks, starting a new round');
                 roundState.processedTaskIds = [];
                 roundState.roundTasks = {};
                 roundState.roundStartTime = now;
                 await roundState.save();
-                console.log('[pooledBuyerTasks.keyboard] Verified all tasks processed, starting a new round.');
-                // Recursively call to process the new round
                 return refreshPool();
-            } else if (hasUnprocessedInDB?.length > 0) {
-                console.log(`[pooledBuyerTasks.keyboard] Found ${hasUnprocessedInDB.length} unprocessed tasks in database, continuing current round.`);
+            } else {
+                console.log(`[pooledBuyerTasks.keyboard] Found ${activeUnprocessedTasks.length} active unprocessed tasks, not starting new round`);
+                // Update current pool with active unprocessed tasks
+                currentPool = activeUnprocessedTasks;
+                return;
             }
-            
-            // If we have unprocessed tasks, continue with the current round
-            console.log('[pooledBuyerTasks.keyboard] No new tasks found, continuing with current round.');
         } else {
             // Update round state with new tasks
             const newRoundTasks = { ...roundState.roundTasks };
@@ -182,21 +200,45 @@ async function refreshPool() {
 
         // Build current pool from unprocessed tasks in round state
         const poolTasks = [];
-        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
+        const processedTaskIdsSet = new Set(roundState.processedTaskIds || []);
+        
+        // First, collect all unprocessed task IDs from round state
+        const unprocessedTaskIds = [];
+        for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
             for (const taskId of taskIds) {
                 const taskIdStr = String(taskId);
-                if (!roundState.processedTaskIds.includes(taskIdStr)) {
-                    const task = allActiveTasks.find(t => t._id && t._id.toString() === taskIdStr);
-                    if (task) {
-                        poolTasks.push(task);
-                    } else {
-                        // If task is not active anymore, mark it as processed
-                        if (!roundState.processedTaskIds.includes(taskIdStr)) {
-                            roundState.processedTaskIds.push(taskIdStr);
-                        }
-                    }
+                if (!processedTaskIdsSet.has(taskIdStr)) {
+                    unprocessedTaskIds.push(taskIdStr);
                 }
             }
+        }
+        
+        // If we have unprocessed tasks, verify they are still active
+        if (unprocessedTaskIds.length > 0) {
+            const activeTasks = await taskService.getTasksActive({
+                _id: { $in: unprocessedTaskIds },
+                state: 'active'
+            });
+            
+            // Create a map of active task IDs for quick lookup
+            const activeTaskIds = new Set(activeTasks.map(t => t._id.toString()));
+            
+            // Update processed tasks - mark any unprocessed but inactive tasks as processed
+            const tasksToMarkAsProcessed = unprocessedTaskIds.filter(
+                taskId => !activeTaskIds.has(taskId)
+            );
+            
+            if (tasksToMarkAsProcessed.length > 0) {
+                console.log(`[pooledBuyerTasks.keyboard] Marking ${tasksToMarkAsProcessed.length} inactive tasks as processed`);
+                roundState.processedTaskIds = [
+                    ...(roundState.processedTaskIds || []),
+                    ...tasksToMarkAsProcessed
+                ];
+                await roundState.save();
+            }
+            
+            // Add active tasks to the pool
+            poolTasks.push(...activeTasks);
         }
 
         currentPool = poolTasks;
@@ -224,19 +266,30 @@ async function refreshPool() {
  * Refreshes the pool if it's empty.
  */
 const getKeyboard = async (isRetry = false) => {
+    // Get current round state first
+    let roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
+    
+    // If no round state, create a new one
+    if (!roundState) {
+        roundState = new RoundState({
+            key: ROUND_STATE_KEY,
+            roundStartTime: new Date(),
+            roundTasks: {},
+            processedTaskIds: []
+        });
+        await roundState.save();
+    }
+    
     // Always refresh the pool to get the latest tasks
     await refreshPool();
     
-    // Get all active tasks from the database
+    // Get fresh list of active tasks
     const allActiveTasks = await taskService.getTasksActive();
-    
-    // Get current round state
-    const roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
-    
-    // If no round state, initialize it
-    if (!roundState) {
-        await refreshPool(); // This will create a new round state
-        return getKeyboard(true);
+    if (!allActiveTasks || allActiveTasks.length === 0) {
+        return Markup.inlineKeyboard([
+            [Markup.button.callback('Нет доступных задач. Нажмите для обновления', 'refresh_tasks')],
+            [Markup.button.callback('Выйти', 'back')]
+        ]);
     }
     
     // Build current pool from unprocessed tasks in round state
