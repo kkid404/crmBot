@@ -84,14 +84,15 @@ async function refreshPool() {
             }
         }
 
-        // Check if there are any active tasks in the current round
-        const hasAnyActiveTasks = Object.values(roundState.roundTasks || {}).some(taskIds => 
-            taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
-        );
+        // Check if we have any unprocessed tasks in the current round
+        const hasUnprocessedTasks = Object.entries(roundState.roundTasks || {})
+            .some(([buyerId, taskIds]) => 
+                taskIds.some(taskId => !roundState.processedTaskIds.includes(taskId))
+            );
 
-        // If there are active tasks in current round, don't add new tasks
-        if (hasAnyActiveTasks) {
-            console.log('[pooledBuyerTasks.keyboard] Active tasks found in current round, not adding new tasks');
+        // If there are unprocessed tasks, don't add new ones
+        if (hasUnprocessedTasks) {
+            console.log('[pooledBuyerTasks.keyboard] Unprocessed tasks found in current round, not adding new tasks');
             return;
         }
 
