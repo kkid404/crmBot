@@ -54,10 +54,19 @@ class TaskService {
                     // Remove task from roundTasks
                     for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
                         if (Array.isArray(taskIds) && taskIds.includes(taskIdStr)) {
-                            updateOps.$pull = { ...(updateOps.$pull || {}), [`roundTasks.${buyerId}`]: taskIdStr };
-                            // If this was the last task for this buyer, remove the buyer entry
+                            // Initialize $pull if not exists
+                            if (!updateOps.$pull) updateOps.$pull = {};
+                            
+                            // Add pull operation for this task
+                            updateOps.$pull[`roundTasks.${buyerId}`] = taskIdStr;
+                            
+                            // If this was the last task for this buyer, add unset operation
                             if (taskIds.length === 1) {
-                                updateOps.$unset = { ...(updateOps.$unset || {}), [`roundTasks.${buyerId}`]: "" };
+                                if (!updateOps.$unset) updateOps.$unset = {};
+                                updateOps.$unset[`roundTasks.${buyerId}`] = "";
+                                
+                                // Also remove from processedTaskIds for this buyer
+                                updateOps.$pull[`roundTasks.${buyerId}`] = { $exists: true };
                             }
                         }
                     }
@@ -403,7 +412,7 @@ static async getAutoAssignedTask(creatorId) {
                 if (!roundState.processedTaskIds.includes(taskIdStr)) {
                     // Use $addToSet to avoid duplicates
                     await RoundState.updateOne(
-                        { key: 'taskPoolRows', _id: roundState._id },
+                        { key: 'taskPoolRounds', _id: roundState._id },
                         { 
                             $addToSet: { processedTaskIds: taskIdStr },
                             $unset: { 
