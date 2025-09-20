@@ -25,63 +25,58 @@ class TaskService {
 
     // Обновление задачи
     static async updateTask(taskId, updates) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        
         try {
             // Get the current task to check state changes
-            const currentTask = await Task.findById(taskId).session(session);
-            const isStateChanging = updates.state && updates.state !== currentTask.state;
+            const currentTask = await Task.findById(taskId);
+            const isStateChanging = updates.state && currentTask && updates.state !== currentTask.state;
             
             // Update the task
             const updatedTask = await Task.findByIdAndUpdate(
                 taskId, 
                 updates, 
-                { new: true, session }
+                { new: true }
             ).populate('buyer').populate('creator');
             
             // If state changed to 'progress' or 'done', mark as processed in round state
             if (isStateChanging && (updates.state === 'progress' || updates.state === 'done')) {
-                const roundState = await RoundState.findOne({ key: 'taskPoolRounds' }).session(session);
+                const roundState = await RoundState.findOne({ key: 'taskPoolRounds' });
                 if (roundState) {
                     const taskIdStr = taskId.toString();
                     
-                    // Mark task as processed if not already
+                    // Use atomic operations to update the round state
+                    const updateOps = {};
+                    
+                    // Add task to processedTaskIds if not already there
                     if (!roundState.processedTaskIds.includes(taskIdStr)) {
-                        roundState.processedTaskIds.push(taskIdStr);
-                        await roundState.save({ session });
-                        console.log(`[TaskService] Task ${taskId} marked as processed in round state`);
+                        updateOps.$addToSet = { processedTaskIds: taskIdStr };
                     }
                     
-                    // Clean up roundTasks by removing the processed task
-                    let modified = false;
+                    // Remove task from roundTasks
                     for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
-                        if (Array.isArray(taskIds)) {
-                            const filteredTasks = taskIds.filter(id => id !== taskIdStr);
-                            if (filteredTasks.length !== taskIds.length) {
-                                if (filteredTasks.length === 0) {
-                                    delete roundState.roundTasks[buyerId];
-                                } else {
-                                    roundState.roundTasks[buyerId] = filteredTasks;
-                                }
-                                modified = true;
+                        if (Array.isArray(taskIds) && taskIds.includes(taskIdStr)) {
+                            updateOps.$pull = { ...(updateOps.$pull || {}), [`roundTasks.${buyerId}`]: taskIdStr };
+                            // If this was the last task for this buyer, remove the buyer entry
+                            if (taskIds.length === 1) {
+                                updateOps.$unset = { ...(updateOps.$unset || {}), [`roundTasks.${buyerId}`]: "" };
                             }
                         }
                     }
                     
-                    if (modified) {
-                        await roundState.save({ session });
+                    // Only update if there are operations to perform
+                    if (Object.keys(updateOps).length > 0) {
+                        await RoundState.updateOne(
+                            { key: 'taskPoolRounds', _id: roundState._id },
+                            updateOps
+                        );
+                        console.log(`[TaskService] Task ${taskId} marked as processed in round state`);
                     }
                 }
             }
             
-            await session.commitTransaction();
             return updatedTask;
         } catch (error) {
-            await session.abortTransaction();
+            console.error('Error in updateTask:', error);
             throw new Error(`Ошибка обновления задачи: ${error.message}`);
-        } finally {
-            session.endSession();
         }
     }
 
