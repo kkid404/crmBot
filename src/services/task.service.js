@@ -25,10 +25,63 @@ class TaskService {
 
     // Обновление задачи
     static async updateTask(taskId, updates) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+        
         try {
-            return await Task.findByIdAndUpdate(taskId, updates, { new: true }).populate('buyer').populate('creator');
+            // Get the current task to check state changes
+            const currentTask = await Task.findById(taskId).session(session);
+            const isStateChanging = updates.state && updates.state !== currentTask.state;
+            
+            // Update the task
+            const updatedTask = await Task.findByIdAndUpdate(
+                taskId, 
+                updates, 
+                { new: true, session }
+            ).populate('buyer').populate('creator');
+            
+            // If state changed to 'progress' or 'done', mark as processed in round state
+            if (isStateChanging && (updates.state === 'progress' || updates.state === 'done')) {
+                const roundState = await RoundState.findOne({ key: 'taskPoolRounds' }).session(session);
+                if (roundState) {
+                    const taskIdStr = taskId.toString();
+                    
+                    // Mark task as processed if not already
+                    if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                        roundState.processedTaskIds.push(taskIdStr);
+                        await roundState.save({ session });
+                        console.log(`[TaskService] Task ${taskId} marked as processed in round state`);
+                    }
+                    
+                    // Clean up roundTasks by removing the processed task
+                    let modified = false;
+                    for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks || {})) {
+                        if (Array.isArray(taskIds)) {
+                            const filteredTasks = taskIds.filter(id => id !== taskIdStr);
+                            if (filteredTasks.length !== taskIds.length) {
+                                if (filteredTasks.length === 0) {
+                                    delete roundState.roundTasks[buyerId];
+                                } else {
+                                    roundState.roundTasks[buyerId] = filteredTasks;
+                                }
+                                modified = true;
+                            }
+                        }
+                    }
+                    
+                    if (modified) {
+                        await roundState.save({ session });
+                    }
+                }
+            }
+            
+            await session.commitTransaction();
+            return updatedTask;
         } catch (error) {
+            await session.abortTransaction();
             throw new Error(`Ошибка обновления задачи: ${error.message}`);
+        } finally {
+            session.endSession();
         }
     }
 
@@ -319,13 +372,12 @@ static async getAutoAssignedTask(creatorId) {
 
     static async assignTask(taskId, creatorId, expectedDate, expectedTime) {
         try {
-            return await Task.findOneAndUpdate(
+            // First, find and update the task
+            const updatedTask = await Task.findOneAndUpdate(
                 {
                     _id: taskId,
-
                     // задача считается свободной, если ещё НЕ в progress
                     state: { $ne: 'progress' },
-
                     // а поле creator либо отсутствует, либо равно null
                     $or: [
                         { creator: null },
@@ -342,7 +394,35 @@ static async getAutoAssignedTask(creatorId) {
                 },
                 { new: true }
             ).populate('buyer').populate('creator');
+
+            if (!updatedTask) {
+                return null;
+            }
+
+            // Mark the task as processed in the round state
+            const roundState = await RoundState.findOne({ key: 'taskPoolRounds' });
+            if (roundState) {
+                const taskIdStr = taskId.toString();
+                
+                // Only update if not already processed
+                if (!roundState.processedTaskIds.includes(taskIdStr)) {
+                    // Use $addToSet to avoid duplicates
+                    await RoundState.updateOne(
+                        { key: 'taskPoolRows', _id: roundState._id },
+                        { 
+                            $addToSet: { processedTaskIds: taskIdStr },
+                            $unset: { 
+                                [`roundTasks.${updatedTask.buyer?._id || 'unknown'}`]: "" 
+                            }
+                        }
+                    );
+                    console.log(`[TaskService] Task ${taskId} marked as processed in round state after assignment`);
+                }
+            }
+
+            return updatedTask;
         } catch (error) {
+            console.error('Error in assignTask:', error);
             throw new Error(`Ошибка назначения задачи: ${error.message}`);
         }
     }

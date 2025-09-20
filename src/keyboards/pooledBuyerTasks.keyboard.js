@@ -368,9 +368,11 @@ const getKeyboard = async (isRetry = false) => {
 
 /**
  * Marks a task as selected from the current pool.
- * Updates the RoundState to mark the task as processed.
+ * Note: Tasks are no longer automatically marked as processed here.
+ * They will be marked as processed when their state changes (e.g., to 'progress' or 'done').
  * @param {string|object} taskIdOrCtx - The ID of the task selected or the context object
  * @param {string} [taskIdParam] - Optional task ID if first param is context
+ * @returns {Promise<string>} The task ID that was selected
  */
 const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
     let taskId;
@@ -386,61 +388,12 @@ const markTaskAsSelectedFromPool = async (taskIdOrCtx, taskIdParam) => {
         taskId = taskIdOrCtx.match[0];
     } else {
         console.error('[pooledBuyerTasks.keyboard] Invalid parameters passed to markTaskAsSelectedFromPool');
-        return;
+        return null;
     }
 
-    try {
-        const roundState = await RoundState.findOne({ key: ROUND_STATE_KEY });
-        if (!roundState) {
-            console.error('[pooledBuyerTasks.keyboard] No round state found when marking task as processed');
-            return;
-        }
-
-        // Ensure taskId is a string
-        const taskIdStr = String(taskId);
-
-        // Ensure roundTasks is an object
-        if (typeof roundState.roundTasks === 'string') {
-            try {
-                roundState.roundTasks = JSON.parse(roundState.roundTasks);
-            } catch (e) {
-                console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks:', e);
-                roundState.roundTasks = {};
-            }
-        } else if (!roundState.roundTasks || typeof roundState.roundTasks !== 'object') {
-            roundState.roundTasks = {};
-        }
-
-        let modified = false;
-
-        // Mark task as processed if not already
-        if (!roundState.processedTaskIds.includes(taskIdStr)) {
-            roundState.processedTaskIds.push(taskIdStr);
-            modified = true;
-        }
-
-        // Clean up roundTasks by removing the processed task
-        for (const [buyerId, buyerTaskIds] of Object.entries(roundState.roundTasks)) {
-            if (Array.isArray(buyerTaskIds)) {
-                const filteredTasks = buyerTaskIds.filter(id => id !== taskIdStr);
-                if (filteredTasks.length !== buyerTaskIds.length) {
-                    if (filteredTasks.length === 0) {
-                        delete roundState.roundTasks[buyerId];
-                    } else {
-                        roundState.roundTasks[buyerId] = filteredTasks;
-                    }
-                    modified = true;
-                }
-            }
-        }
-
-        // Save only if there were changes
-        if (modified) {
-            await roundState.save();
-        }
-    } catch (error) {
-        console.error('[pooledBuyerTasks.keyboard] Error marking task as processed:', error);
-    }
+    // No longer marking tasks as processed here
+    console.log(`[pooledBuyerTasks.keyboard] Task ${taskId} selected but not marked as processed`);
+    return taskId;
 };
 
 /**
