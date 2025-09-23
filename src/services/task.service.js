@@ -37,8 +37,8 @@ class TaskService {
                 { new: true }
             ).populate('buyer').populate('creator');
             
-            // If state changed to 'progress' or 'done', mark as processed in round state
-            if (isStateChanging && (updates.state === 'progress' || updates.state === 'done')) {
+            // If state changed to 'progress', 'done', or 'canceled', update round state
+            if (isStateChanging && (updates.state === 'progress' || updates.state === 'done' || updates.state === 'canceled')) {
                 const roundState = await RoundState.findOne({ key: 'taskPoolRounds' });
                 if (roundState) {
                     const taskIdStr = taskId.toString();
@@ -78,6 +78,11 @@ class TaskService {
                             updateOps
                         );
                         console.log(`[TaskService] Task ${taskId} marked as processed in round state`);
+                        
+                        // If task was canceled, try to add a new task from the same buyer
+                        if (updates.state === 'canceled' && currentTask && currentTask.buyer) {
+                            await this.addNewTaskFromSameBuyer(currentTask.buyer, roundState);
+                        }
                     }
                 }
             }
@@ -371,6 +376,54 @@ static async getAutoAssignedTask(creatorId) {
                 message: `Ошибка при установке бонуса: ${error.message}`,
                 error: error
             };
+        }
+    }
+
+    /**
+     * Adds a new task from the same buyer when a task is canceled
+     * @param {string|Object} buyer - The buyer ID or object
+     * @param {Object} roundState - The current round state
+     */
+    static async addNewTaskFromSameBuyer(buyer, roundState) {
+        try {
+            const buyerId = buyer._id ? buyer._id.toString() : buyer.toString();
+            
+            // Check if buyer already has a task in the current round
+            const buyerHasTask = roundState.roundTasks && 
+                               roundState.roundTasks[buyerId] && 
+                               roundState.roundTasks[buyerId].length > 0;
+            
+            if (buyerHasTask) {
+                console.log(`[TaskService] Buyer ${buyerId} already has tasks in current round`);
+                return;
+            }
+            
+            // Find the oldest active task for this buyer that's not in processedTaskIds
+            const newTask = await Task.findOne({
+                'buyer': buyerId,
+                'state': 'active',
+                '_id': { $nin: roundState.processedTaskIds || [] }
+            }).sort({ createdAt: 1 });
+            
+            if (newTask) {
+                const newTaskId = newTask._id.toString();
+                
+                // Add the new task to roundTasks
+                await RoundState.updateOne(
+                    { key: 'taskPoolRounds', _id: roundState._id },
+                    { 
+                        $push: { 
+                            [`roundTasks.${buyerId}`]: newTaskId 
+                        } 
+                    }
+                );
+                
+                console.log(`[TaskService] Added new task ${newTaskId} from buyer ${buyerId} to round`);
+            } else {
+                console.log(`[TaskService] No active tasks found for buyer ${buyerId}`);
+            }
+        } catch (error) {
+            console.error(`[TaskService] Error adding new task from buyer:`, error);
         }
     }
 
