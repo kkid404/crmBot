@@ -47,7 +47,7 @@ async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
   /* ---------------- 1. получаем задачи ---------------- */
   const tasks = await Task.find({
     completionDate: { $gte: periodStart, $lte: periodEnd },
-    state: { $nin: ['cancelled', 'draft'] }
+    state: { $nin: ['canceled', 'draft'] }
   })
     .populate('buyer')
     .populate('creator');
