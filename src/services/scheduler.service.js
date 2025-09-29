@@ -7,6 +7,7 @@ const employeeScheduleController = require('../controllers/employee_schedule.con
 class SchedulerService {
     constructor() {
         this.jobs = [];
+        this._isUpdating = false;
     }
 
     /**
@@ -25,8 +26,17 @@ class SchedulerService {
         // Cron format: minute hour day month weekday
         // '*/30 * * * *' means every 30 minutes
         const job = cron.schedule('*/30 * * * *', async () => {
+            if (this._isUpdating) {
+                console.warn('Previous Google Sheets update still running – skipping this schedule tick.');
+                return;
+            }
+            this._isUpdating = true;
             console.log('Running scheduled Google Sheets update...');
-            await this.updateAllSheetsNow();
+            try {
+                await this.updateAllSheetsNow();
+            } finally {
+                this._isUpdating = false;
+            }
         });
 
         this.jobs.push(job);

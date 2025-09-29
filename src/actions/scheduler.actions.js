@@ -7,11 +7,12 @@ const tableUpdaterService = require('../services/tableUpdater.service');
 const actions = (bot) => {
     // Handler for "Update all sheets now" button
     bot.action('update_sheets', async (ctx) => {
+        let message;
         try {
             await ctx.answerCbQuery('Начинаем обновление...');
             
             // Show "updating" message
-            const message = await ctx.reply('🔄 Обновление Google Sheets...\nЭто может занять некоторое время.');
+            message = await ctx.reply('🔄 Обновление Google Sheets...\nЭто может занять некоторое время.');
             
             // Run the update with improved table clearing
             console.log('Triggering table update from Telegram action...');
@@ -53,25 +54,88 @@ const actions = (bot) => {
                     linksMessage += `• [${result.links.schedule.name}](${result.links.schedule.url})\n`;
                 }
                 
-                // Update the message with results
-                await ctx.telegram.editMessageText(
-                    ctx.chat.id, 
-                    message.message_id, 
-                    null, 
-                    linksMessage,
-                    { parse_mode: 'Markdown' }
-                );
+                // Update the message with results and add a back button
+                const keyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад в меню', callback_data: 'back_to_main_menu' }]
+                        ]
+                    }
+                };
+
+                // If the message is too long, send a new message instead of editing
+                if (linksMessage.length > 4000) {
+                    await ctx.telegram.deleteMessage(ctx.chat.id, message.message_id);
+                    await ctx.reply(linksMessage, { 
+                        parse_mode: 'Markdown',
+                        ...keyboard
+                    });
+                } else {
+                    await ctx.telegram.editMessageText(
+                        ctx.chat.id, 
+                        message.message_id, 
+                        null, 
+                        linksMessage,
+                        { 
+                            parse_mode: 'Markdown',
+                            ...keyboard
+                        }
+                    );
+                }
             } else {
                 await ctx.telegram.editMessageText(
                     ctx.chat.id, 
                     message.message_id, 
                     null, 
-                    `❌ Ошибка при обновлении: ${result.error || 'Неизвестная ошибка'}`
+                    `❌ Ошибка при обновлении: ${result.error || 'Неизвестная ошибка'}`,
+                    { 
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🔙 Назад в меню', callback_data: 'back_to_main_menu' }],
+                                [{ text: '🔄 Повторить попытку', callback_data: 'update_sheets' }]
+                            ]
+                        }
+                    }
                 );
             }
         } catch (error) {
             console.error('Error in update_sheets action:', error);
-            await ctx.reply('Произошла ошибка при обновлении Google Sheets.');
+            try {
+                await ctx.reply('❌ Произошла ошибка при обновлении Google Sheets.\n\n' + 
+                              'Пожалуйста, попробуйте позже или свяжитесь с администратором.', {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Назад в меню', callback_data: 'back_to_main_menu' }],
+                            [{ text: '🔄 Повторить попытку', callback_data: 'update_sheets' }]
+                        ]
+                    }
+                });
+            } catch (e) {
+                console.error('Error sending error message:', e);
+            }
+        }
+    });
+
+    // Add handler for back to main menu
+    bot.action('back_to_main_menu', async (ctx) => {
+        try {
+            await ctx.answerCbQuery();
+            await ctx.deleteMessage();
+            // Add your main menu command here, for example:
+            // await ctx.scene.enter('main_menu_scene');
+            // Or show main menu directly
+            await ctx.reply('Главное меню', {
+                reply_markup: {
+                    keyboard: [
+                        ['📊 Обновить Google Sheets'],
+                        ['ℹ️ Статус планировщика']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        } catch (error) {
+            console.error('Error in back_to_main_menu action:', error);
         }
     });
 

@@ -30,16 +30,28 @@ class GoogleSheetsService {
       maxConcurrent           : 1
     });
 
+    // Allow a bit more parallelism for reads to avoid unnecessary queueing
     this.readLimiter = new Bottleneck({
       reservoir               : 180,
       reservoirRefreshAmount  : 180,
       reservoirRefreshInterval: 60_000,
-      maxConcurrent           : 1
+      maxConcurrent           : 3
     });
 
-    const backoff = (err, info) => err?.code === 429 && info.retryCount < 5
-      ? 1_000 * 2 ** info.retryCount  // 1 → 2 → 4 → 8 → 16 → 32 s
-      : undefined;
+    // Default timeout for Google API requests (via gaxios)
+    this._timeoutMs = Number(process.env.GOOGLE_API_TIMEOUT_MS ?? 30_000);
+
+    // Exponential backoff for rate limits (429), 5xx, and common network errors
+    const transientCodes = new Set([429, 500, 502, 503, 504]);
+    const networkCodes = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN']);
+    const backoff = (err, info) => {
+      const code = err?.code ?? err?.response?.status;
+      const shouldRetry = transientCodes.has(code) || networkCodes.has(code);
+      if (shouldRetry && info.retryCount < 5) {
+        return 1_000 * 2 ** info.retryCount; // 1 → 2 → 4 → 8 → 16 → 32 s
+      }
+      return undefined;
+    };
 
     this.writeLimiter.on('failed', backoff);
     this.readLimiter .on('failed', backoff);
@@ -48,14 +60,24 @@ class GoogleSheetsService {
     const wrapWrite = (obj, method) => {
       if (!obj[method]) return; // skip if API version changed
       const orig = obj[method].bind(obj);
-      obj[method] = this.writeLimiter.wrap(orig);
+      const withTimeout = async (params = {}) => {
+        // Inject default timeout if not provided
+        const finalParams = { timeout: this._timeoutMs, ...params };
+        return orig(finalParams);
+      };
+      const limited = this.writeLimiter.wrap(withTimeout);
+      obj[method] = limited;
       return obj[method];
     };
 
     const wrapRead = (obj, method) => {
       if (!obj[method]) return;
       const orig = obj[method].bind(obj);
-      obj[method] = this.readLimiter.wrap(orig);
+      const withTimeout = async (params = {}) => {
+        const finalParams = { timeout: this._timeoutMs, ...params };
+        return orig(finalParams);
+      };
+      obj[method] = this.readLimiter.wrap(withTimeout);
     };
 
     /* ---------- globally patch WRITE API calls ---------- */

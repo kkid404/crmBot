@@ -121,7 +121,9 @@ async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
   ];
 
   for (const {title: t, data} of sheetsPayload) {
-    await googleSheets.prepareSheet(spreadsheetId, t);
+    // Ensure the sheet exists (idempotent), then clear and write new data.
+    await googleSheets.addSheet(spreadsheetId, t);
+    await googleSheets.clearSheet(spreadsheetId, t);
     await googleSheets.writeData(spreadsheetId, `${t}!A1`, data);
   }
   await googleSheets.deleteSheetByTitle(spreadsheetId, 'Лист 1');
