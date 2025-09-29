@@ -40,6 +40,8 @@ class GoogleSheetsService {
 
     // Default timeout for Google API requests (via gaxios)
     this._timeoutMs = Number(process.env.GOOGLE_API_TIMEOUT_MS ?? 30_000);
+    // Set global gaxios options for googleapis so it does NOT become a query param
+    google.options({ timeout: this._timeoutMs });
 
     // Exponential backoff for rate limits (429), 5xx, and common network errors
     const transientCodes = new Set([429, 500, 502, 503, 504]);
@@ -60,12 +62,8 @@ class GoogleSheetsService {
     const wrapWrite = (obj, method) => {
       if (!obj[method]) return; // skip if API version changed
       const orig = obj[method].bind(obj);
-      const withTimeout = async (params = {}) => {
-        // Inject default timeout if not provided
-        const finalParams = { timeout: this._timeoutMs, ...params };
-        return orig(finalParams);
-      };
-      const limited = this.writeLimiter.wrap(withTimeout);
+      // Do NOT inject timeout into params (it becomes a query string). We use global google.options instead.
+      const limited = this.writeLimiter.wrap(orig);
       obj[method] = limited;
       return obj[method];
     };
@@ -73,11 +71,7 @@ class GoogleSheetsService {
     const wrapRead = (obj, method) => {
       if (!obj[method]) return;
       const orig = obj[method].bind(obj);
-      const withTimeout = async (params = {}) => {
-        const finalParams = { timeout: this._timeoutMs, ...params };
-        return orig(finalParams);
-      };
-      obj[method] = this.readLimiter.wrap(withTimeout);
+      obj[method] = this.readLimiter.wrap(orig);
     };
 
     /* ---------- globally patch WRITE API calls ---------- */
