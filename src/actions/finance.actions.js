@@ -8,18 +8,21 @@ const { Markup } = require('telegraf');
  */
 async function handleGenerateAll(ctx) {
   const loading = await ctx.reply(ru.messages.finance.generating);
-  try {
-    const today = new Date();
-    const url = await exportFinanceReport(today.getMonth() + 1, today.getFullYear());
-    await ctx.reply(
-      `${ru.messages.finance.done}
+  // Run in background to avoid blocking Telegraf update pipeline
+  setImmediate(async () => {
+    try {
+      const today = new Date();
+      const url = await exportFinanceReport(today.getMonth() + 1, today.getFullYear());
+      await ctx.reply(
+        `${ru.messages.finance.done}
 ${url}`,
-      start(ctx.chat.id)
-    );
-  } catch (e) {
-    console.error(e);
-    await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, undefined, 'Ошибка генерации');
-  }
+        start(ctx.chat.id)
+      );
+    } catch (e) {
+      console.error(e);
+      try { await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, undefined, 'Ошибка генерации'); } catch {}
+    }
+  });
 }
 
 /**
@@ -77,17 +80,19 @@ async function showPeriodSelector(ctx) {
  */
 async function handleGenerateForPeriod(ctx, month, year) {
   const loading = await ctx.reply(ru.messages.finance.generating);
-  try {
-    const url = await exportFinanceReport(month, year);
-    await ctx.reply(
-      `${ru.messages.finance.done}
+  setImmediate(async () => {
+    try {
+      const url = await exportFinanceReport(month, year);
+      await ctx.reply(
+        `${ru.messages.finance.done}
 ${url}`,
-      start(ctx.chat.id)
-    );
-  } catch (e) {
-    console.error(e);
-    await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, undefined, 'Ошибка генерации');
-  }
+        start(ctx.chat.id)
+      );
+    } catch (e) {
+      console.error(e);
+      try { await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, undefined, 'Ошибка генерации'); } catch {}
+    }
+  });
 }
 
 /**

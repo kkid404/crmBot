@@ -29,150 +29,130 @@ const actions = (bot) => {
         }
     });
 
-    // Обработка кнопки "Креативы в работе"
+    // Обработка кнопки "Креативы в работе" (в фоне)
     bot.action('progressCsv', async (ctx) => {
         try {
             await ctx.deleteMessage();
-            
-            // Отправляем сообщение о начале генерации
             const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
-            
-            try {
-                const spreadsheetUrl = await exportTasksInProgressCsv();
-                
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                // Отправляем результат
-                await ctx.reply(
-                    `📊 Отчет по креативам в работе готов!\n${spreadsheetUrl}`,
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
-                        },
-                        disable_web_page_preview: true
-                    }
-                );
-            } catch (error) {
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                console.error('Ошибка при создании отчета:', error);
-                await ctx.reply(
-                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
+            // Запускаем экспорт в фоне, чтобы не блокировать обработчик
+            setImmediate(async () => {
+                try {
+                    const spreadsheetUrl = await exportTasksInProgressCsv();
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        `📊 Отчет по креативам в работе готов!\n${spreadsheetUrl}`,
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            },
+                            disable_web_page_preview: true
                         }
-                    }
-                );
-            }
+                    );
+                } catch (error) {
+                    console.error('Ошибка при создании отчета (progressCsv):', error);
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            }
+                        }
+                    );
+                }
+            });
         } catch (error) {
             console.error('Ошибка в обработчике progressCsv:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });
 
-    // Обработка кнопки "Выполненные креативы"
+    // Обработка кнопки "Выполненные креативы" (в фоне)
     bot.action('doneCsv', async (ctx) => {
         try {
             await ctx.deleteMessage();
-            
-            // Отправляем сообщение о начале генерации
             const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
-            
-            try {
-                const spreadsheetUrl = await exportTasksDoneCsv();
-                
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                // Отправляем результат
-                await ctx.reply(
-                    `📊 Отчет по выполненным креативам готов!\n${spreadsheetUrl}`,
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
-                        },
-                        disable_web_page_preview: true // Отключаем превью ссылки
-                    }
-                );
-            } catch (error) {
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                console.error('Ошибка при создании отчета:', error);
-                await ctx.reply(
-                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
+            setImmediate(async () => {
+                try {
+                    const spreadsheetUrl = await exportTasksDoneCsv();
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        `📊 Отчет по выполненным креативам готов!\n${spreadsheetUrl}`,
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            },
+                            disable_web_page_preview: true
                         }
-                    }
-                );
-            }
+                    );
+                } catch (error) {
+                    console.error('Ошибка при создании отчета (doneCsv):', error);
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            }
+                        }
+                    );
+                }
+            });
         } catch (error) {
             console.error('Ошибка в обработчике doneCsv:', error);
             await ctx.reply(ruMessage.messages.error);
         }
     });
 
-    // Обработка кнопки "Все креативы"
+    // Обработка кнопки "Все креативы" (в фоне)
     bot.action('allCsv', async (ctx) => {
         try {
             await ctx.deleteMessage();
-            
-            // Отправляем сообщение о начале генерации
             const loadingMessage = await ctx.reply('⏳ Генерация отчета...');
-            
-            try {
-                const spreadsheetUrl = await exportAllTasksCsv();
-                
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                // Отправляем результат
-                await ctx.reply(
-                    `📊 Полный отчет по креативам готов!\n${spreadsheetUrl}`,
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
-                        },
-                        disable_web_page_preview: true
-                    }
-                );
-            } catch (error) {
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                console.error('Ошибка при создании отчета:', error);
-                await ctx.reply(
-                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
+            setImmediate(async () => {
+                try {
+                    const spreadsheetUrl = await exportAllTasksCsv();
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        `📊 Полный отчет по креативам готов!\n${spreadsheetUrl}`,
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            },
+                            disable_web_page_preview: true
                         }
-                    }
-                );
-            }
+                    );
+                } catch (error) {
+                    console.error('Ошибка при создании отчета (allCsv):', error);
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            }
+                        }
+                    );
+                }
+            });
         } catch (error) {
             console.error('Ошибка в обработчике allCsv:', error);
             await ctx.reply(ruMessage.messages.error);
@@ -360,50 +340,43 @@ const actions = (bot) => {
         }
     });
 
-    // Обработка кнопки "Отчет по рабочему времени"
+    // Обработка кнопки "Отчет по рабочему времени" (в фоне)
     bot.action('scheduleReport', async (ctx) => {
         try {
             await ctx.deleteMessage();
-            
-            // Отправляем сообщение о начале генерации
             const loadingMessage = await ctx.reply('⏳ Генерация отчета по рабочему времени...');
-            
-            try {
-                const spreadsheetUrl = await exportEmployeeScheduleToGoogleSheets();
-                
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                // Отправляем результат
-                await ctx.reply(
-                    `📊 Отчет по рабочему времени сотрудников готов!\n${spreadsheetUrl}`,
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
-                        },
-                        disable_web_page_preview: true
-                    }
-                );
-            } catch (error) {
-                // Удаляем сообщение о загрузке
-                await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id);
-                
-                console.error('Ошибка при создании отчета по рабочему времени:', error);
-                await ctx.reply(
-                    '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
-                    { 
-                        reply_markup: {
-                            inline_keyboard: [[{ 
-                                text: ruMessage.keyboards.statistics.backToStatMenu, 
-                                callback_data: 'backToStatMenu' 
-                            }]]
+            setImmediate(async () => {
+                try {
+                    const spreadsheetUrl = await exportEmployeeScheduleToGoogleSheets();
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        `📊 Отчет по рабочему времени сотрудников готов!\n${spreadsheetUrl}`,
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            },
+                            disable_web_page_preview: true
                         }
-                    }
-                );
-            }
+                    );
+                } catch (error) {
+                    console.error('Ошибка при создании отчета по рабочему времени (scheduleReport):', error);
+                    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMessage.message_id); } catch {}
+                    await ctx.reply(
+                        '❌ Произошла ошибка при создании отчета. Пожалуйста, попробуйте позже.',
+                        { 
+                            reply_markup: {
+                                inline_keyboard: [[{ 
+                                    text: ruMessage.keyboards.statistics.backToStatMenu, 
+                                    callback_data: 'backToStatMenu' 
+                                }]]
+                            }
+                        }
+                    );
+                }
+            });
         } catch (error) {
             console.error('Ошибка в обработчике scheduleReport:', error);
             await ctx.reply(ruMessage.messages.error);

@@ -137,7 +137,21 @@ bot.action(/^moderate_task:(.+)$/, async (ctx) => {
 const schedulerCommand = require('./src/commands/scheduler.command');
 // The command module initializes the scheduler automatically
 
+// Глобальные ловушки ошибок процесса и Telegraf
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection:', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException:', err);
+});
+bot.catch((err, ctx) => {
+  console.error('Telegraf caught error:', err, 'on update:', ctx.update);
+});
+
 // Запуск бота
-bot.launch();
-console.log(ruMessage.global.start);
+bot.launch().then(() => {
+  console.log(ruMessage.global.start);
+}).catch((err) => {
+  console.error('Bot launch failed:', err);
+});
 
