@@ -47,6 +47,47 @@ ${exampleLine}
     return taskInfo;
 }
 
+// Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
+const MAX_TG_TEXT = 4000;
+
+// Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
+function splitLongText(text, maxLen = MAX_TG_TEXT) {
+    const chunks = [];
+    if (!text) return [''];
+    let remaining = text;
+    while (remaining.length > maxLen) {
+        // Ищем ближайший удобный разрез до maxLen: двойной перенос, затем один перенос, затем пробел
+        let cut = remaining.lastIndexOf('\n\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf('\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf(' ', maxLen);
+        if (cut <= 0) cut = maxLen; // если ничего не нашли, режем жестко
+        chunks.push(remaining.slice(0, cut).trim());
+        remaining = remaining.slice(cut).trim();
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks;
+}
+
+// Редактирует исходное сообщение первым куском и досылает остальные куски отдельными сообщениями
+async function editLongWithKeyboard(ctx, text, keyboard) {
+    const parts = splitLongText(text);
+    // первый кусок — редактирование исходного сообщения с клавиатурой
+    await ctx.editMessageText(parts[0], keyboard);
+    // остальные — отдельными сообщениями без клавиатуры
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
+// Отправляет первое сообщение с клавиатурой и остальные куски без клавиатуры
+async function replyLongWithKeyboard(ctx, text, keyboard) {
+    const parts = splitLongText(text);
+    await ctx.reply(parts[0], keyboard);
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
 // Создаем клавиатуру для задач
 function createTasksKeyboard(tasks) {
     // Сортируем задачи по ожидаемой дате (datePart) и времени (timePart)
@@ -189,8 +230,8 @@ adminTasksInProgressScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         // Формируем информацию о задаче
         const taskInfo = buildTaskInfo(task);
         
-        // Отправляем информацию о задаче
-        await ctx.editMessageText(taskInfo, createTaskDetailsKeyboard(task));
+        // Отправляем информацию о задаче (с разбиением длинного текста)
+        await editLongWithKeyboard(ctx, taskInfo, createTaskDetailsKeyboard(task));
         
         await ctx.answerCbQuery();
     } catch (error) {
@@ -219,8 +260,8 @@ adminTasksInProgressScene.action('show_example', async (ctx) => {
         // Формируем информацию о задаче
         const taskInfo = buildTaskInfo(task);
         
-        // Редактируем сообщение с информацией о задаче
-        await ctx.editMessageText(taskInfo, back_to_task());
+        // Редактируем сообщение с информацией о задаче (с разбиением длинного текста)
+        await editLongWithKeyboard(ctx, taskInfo, back_to_task());
         
         // Обеспечиваем обратную совместимость с примерами креативов
         if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
@@ -329,8 +370,8 @@ adminTasksInProgressScene.action('back_to_task', async (ctx) => {
         // Формируем информацию о задаче
         const taskInfo = buildTaskInfo(task);
         
-        // Отправляем информацию о задаче
-        await ctx.editMessageText(taskInfo, createTaskDetailsKeyboard(task));
+        // Отправляем информацию о задаче (с разбиением длинного текста)
+        await editLongWithKeyboard(ctx, taskInfo, createTaskDetailsKeyboard(task));
         
         await ctx.answerCbQuery();
     } catch (error) {
@@ -404,7 +445,7 @@ adminTasksInProgressScene.on('text', async (ctx) => {
         const task = await taskService.findTaskById(ctx.session.selectedTask);
         if (task) {
             const taskInfo = buildTaskInfo(task);
-            await ctx.reply(taskInfo, createTaskDetailsKeyboard(task));
+            await replyLongWithKeyboard(ctx, taskInfo, createTaskDetailsKeyboard(task));
         } else {
             await ctx.reply("Выбранная задача не найдена. Выберите другую задачу.");
         }

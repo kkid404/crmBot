@@ -11,6 +11,47 @@ const { backInline } = require('../keyboards/backInline.keyboard');
 
 const getMyTtCreatorScene = new BaseScene('getMyTtCreatorScene');
 
+// Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
+const MAX_TG_TEXT = 4000;
+
+// Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
+function splitLongText(text, maxLen = MAX_TG_TEXT) {
+    const chunks = [];
+    if (!text) return [''];
+    let remaining = text;
+    while (remaining.length > maxLen) {
+        // Ищем ближайший удобный разрез до maxLen: двойной перенос, затем один перенос, затем пробел
+        let cut = remaining.lastIndexOf('\n\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf('\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf(' ', maxLen);
+        if (cut <= 0) cut = maxLen; // если ничего не нашли, режем жестко
+        chunks.push(remaining.slice(0, cut).trim());
+        remaining = remaining.slice(cut).trim();
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks;
+}
+
+// Редактирует исходное сообщение первым куском и досылает остальные куски отдельными сообщениями
+async function editLongWithKeyboard(ctx, text, keyboard) {
+    const parts = splitLongText(text);
+    // первый кусок — редактирование исходного сообщения с клавиатурой
+    await ctx.editMessageText(parts[0], backInline());
+    // остальные — отдельными сообщениями без клавиатуры
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
+// Отправляет первое сообщение с клавиатурой и остальные куски без клавиатуры
+async function replyLongWithKeyboard(ctx, text, keyboard) {
+    const parts = splitLongText(text);
+    await ctx.reply(parts[0], keyboard);
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
 getMyTtCreatorScene.enter(async (ctx) => {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
@@ -164,8 +205,8 @@ ${correctionsText}${bonusStr}${ctrStr}`;
 
     const taskInfo = formatTaskInfo(task, exampleLine, correctionsText);
 
-    // Редактируем сообщение с информацией о задаче
-    await ctx.editMessageText(taskInfo, backInline());
+    // Редактируем сообщение с информацией о задаче (с разбиением длинного текста)
+    await editLongWithKeyboard(ctx, taskInfo, backInline());
 
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
@@ -270,7 +311,7 @@ getMyTtCreatorScene.on('text', async (ctx) => {
         const task = await taskService.findTaskById(selectedTask);
         if (task) {
             await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
-            await ctx.reply(ctx.session.taskInfo || "Информация о задаче недоступна", backInline());
+            await replyLongWithKeyboard(ctx, ctx.session.taskInfo || "Информация о задаче недоступна", backInline());
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
             const keyboard = await creatorTasks(user._id,  "progress");

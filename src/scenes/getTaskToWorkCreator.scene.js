@@ -14,6 +14,44 @@ const { getPooledBuyerTasksKeyboard, markTaskAsSelectedFromPool, manualRefreshPo
 const taskService = require('../services/task.service');
 const { Markup } = require('telegraf');
 
+// ===== Helpers for long Telegram texts =====
+const MAX_TG_TEXT = 4000; // safety margin below 4096
+function splitLongText(text, maxLen = MAX_TG_TEXT) {
+    const chunks = [];
+    if (!text) return [''];
+    let remaining = text;
+    while (remaining.length > maxLen) {
+        let cut = remaining.lastIndexOf('\n\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf('\n', maxLen);
+        if (cut === -1) cut = remaining.lastIndexOf(' ', maxLen);
+        if (cut <= 0) cut = maxLen;
+        chunks.push(remaining.slice(0, cut).trim());
+        remaining = remaining.slice(cut).trim();
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks;
+}
+
+async function editOrReplyLongWithKeyboard(ctx, text, keyboard) {
+    const parts = splitLongText(text);
+    if (ctx.callbackQuery && ctx.callbackQuery.message) {
+        await ctx.editMessageText(parts[0], await keyboard);
+    } else {
+        await ctx.reply(parts[0], await keyboard);
+    }
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
+async function editLongPlain(ctx, text, options = {}) {
+    const parts = splitLongText(text);
+    await ctx.editMessageText(parts[0], options);
+    for (let i = 1; i < parts.length; i++) {
+        await ctx.reply(parts[i]);
+    }
+}
+
 function parseCustomDate(dateStr) {
     const [day, month] = dateStr.split('.'); // Разделяем на день и месяц
     const year = new Date().getFullYear(); // Используем текущий год
@@ -67,13 +105,8 @@ ${exampleLine}
         ctx.session.taskInfo = taskInfo;
         ctx.session.taskname = task.name;
 
-        // Отображаем информацию о задаче и предлагаем выбрать дату или вернуться
-        // Ensure message exists before trying to edit, or reply if not.
-        if (ctx.callbackQuery && ctx.callbackQuery.message) {
-            await ctx.editMessageText(taskInfo, await selected_or_back());
-        } else {
-            await ctx.reply(taskInfo, await selected_or_back());
-        }
+        // Отображаем информацию о задаче и предлагаем выбрать дату или вернуться (с разбиением длинного текста)
+        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
 
         ctx.session.exampleMediaMessageIds = [];
 
@@ -246,8 +279,8 @@ getTTScene.action(/^date_.+$/, async (ctx) => { // Регулярное выра
     // Сохраняем дату и информацию о задаче
     ctx.session.taskInfo = ctx.session.taskInfo + "\n📅Дата выполнения: " + date;
     
-    // Сначала подтверждаем выбор даты
-    await ctx.editMessageText(ctx.session.taskInfo, { disable_web_page_preview: true });
+    // Сначала подтверждаем выбор даты (с разбиением длинного текста)
+    await editLongPlain(ctx, ctx.session.taskInfo, { disable_web_page_preview: true });
     
     // Затем отправляем отдельное сообщение с запросом времени
     await ctx.reply("⏰ Пожалуйста, введите время выполнения в формате ЧЧ:ММ (например, 12:30):");
@@ -281,8 +314,8 @@ getTTScene.on('text', async (ctx) => {
         // Отправляем подтверждение выбора времени
         await ctx.reply(`✅ Время выполнения установлено: ${timeStr}`);
         
-        // Отображаем информацию о задаче с кнопками подтверждения/отмены
-        await ctx.reply(taskInfo, done_or_cancel());
+        // Отображаем информацию о задаче с кнопками подтверждения/отмены (с разбиением длинного текста)
+        await editOrReplyLongWithKeyboard(ctx, taskInfo, done_or_cancel());
     }
 });
 
@@ -353,8 +386,8 @@ ${exampleLine}
         ctx.session.taskInfo = taskInfo;
         ctx.session.taskname = task.name;
         
-        // Отображаем информацию о задаче и предлагаем выбрать дату
-        await ctx.editMessageText(taskInfo, await selected_or_back());
+        // Отображаем информацию о задаче и предлагаем выбрать дату (с разбиением длинного текста)
+        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
         
         // Инициализируем массив для хранения ID отправленных медиасообщений
         ctx.session.exampleMediaMessageIds = [];
@@ -667,8 +700,8 @@ ${exampleLine}
             await ctx.reply(`Не удалось отправить медиафайлы: ${error.message}`);
         }
     }
-    // Отправляем сообщение с информацией о задаче
-    await ctx.reply(taskInfo, selected_or_back());
+    // Отправляем сообщение с информацией о задаче (с разбиением длинного текста)
+    await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
 });
