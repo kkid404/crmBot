@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const taskService = require('../services/task.service');
 const RoundState = require('../databases/roundState.model');
+const Task = require('../databases/task.model');
 
 // Global variable to store the current pool of tasks
 let currentPool = []; // Current task pool (not cached between requests)
@@ -27,6 +28,74 @@ async function refreshPool() {
                 processedTaskIds: []
             });
             await roundState.save();
+        }
+        
+        // Early cleanup: if there are tasks with state 'canceled' or 'wait' in the current round,
+        // remove them from the current round and add their IDs to processedTaskIds
+        try {
+            // Ensure structures are valid types
+            if (!roundState.roundTasks || typeof roundState.roundTasks !== 'object') {
+                roundState.roundTasks = {};
+            } else if (typeof roundState.roundTasks === 'string') {
+                try {
+                    roundState.roundTasks = JSON.parse(roundState.roundTasks);
+                } catch (e) {
+                    console.error('[pooledBuyerTasks.keyboard] Error parsing roundTasks during early cleanup:', e);
+                    roundState.roundTasks = {};
+                }
+            }
+
+            roundState.processedTaskIds = Array.isArray(roundState.processedTaskIds) ? roundState.processedTaskIds : [];
+
+            // Collect all unprocessed task IDs from the current round
+            const unprocessedIds = [];
+            for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
+                if (!Array.isArray(taskIds)) continue;
+                for (const tId of taskIds) {
+                    const idStr = String(tId);
+                    if (!roundState.processedTaskIds.includes(idStr)) {
+                        unprocessedIds.push(idStr);
+                    }
+                }
+            }
+
+            if (unprocessedIds.length > 0) {
+                const tasksNeedingCleanup = await Task.find({
+                    _id: { $in: unprocessedIds },
+                    state: { $in: ['canceled', 'wait'] }
+                }, { _id: 1 }).lean();
+
+                if (tasksNeedingCleanup && tasksNeedingCleanup.length > 0) {
+                    const cleanupIdSet = new Set(tasksNeedingCleanup.map(t => String(t._id)));
+
+                    // Add to processedTaskIds (avoid duplicates)
+                    const processedSet = new Set(roundState.processedTaskIds);
+                    for (const id of cleanupIdSet) processedSet.add(id);
+                    roundState.processedTaskIds = Array.from(processedSet);
+
+                    // Remove from roundTasks
+                    let modifiedRoundTasks = false;
+                    for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
+                        if (!Array.isArray(taskIds)) continue;
+                        const filtered = taskIds.filter(id => !cleanupIdSet.has(String(id)));
+                        if (filtered.length !== taskIds.length) {
+                            modifiedRoundTasks = true;
+                            if (filtered.length === 0) {
+                                delete roundState.roundTasks[buyerId];
+                            } else {
+                                roundState.roundTasks[buyerId] = filtered.map(String);
+                            }
+                        }
+                    }
+
+                    await roundState.save();
+                    if (cleanupIdSet.size > 0) {
+                        console.log(`[pooledBuyerTasks.keyboard] Early cleanup: removed ${cleanupIdSet.size} tasks with state canceled/wait from current round`);
+                    }
+                }
+            }
+        } catch (cleanupErr) {
+            console.error('[pooledBuyerTasks.keyboard] Error during early cleanup for canceled/wait tasks:', cleanupErr);
         }
         
         // Always clear the current pool to force refresh
