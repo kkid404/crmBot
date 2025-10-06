@@ -68,7 +68,7 @@ async function handleText(ctx) {
                 example_creative: ctx.session.mediaFiles || [],
                 buyer: user._id,
                 creator: creator._id,
-                state: 'progress' // Устанавливаем статус "в работе"
+                state: 'wait' // Задача ожидает установки времени креативщиком
             };
             
             let createdTask;
@@ -81,17 +81,65 @@ async function handleText(ctx) {
                     createdTask = await taskService.createTask(taskData);
                     success = true;
                     
-                    // Отправляем уведомление креативщику
+                    // Отправляем уведомление креативщику с кнопкой установки времени
+                    const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
+                    const buyerName = user?.username || 'неизвестно';
+                    
+                    const notificationText = `⏳ Новая задача требует установки времени:
+
+🎯 Задача: "${taskData.name}"
+👨‍💼 Баер: @${buyerName}
+📝 Описание: ${taskData.description}
+
+Пожалуйста, установите ожидаемое время выполнения:`;
+                    
+                    console.log('🔍 Попытка отправки уведомления:', {
+                        creatorUsername: creator.username,
+                        creatorTgId: creator.tg_id,
+                        tgIdType: typeof creator.tg_id,
+                        taskId: createdTask._id,
+                        taskName: taskData.name
+                    });
+                    
                     try {
-                        const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
-                        await ctx.telegram.sendMessage(creator.tg_id, notificationText);
-                        console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
-                    } catch (err) {
-                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                        const sentMessage = await ctx.telegram.sendMessage(
+                            creator.tg_id,
+                            notificationText,
+                            setExpectedTimeKeyboard(createdTask._id)
+                        );
+                        console.log(`✅ Уведомление успешно отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                        console.log('📨 Ответ от Telegram API:', {
+                            messageId: sentMessage.message_id,
+                            date: sentMessage.date,
+                            chat: sentMessage.chat?.id
+                        });
+                    } catch (sendErr) {
+                        console.error(`❌ ОШИБКА отправки уведомления креативщику ${creator.username} (${creator.tg_id}):`);
+                        console.error('Детали ошибки:', sendErr);
+                        console.error('Код ошибки:', sendErr.code);
+                        console.error('Описание:', sendErr.description || sendErr.message);
+                        
+                        if (sendErr.code === 403 || sendErr.description?.includes('bot was blocked')) {
+                            await ctx.reply(
+                                `⚠️ Задача создана, но креативщик заблокировал бота или не начал с ним диалог.\nСвяжитесь с ${creator.username} напрямую.`,
+                                await start(ctx.from.id)
+                            );
+                            ctx.session = {};
+                            ctx.scene.leave();
+                            return;
+                        } else if (sendErr.description?.includes('chat not found')) {
+                            await ctx.reply(
+                                `⚠️ Задача создана, но креативщик еще не начал диалог с ботом.\nПопросите ${creator.username} написать боту /start`,
+                                await start(ctx.from.id)
+                            );
+                            ctx.session = {};
+                            ctx.scene.leave();
+                            return;
+                        }
                     }
                     
                     await ctx.reply(
-                        `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator._id}`,
+                        `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
                         await start(ctx.from.id)
                     );
                 } catch (error) {
