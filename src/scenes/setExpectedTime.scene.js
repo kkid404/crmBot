@@ -89,15 +89,53 @@ setExpectedTimeScene.on('text', async (ctx) => {
             // Create date object in local timezone
             const expectedDateTime = new Date(year, month - 1, day, hours, minutes);
             
+            // Get the task to check its current state
+            const task = await taskService.findTaskById(taskId);
+            
+            if (!task) {
+                await ctx.reply('❌ Задача не найдена.', await start(ctx.from.id));
+                ctx.session.taskIdForTimeSetting = null;
+                ctx.session.expectedDate = null;
+                ctx.scene.leave();
+                return;
+            }
+            
             // Update the task with expected date and time
-            await taskService.updateTask(taskId, { 
+            const updateData = { 
                 expectedDate: expectedDateTime,
                 expectedTime: userInput
-            });
+            };
             
-            // Notify the user
+            // If task is in 'wait' state, move it to 'progress'
+            if (task.state === 'wait') {
+                updateData.state = 'progress';
+            }
+            
+            await taskService.updateTask(taskId, updateData);
+            
+            // If task was in 'wait' state, notify the creator
+            if (task.state === 'wait' && task.creator) {
+                try {
+                    const userService = require('../services/user.service');
+                    const creator = await userService.findById(task.creator);
+                    
+                    if (creator && creator.tg_id) {
+                        const notificationText = `🔔 Вам назначена новая задача: "${task.name}"
+
+📅 Ожидаемая дата сдачи: ${ctx.session.expectedDate} к ${userInput}
+📝 Описание: ${task.description}`;
+                        
+                        await ctx.telegram.sendMessage(creator.tg_id, notificationText);
+                        console.log(`Уведомление о задаче отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                    }
+                } catch (err) {
+                    console.error('Ошибка отправки уведомления креативщику:', err);
+                }
+            }
+            
+            // Notify the admin/user
             await ctx.reply(
-                `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}`,
+                `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}${task.state === 'wait' ? '\n\n✅ Задача переведена в работу и креативщик уведомлен.' : ''}`,
                 await start(ctx.from.id)
             );
             

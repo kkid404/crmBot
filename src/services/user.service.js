@@ -48,6 +48,14 @@ class UserService {
         const user = await User.findOne({ tg_id });
         return user && user.position === 'finance';
     }
+
+    /** Получить всех админов креативщиков (role: admin, position: creator) */
+    static async findCreatorAdmins() {
+        return User.find({ 
+            role: 'admin',
+            position: 'creator'
+        });
+    }
 }
 
 module.exports = UserService;

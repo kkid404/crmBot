@@ -58,7 +58,7 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
             description: ctx.session.description,
             buyer: user._id,
             creator: creatorId,
-            state: 'progress'
+            state: 'wait' // Задача ожидает установки времени админом
         };
         
         // Add optional fields if they exist in session
@@ -97,36 +97,44 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
             return;
         }
         
-        // Send notification to creator
+        // Send notification to creator to set time
         const creator = await userService.findById(creatorId);
-        if (creator) {
+        
+        if (creator && creator.tg_id) {
             try {
                 const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
-                const notificationText = `🔔 Вам назначена новая задача: "${taskData.name}"`;
+                const buyerName = user?.username || 'неизвестно';
                 
-                // Always prompt to set expected time regardless of workType
+                const notificationText = `⏳ Новая задача требует установки времени:
+
+🎯 Задача: "${taskData.name}"
+👨‍💼 Баер: @${buyerName}
+📝 Описание: ${taskData.description}
+
+Пожалуйста, установите ожидаемое время выполнения:`;
+                
+                // Send notification to creator
                 await ctx.telegram.sendMessage(
                     creator.tg_id,
-                    `${notificationText}\n\nПожалуйста, установите ожидаемое время выполнения:`,
+                    notificationText,
                     setExpectedTimeKeyboard(task._id)
                 );
-                
-                console.log(`Уведомление отправлено креативщику ${creator._id} (${creator.tg_id})`);
+                console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
                 
                 await ctx.reply(
-                    `✅ Задача "${taskData.name}" успешно создана и назначена креативщику @${creator._id}`,
+                    `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
                     await start(ctx.from.id)
                 );
             } catch (err) {
                 console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
                 await ctx.reply(
-                    `✅ Задача "${taskData.name}" успешно создана, но не удалось отправить уведомление креативщику`,
+                    `✅ задача "${taskData.name}" успешно создана, но не удалось отправить уведомление креативщику`,
                     await start(ctx.from.id)
                 );
             }
         } else {
             await ctx.reply(
-                `✅ Задача "${taskData.name}" успешно создана, но не удалось найти креативщика`,
+                `⚠️ Задача "${taskData.name}" создана, но креативщик не найден`,
                 await start(ctx.from.id)
             );
         }
