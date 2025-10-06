@@ -114,19 +114,44 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
 Пожалуйста, установите ожидаемое время выполнения:`;
                 
                 // Send notification to creator
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    notificationText,
-                    setExpectedTimeKeyboard(task._id)
-                );
-                console.log(`Уведомление отправлено креативщику ${creator.username} (${creator.tg_id})`);
-                
-                await ctx.reply(
-                    `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
-                    await start(ctx.from.id)
-                );
+                try {
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        notificationText,
+                        setExpectedTimeKeyboard(task._id)
+                    );
+                    console.log(`✅ Уведомление успешно отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                    
+                    await ctx.reply(
+                        `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
+                        await start(ctx.from.id)
+                    );
+                } catch (sendErr) {
+                    console.error(`❌ ОШИБКА отправки уведомления креативщику ${creator.username} (${creator.tg_id}):`);
+                    console.error('Детали ошибки:', sendErr);
+                    console.error('Код ошибки:', sendErr.code);
+                    console.error('Описание:', sendErr.description || sendErr.message);
+                    
+                    // Проверяем типичные ошибки
+                    if (sendErr.code === 403 || sendErr.description?.includes('bot was blocked')) {
+                        await ctx.reply(
+                            `⚠️ Задача "${taskData.name}" создана, но креативщик заблокировал бота или не начал с ним диалог.\nСвяжитесь с ${creator.username} напрямую.`,
+                            await start(ctx.from.id)
+                        );
+                    } else if (sendErr.description?.includes('chat not found')) {
+                        await ctx.reply(
+                            `⚠️ Задача "${taskData.name}" создана, но креативщик еще не начал диалог с ботом.\nПопросите ${creator.username} написать боту /start`,
+                            await start(ctx.from.id)
+                        );
+                    } else {
+                        await ctx.reply(
+                            `⚠️ Задача "${taskData.name}" создана, но не удалось отправить уведомление креативщику: ${sendErr.message}`,
+                            await start(ctx.from.id)
+                        );
+                    }
+                }
             } catch (err) {
-                console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                console.error(`Общая ошибка в блоке создания задачи:`, err);
                 await ctx.reply(
                     `✅ задача "${taskData.name}" успешно создана, но не удалось отправить уведомление креативщику`,
                     await start(ctx.from.id)
