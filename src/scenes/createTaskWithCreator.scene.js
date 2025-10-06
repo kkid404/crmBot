@@ -114,13 +114,26 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
 Пожалуйста, установите ожидаемое время выполнения:`;
                 
                 // Send notification to creator
+                console.log('🔍 Попытка отправки уведомления:', {
+                    creatorUsername: creator.username,
+                    creatorTgId: creator.tg_id,
+                    tgIdType: typeof creator.tg_id,
+                    taskId: task._id,
+                    taskName: taskData.name
+                });
+                
                 try {
-                    await ctx.telegram.sendMessage(
+                    const sentMessage = await ctx.telegram.sendMessage(
                         creator.tg_id,
                         notificationText,
                         setExpectedTimeKeyboard(task._id)
                     );
                     console.log(`✅ Уведомление успешно отправлено креативщику ${creator.username} (${creator.tg_id})`);
+                    console.log('📨 Ответ от Telegram API:', {
+                        messageId: sentMessage.message_id,
+                        date: sentMessage.date,
+                        chat: sentMessage.chat?.id
+                    });
                     
                     await ctx.reply(
                         `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
