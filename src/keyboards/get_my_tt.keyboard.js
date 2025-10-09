@@ -67,6 +67,7 @@ const creatorTasks = async (id, state = '', page = 0) => {
     // Статусы с соответствующими подписями
     const stateLabels = {
         'progress': '🔄 В работе',
+        'time': '⏰ Ожидает времени',
         'wait': '⏳ На модерации',
         'done': '✅ Выполнено',
         'failed': '❌ Провалено',

@@ -58,7 +58,7 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
             description: ctx.session.description,
             buyer: user._id,
             creator: creatorId,
-            state: 'wait' // Задача ожидает установки времени админом
+            state: 'time' // Задача ожидает установки времени админом
         };
         
         // Add optional fields if they exist in session

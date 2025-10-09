@@ -106,15 +106,15 @@ setExpectedTimeScene.on('text', async (ctx) => {
                 expectedTime: userInput
             };
             
-            // If task is in 'wait' state, move it to 'progress'
-            if (task.state === 'wait') {
+            // If task is in 'time' state, move it to 'progress'
+            if (task.state === 'time') {
                 updateData.state = 'progress';
             }
             
             await taskService.updateTask(taskId, updateData);
             
-            // If task was in 'wait' state, notify the creator
-            if (task.state === 'wait' && task.creator) {
+            // If task was in 'time' state, notify the creator
+            if (task.state === 'time' && task.creator) {
                 try {
                     const userService = require('../services/user.service');
                     const creator = await userService.findById(task.creator);
@@ -135,7 +135,7 @@ setExpectedTimeScene.on('text', async (ctx) => {
             
             // Notify the admin/user
             await ctx.reply(
-                `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}${task.state === 'wait' ? '\n\n✅ Задача переведена в работу и креативщик уведомлен.' : ''}`,
+                `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}${task.state === 'time' ? '\n\n✅ Задача переведена в работу и креативщик уведомлен.' : ''}`,
                 await start(ctx.from.id)
             );
             

@@ -68,7 +68,7 @@ async function handleText(ctx) {
                 example_creative: ctx.session.mediaFiles || [],
                 buyer: user._id,
                 creator: creator._id,
-                state: 'wait' // Задача ожидает установки времени креативщиком
+                state: 'time' // Задача ожидает установки времени креативщиком
             };
             
             let createdTask;
