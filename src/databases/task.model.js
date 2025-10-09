@@ -9,7 +9,8 @@ const taskSchema = new Schema({
     state: { 
         type: String, 
         default: 'active',
-        enum: ['active', 'progress', 'wait', 'done', 'failed', 'canceled'],
+        enum: ['active', 'progress', 'time', 'wait', 'done', 'failed', 'canceled'],
+        index: true, // Индекс для оптимизации запросов по статусу
     },
     buyer: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     creator: { type: Schema.Types.ObjectId, ref: 'User', default: null },
