@@ -39,7 +39,8 @@ class GoogleSheetsService {
     });
 
     // Default timeout for Google API requests (via gaxios)
-    this._timeoutMs = Number(process.env.GOOGLE_API_TIMEOUT_MS ?? 30_000);
+    // Increased to 120s to handle large spreadsheet operations
+    this._timeoutMs = Number(process.env.GOOGLE_API_TIMEOUT_MS ?? 120_000);
     // Set global gaxios options for googleapis so it does NOT become a query param
     google.options({ timeout: this._timeoutMs });
 

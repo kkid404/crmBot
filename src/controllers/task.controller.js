@@ -535,24 +535,62 @@ async function exportProgressLikeToNewSpreadsheet () {
             process.env.NEW_PROGRESS_SPREADSHEET_ID
         );
 
+        // Delete default sheets only once - reduce API calls
         try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Лист 1'); } catch (_) {}
-        // Гарантированно удаляем общий лист "Креативы в работе", если существует
         try { await googleSheets.deleteSheetByTitle(spreadsheetId, 'Креативы в работе'); } catch (_) {}
+        
+        // Fetch all data once to avoid multiple queries
+        console.log('Fetching task data...');
+        const doneTasks = await Task.find({ state: 'done' })
+            .populate('buyer').populate('creator')
+            .sort({ completionDate: -1 });
+        console.log(`Found ${doneTasks.length} completed tasks`);
+        
+        // Group tasks by creator once
+        const tasksByCreator = doneTasks.reduce((acc, task) => {
+            const creatorName = task.creator?.username || 'Без исполнителя';
+            if (!acc[creatorName]) acc[creatorName] = [];
+            acc[creatorName].push(task);
+            return acc;
+        }, {});
 
         // ---------- Лист 2: Выполненные креативы ----------
-        {
-            const doneTasks = await Task.find({ state: 'done' })
-                .populate('buyer').populate('creator')
-                .sort({ completionDate: -1 });
+        console.log('Creating "Выполненные креативы" sheet...');
+        const completedSheetName = 'Выполненные креативы';
+        await googleSheets.addSheet(spreadsheetId, completedSheetName);
+        await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${completedSheetName}!A:Z` });
 
-            const sheetName = 'Выполненные креативы';
-            await googleSheets.addSheet(spreadsheetId, sheetName);
-            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
+        const completedHeaders = ['Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
+        const completedValues = [
+            completedHeaders,
+            ...doneTasks.map(t => [
+                t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                t.name?.toString() || 'Без названия',
+                t.workType?.toString() || 'Не указан',
+                t.points || 0,
+                t.bonus || 0,
+                t.CTR || 0,
+                t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
+            ])
+        ];
+        await googleSheets.writeData(spreadsheetId, `${completedSheetName}!A1`, completedValues);
 
-            const headers = ['Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
-            const values = [
-                headers,
-                ...doneTasks.map(t => [
+        // Create all creator sheets first, then batch format them
+        console.log(`Creating ${Object.keys(tasksByCreator).length} creator sheets...`);
+        const creatorSheetNames = [];
+        
+        for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
+            const safeCreatorName = creatorName.replace(/[\[\]\/\?]/g, '_');
+            const creatorSheetName = `${completedSheetName} - ${safeCreatorName}`;
+            creatorSheetNames.push(creatorSheetName);
+
+            await googleSheets.addSheet(spreadsheetId, creatorSheetName);
+            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${creatorSheetName}!A:Z` });
+
+            const creatorValues = [
+                completedHeaders,
+                ...creatorTasks.map(t => [
                     t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
                     t.name?.toString() || 'Без названия',
                     t.workType?.toString() || 'Не указан',
@@ -563,109 +601,87 @@ async function exportProgressLikeToNewSpreadsheet () {
                     t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
                 ])
             ];
-            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
 
-            // Пер-креативщик листы (как в общей таблице), но без колонок Заказчик/Исполнитель
-            const tasksByCreator = doneTasks.reduce((acc, task) => {
-                const creatorName = task.creator?.username || 'Без исполнителя';
-                if (!acc[creatorName]) acc[creatorName] = [];
-                acc[creatorName].push(task);
-                return acc;
-            }, {});
-
-            for (const [creatorName, creatorTasks] of Object.entries(tasksByCreator)) {
-                const safeCreatorName = creatorName.replace(/[\[\]\/\?]/g, '_');
-                const creatorSheetName = `${sheetName} - ${safeCreatorName}`;
-
-                await googleSheets.addSheet(spreadsheetId, creatorSheetName);
-                await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${creatorSheetName}!A:Z` });
-
-                const creatorHeaders = ['Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
-                const creatorValues = [
-                    creatorHeaders,
-                    ...creatorTasks.map(t => [
-                        t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
-                        t.name?.toString() || 'Без названия',
-                        t.workType?.toString() || 'Не указан',
-                        t.points || 0,
-                        t.bonus || 0,
-                        t.CTR || 0,
-                        t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
-                        t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
-                    ])
-                ];
-
-                await googleSheets.writeData(spreadsheetId, `${creatorSheetName}!A1`, creatorValues);
-
-                // Жирные заголовки
-                try {
-                    const creatorSpreadsheet = await googleSheets.sheets.spreadsheets.get({
-                        spreadsheetId,
-                        fields: 'sheets(properties(sheetId,title))',
+            await googleSheets.writeData(spreadsheetId, `${creatorSheetName}!A1`, creatorValues);
+        }
+        
+        // Batch format all headers at once - single API call
+        console.log('Applying formatting to all sheets...');
+        try {
+            const spreadsheetMeta = await googleSheets.sheets.spreadsheets.get({
+                spreadsheetId,
+                fields: 'sheets(properties(sheetId,title))',
+            });
+            
+            const formatRequests = [];
+            const sheetsToFormat = [completedSheetName, ...creatorSheetNames];
+            
+            for (const title of sheetsToFormat) {
+                const sheet = spreadsheetMeta.data.sheets.find(s => s.properties.title === title);
+                if (sheet) {
+                    formatRequests.push({
+                        repeatCell: {
+                            range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1 },
+                            cell: { userEnteredFormat: { textFormat: { bold: true } } },
+                            fields: 'userEnteredFormat.textFormat.bold'
+                        }
                     });
-                    const creatorSheet = creatorSpreadsheet.data.sheets.find(s => s.properties.title === creatorSheetName);
-                    if (creatorSheet) {
-                        const creatorSheetId = creatorSheet.properties.sheetId;
-                        await googleSheets.sheets.spreadsheets.batchUpdate({
-                            spreadsheetId,
-                            requestBody: {
-                                requests: [{
-                                    repeatCell: {
-                                        range: { sheetId: creatorSheetId, startRowIndex: 0, endRowIndex: 1 },
-                                        cell: { userEnteredFormat: { textFormat: { bold: true } } },
-                                        fields: 'userEnteredFormat.textFormat.bold'
-                                    }
-                                }]
-                            }
-                        });
-                    }
-                } catch (_) {}
+                }
             }
+            
+            // Apply all formatting in one batch call
+            if (formatRequests.length > 0) {
+                await googleSheets.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId,
+                    requestBody: { requests: formatRequests }
+                });
+            }
+        } catch (formatError) {
+            console.warn('Failed to apply formatting:', formatError.message);
         }
 
         // ---------- Лист 3: Все креативы ----------
-        {
-            const allTasks = await Task.find({})
-                .populate('buyer').populate('creator')
-                .sort([
-                    ['state', 1],
-                    ['completionDate', -1],
-                    ['createdAt', -1]
-                ]);
+        console.log('Creating "Все креативы" sheet...');
+        const allTasks = await Task.find({})
+            .populate('buyer').populate('creator')
+            .sort([
+                ['state', 1],
+                ['completionDate', -1],
+                ['createdAt', -1]
+            ]);
 
-            const getStatusText = (state) => {
-                switch (state) {
-                    case 'active': return 'Активно';
-                    case 'progress': return 'В работе';
-                    case 'wait': return 'На проверке';
-                    case 'done': return 'Выполнено';
-                    case 'failed': return 'Отклонено';
-                    case 'canceled': return 'Отменено';
-                    default: return state || 'Неизвестно';
-                }
-            };
+        const getStatusText = (state) => {
+            switch (state) {
+                case 'active': return 'Активно';
+                case 'progress': return 'В работе';
+                case 'wait': return 'На проверке';
+                case 'done': return 'Выполнено';
+                case 'failed': return 'Отклонено';
+                case 'canceled': return 'Отменено';
+                default: return state || 'Неизвестно';
+            }
+        };
 
-            const sheetName = 'Все креативы';
-            await googleSheets.addSheet(spreadsheetId, sheetName);
-            await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${sheetName}!A:Z` });
+        const allSheetName = 'Все креативы';
+        await googleSheets.addSheet(spreadsheetId, allSheetName);
+        await googleSheets.sheets.spreadsheets.values.clear({ spreadsheetId, range: `${allSheetName}!A:Z` });
 
-            const headers = ['Статус','Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
-            const values = [
-                headers,
-                ...allTasks.map(t => [
-                    getStatusText(t.state),
-                    t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
-                    t.name?.toString() || 'Без названия',
-                    t.workType?.toString() || 'Не указан',
-                    t.points || 0,
-                    t.bonus || 0,
-                    t.CTR || 0,
-                    t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
-                    t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
-                ])
-            ];
-            await googleSheets.writeData(spreadsheetId, `${sheetName}!A1`, values);
-        }
+        const allHeaders = ['Статус','Дата создания','Название','Вид работы','Баллы','Бонус','CTR','Дата план выдачи','Дата факт выдачи'];
+        const allValues = [
+            allHeaders,
+            ...allTasks.map(t => [
+                getStatusText(t.state),
+                t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : '',
+                t.name?.toString() || 'Без названия',
+                t.workType?.toString() || 'Не указан',
+                t.points || 0,
+                t.bonus || 0,
+                t.CTR || 0,
+                t.expectedDate ? new Date(t.expectedDate).toLocaleDateString('ru-RU') : '',
+                t.completionDate ? new Date(t.completionDate).toLocaleDateString('ru-RU') : ''
+            ])
+        ];
+        await googleSheets.writeData(spreadsheetId, `${allSheetName}!A1`, allValues);
 
         return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
     } catch (error) {

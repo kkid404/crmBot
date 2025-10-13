@@ -9,10 +9,16 @@ const actions = (bot) => {
     bot.action('update_sheets', async (ctx) => {
         let message;
         try {
-            await ctx.answerCbQuery('Начинаем обновление...');
+            // Answer callback query FIRST to prevent Telegram timeout
+            try {
+                await ctx.answerCbQuery('Начинаем обновление...');
+            } catch (cbError) {
+                // Callback query might already be answered or expired
+                console.warn('Failed to answer callback query:', cbError.message);
+            }
             
             // Show "updating" message
-            message = await ctx.reply('🔄 Обновление Google Sheets...\nЭто может занять некоторое время.');
+            message = await ctx.reply('🔄 Обновление Google Sheets...\nЭто может занять несколько минут. Пожалуйста, подождите...');
             
             // Run the update with improved table clearing
             console.log('Triggering table update from Telegram action...');

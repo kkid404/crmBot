@@ -57,10 +57,14 @@ class TableUpdaterService {
             await new Promise(resolve => setTimeout(resolve, 1000));
             console.log('Updating separate spreadsheet: Выполненные креативы new ...');
             try {
-                const url = await taskController.exportProgressLikeToNewSpreadsheet();
+                const url = await this.retryOperation(
+                    () => taskController.exportProgressLikeToNewSpreadsheet(),
+                    'Выполненные креативы new',
+                    2 // 2 retry attempts
+                );
                 links.taskSheets.push({ name: 'Выполненные креативы new', url });
             } catch (e) {
-                console.error('Failed to export "Выполненные креативы new":', e.message);
+                console.error('Failed to export "Выполненные креативы new" after retries:', e.message);
             }
 
             // 5. Export employee schedule with proper clearing
@@ -177,6 +181,39 @@ class TableUpdaterService {
         );
         
         return { spreadsheetId, sheetName: sheetTitle };
+    }
+
+    /**
+     * Retry operation with exponential backoff for network timeouts
+     */
+    async retryOperation(operation, operationName, maxRetries = 2) {
+        let lastError;
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                    console.log(`Retry attempt ${attempt} for "${operationName}" after ${delay}ms delay...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                
+                return await operation();
+            } catch (error) {
+                lastError = error;
+                const isTimeout = error.message?.includes('timeout') || 
+                                 error.message?.includes('ETIMEDOUT') ||
+                                 error.code === 'ETIMEDOUT';
+                
+                if (isTimeout && attempt < maxRetries) {
+                    console.warn(`Timeout on attempt ${attempt + 1} for "${operationName}", will retry...`);
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        throw lastError;
     }
 }
 
