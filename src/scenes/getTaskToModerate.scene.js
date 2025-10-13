@@ -58,6 +58,10 @@ const formatTaskInfo = (task) => {
     resultCount = 1;
   }
 
+  // Получаем информацию о типе работы и баллах
+  const workTypeInfo = task.workType || "Не указан";
+  const pointsInfo = task.points ? task.points : "Не указано";
+
   // Формируем текст с информацией о задании
   const taskInfo = `
 🎯 Название: ${task.name}
@@ -68,6 +72,8 @@ ${exampleLine}
 📝 Результат: ${
   resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
 }
+💎 Тип работы: ${workTypeInfo}
+⭐ Баллы: ${pointsInfo}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
 👨‍💼 Заказчик: ${buyerName}
