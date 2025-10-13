@@ -175,8 +175,13 @@ ${corrections}
         await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
+        // Увеличиваем баллы на 0.125 только если задача одобрена с первого раза (version === 1)
+        const currentPoints = task.points || 0;
+        const updatedPoints = version === 1 ? currentPoints + 0.125 : currentPoints;
+        
         const finalizedTask = await taskService.updateTask(taskId, {
           state: "done",
+          points: updatedPoints,
         });
         if (!finalizedTask) {
           console.error(`Failed to update and retrieve task ${taskId}`);
