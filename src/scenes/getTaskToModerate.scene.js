@@ -176,8 +176,14 @@ ${corrections}
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
         // Увеличиваем баллы на 0.125 только если задача одобрена с первого раза (version === 1)
+        // И НЕ является уникализацией, глубокой уникализацией или адаптацией
         const currentPoints = task.points || 0;
-        const updatedPoints = version === 1 ? currentPoints + 0.125 : currentPoints;
+        const isExcludedType = task.workType && (
+          task.workType.includes('Уникализация') || 
+          task.workType.includes('Глубокая уникализация') || 
+          task.workType.includes('Адаптация')
+        );
+        const updatedPoints = (version === 1 && !isExcludedType) ? currentPoints + 0.125 : currentPoints;
         
         const finalizedTask = await taskService.updateTask(taskId, {
           state: "done",
