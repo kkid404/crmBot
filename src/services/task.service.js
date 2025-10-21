@@ -193,9 +193,23 @@ class TaskService {
     // Метод для подсчета количества уникальных креативов для конкретного базового имени задачи
     static async getTaskSpecificUniqCount(baseName) {
         try {
-            const pattern = `${baseName}_U_`;
-            const count = await Task.countDocuments({ name: { $regex: pattern } });
-            return count;
+            const pattern = `^${baseName}_U_`;
+            const tasks = await Task.find({ name: { $regex: pattern } }, { name: 1 });
+            
+            // Находим максимальный номер среди существующих задач
+            let maxNumber = 0;
+            tasks.forEach(task => {
+                // Извлекаем номер из имени (после _U_)
+                const match = task.name.match(/_U_([0-9]+)$/);
+                if (match) {
+                    const number = parseInt(match[1], 10);
+                    if (number > maxNumber) {
+                        maxNumber = number;
+                    }
+                }
+            });
+            
+            return maxNumber;
         } catch (error) {
             throw new Error(`Ошибка при подсчете уникальных креативов для задачи ${baseName}: ${error.message}`);
         }
@@ -214,9 +228,23 @@ class TaskService {
     // Метод для подсчета количества глубоких уникальных креативов для конкретного базового имени задачи
     static async getTaskSpecificDeepUniqCount(baseName) {
         try {
-            const pattern = `DU_${baseName}_`;
-            const count = await Task.countDocuments({ name: { $regex: pattern } });
-            return count;
+            const pattern = `^DU_${baseName}_`;
+            const tasks = await Task.find({ name: { $regex: pattern } }, { name: 1 });
+            
+            // Находим максимальный номер среди существующих задач
+            let maxNumber = 0;
+            tasks.forEach(task => {
+                // Извлекаем номер из имени (последнее число после последнего подчеркивания)
+                const match = task.name.match(/_([0-9]+)$/);
+                if (match) {
+                    const number = parseInt(match[1], 10);
+                    if (number > maxNumber) {
+                        maxNumber = number;
+                    }
+                }
+            });
+            
+            return maxNumber;
         } catch (error) {
             throw new Error(`Ошибка при подсчете глубоких уникальных креативов для задачи ${baseName}: ${error.message}`);
         }
@@ -234,9 +262,23 @@ class TaskService {
     // Метод для подсчета количества адаптивных креативов для конкретного базового имени задачи
     static async getTaskSpecificAdaptivCount(baseName) {
         try {
-            const pattern = `${baseName}_A_`;
-            const count = await Task.countDocuments({ name: { $regex: pattern } });
-            return count;
+            const pattern = `^${baseName}_A_`;
+            const tasks = await Task.find({ name: { $regex: pattern } }, { name: 1 });
+            
+            // Находим максимальный номер среди существующих задач
+            let maxNumber = 0;
+            tasks.forEach(task => {
+                // Извлекаем номер из имени (после _A_)
+                const match = task.name.match(/_A_([0-9]+)$/);
+                if (match) {
+                    const number = parseInt(match[1], 10);
+                    if (number > maxNumber) {
+                        maxNumber = number;
+                    }
+                }
+            });
+            
+            return maxNumber;
         } catch (error) {
             throw new Error(`Ошибка при подсчете адаптивных креативов для задачи ${baseName}: ${error.message}`);
         }
