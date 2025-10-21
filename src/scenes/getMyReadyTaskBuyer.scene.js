@@ -11,6 +11,7 @@ const { doneTask } = require('../keyboards/doneTask.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const { Markup } = require('telegraf');
 const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
+const splitLongMessage = require('../utils/splitMessage.util');
 
 
 
@@ -767,7 +768,11 @@ ${rejectionMessage}
 
                 const composed = `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
 
-                await ctx.telegram.sendMessage(creator.tg_id, composed);
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messageParts = splitLongMessage(composed);
+                for (const part of messageParts) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
 
                 // Prompt to set expected time
                 await ctx.telegram.sendMessage(
@@ -824,7 +829,12 @@ ${rejectionMessage}
                     `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
 
                 const composedA = `${newTaskInfoA}\n\n— — —\n\n${oldTaskInfoA}`;
-                await ctx.telegram.sendMessage(creator.tg_id, composedA);
+                
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messagePartsA = splitLongMessage(composedA);
+                for (const part of messagePartsA) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
 
                 // Prompt to set expected time
                 await ctx.telegram.sendMessage(
@@ -882,7 +892,12 @@ ${rejectionMessage}
                     `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
 
                 const composedDU = `${newTaskInfoDU}\n\n— — —\n\n${oldTaskInfoDU}`;
-                await ctx.telegram.sendMessage(creator.tg_id, composedDU);
+                
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messagePartsDU = splitLongMessage(composedDU);
+                for (const part of messagePartsDU) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
 
                 // Prompt to set expected time
                 await ctx.telegram.sendMessage(

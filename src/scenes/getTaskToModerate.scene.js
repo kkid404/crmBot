@@ -11,6 +11,7 @@ const { backInline } = require("../keyboards/backInline.keyboard");
 const { back_to_task } = require("../keyboards/back_to_task.keyboard");
 const extractRegion = require("../utils/region.util");
 const TopicService = require("../services/topic.service");
+const splitLongMessage = require('../utils/splitMessage.util');
 const dayjs = require("dayjs");
 const ruLocale = require("dayjs/locale/ru.js");
 dayjs.locale(ruLocale);
@@ -172,7 +173,12 @@ ${corrections}
         // Отправляем сообщение креативщику (учтите, что findById теперь возвращает объект, а не массив)
         const creator = await userService.findById(task.creator);
         const buyer = await userService.findById(task.buyer);
-        await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
+        
+        // Разбиваем сообщение на части, если оно слишком длинное
+        const messageParts = splitLongMessage(creativeMessage);
+        for (const part of messageParts) {
+            await ctx.telegram.sendMessage(creator.tg_id, part);
+        }
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
         // Увеличиваем баллы на 0.125 только если задача одобрена с первого раза (version === 1)
