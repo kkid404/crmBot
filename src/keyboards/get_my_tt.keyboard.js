@@ -55,14 +55,18 @@ const creatorTasks = async (id, state = '', page = 0) => {
     let tasks = await taskService.getUserTasks(id, 'creator');
     
     // Сортируем задачи так, чтобы сначала шли задачи в работе (progress),
-    // затем остальные, причём внутри каждой группы задачи упорядочены по дате создания (сначала новые)
+    // затем задачи ожидающие времени (time), затем остальные,
+    // причём внутри каждой группы задачи упорядочены по дате создания (сначала новые)
     const progressTasks = tasks
         .filter(t => t.state === 'progress')
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const otherTasks = tasks
-        .filter(t => t.state !== 'progress')
+    const timeTasks = tasks
+        .filter(t => t.state === 'time')
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    tasks = [...progressTasks, ...otherTasks];
+    const otherTasks = tasks
+        .filter(t => t.state !== 'progress' && t.state !== 'time')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    tasks = [...progressTasks, ...timeTasks, ...otherTasks];
 
     // Статусы с соответствующими подписями
     const stateLabels = {

@@ -119,7 +119,12 @@ class TaskService {
 
             // Добавляем фильтр по статусу, если он указан
             if (state) {
-                query.state = state;
+                // Для креативщиков включаем задачи со state=time вместе с другими статусами
+                if (role === 'creator' && state === 'progress') {
+                    query.state = { $in: ['progress', 'time'] };
+                } else {
+                    query.state = state;
+                }
             }
 
             // Фильтруем по роли, если она указана

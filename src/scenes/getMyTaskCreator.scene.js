@@ -8,6 +8,8 @@ const userService = require('../services/user.service');
 const taskChekerService = require('../services/taskCheker.service');
 const taskService = require('../services/task.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
+const { creatorTasks } = require('../keyboards/get_my_tt.keyboard');
+const { start } = require('../keyboards/start.keyboard');
 
 
 const getMyTtCreatorScene = new BaseScene('getMyTtCreatorScene');
@@ -37,7 +39,7 @@ function splitLongText(text, maxLen = MAX_TG_TEXT) {
 async function editLongWithKeyboard(ctx, text, keyboard) {
     const parts = splitLongText(text);
     // первый кусок — редактирование исходного сообщения с клавиатурой
-    await ctx.editMessageText(parts[0], backInline());
+    await ctx.editMessageText(parts[0], keyboard);
     // остальные — отдельными сообщениями без клавиатуры
     for (let i = 1; i < parts.length; i++) {
         await ctx.reply(parts[i]);
@@ -207,7 +209,7 @@ ${correctionsText}${bonusStr}${ctrStr}`;
     const taskInfo = formatTaskInfo(task, exampleLine, correctionsText);
 
     // Редактируем сообщение с информацией о задаче (с разбиением длинного текста)
-    await editLongWithKeyboard(ctx, taskInfo, backInline());
+    await editLongWithKeyboard(ctx, taskInfo, backInline(task));
 
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
@@ -312,7 +314,7 @@ getMyTtCreatorScene.on('text', async (ctx) => {
         const task = await taskService.findTaskById(selectedTask);
         if (task) {
             await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
-            await replyLongWithKeyboard(ctx, ctx.session.taskInfo || "Информация о задаче недоступна", backInline());
+            await replyLongWithKeyboard(ctx, ctx.session.taskInfo || "Информация о задаче недоступна", backInline(task));
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
             const keyboard = await creatorTasks(user._id,  "progress");
@@ -427,6 +429,38 @@ getMyTtCreatorScene.action('show_examples', async (ctx) => {
     } catch (error) {
         console.error("Ошибка при показе примеров:", error);
         await ctx.answerCbQuery("Ошибка при показе примеров");
+    }
+});
+
+// Обработчик для кнопки "Установить время"
+getMyTtCreatorScene.action('set_expected_time', async (ctx) => {
+    try {
+        const taskId = ctx.session.selectedTask;
+        if (!taskId) {
+            await ctx.answerCbQuery('Задача не выбрана');
+            return;
+        }
+        
+        const task = await taskService.findTaskById(taskId);
+        if (!task) {
+            await ctx.answerCbQuery('Задача не найдена');
+            return;
+        }
+        
+        if (task.state !== 'time') {
+            await ctx.answerCbQuery('Эта задача не ожидает установки времени');
+            return;
+        }
+        
+        // Сохраняем ID задачи для сцены установки времени
+        ctx.session.taskIdForTimeSetting = taskId;
+        
+        // Переходим в сцену установки времени
+        await ctx.scene.enter('setExpectedTimeScene');
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка в обработчике set_expected_time:', error);
+        await ctx.answerCbQuery('Произошла ошибка. Пожалуйста, попробуйте позже.');
     }
 });
 
