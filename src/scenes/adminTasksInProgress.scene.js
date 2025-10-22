@@ -23,6 +23,18 @@ function buildTaskInfo(task) {
     const buyerName = task.buyer?.username || 'Не указан';
     const creatorName = task.creator?.username || 'Не назначен';
     
+    // Формируем информацию о статусе задачи
+    const stateLabels = {
+        'progress': '🔄 В работе',
+        'time': '⏰ Ожидает времени',
+        'wait': '⏳ На модерации',
+        'done': '✅ Выполнено',
+        'failed': '❌ Провалено',
+        'canceled': '🚫 Отменено',
+        'active': '🟢 Активно'
+    };
+    const stateLabel = stateLabels[task.state] || task.state;
+    
     // Формируем информацию о ожидаемой дате выполнения
     let expectedDateInfo = "Не указана";
     if (task.expectedDate) {
@@ -35,6 +47,7 @@ function buildTaskInfo(task) {
     // Формируем текст с информацией о задании
     const taskInfo = `
 🎯 Название: ${task.name}
+📊 Статус: ${stateLabel}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
@@ -182,8 +195,10 @@ adminTasksInProgressScene.enter(async (ctx) => {
             return;
         }
         
-        // Получаем все задачи в работе (status = progress)
-        const tasks = await taskService.getTasksByState('progress');
+        // Получаем все задачи в работе (status = progress и time)
+        const progressTasks = await taskService.getTasksByState('progress');
+        const timeTasks = await taskService.getTasksByState('time');
+        const tasks = [...progressTasks, ...timeTasks];
         
         if (!tasks || tasks.length === 0) {
             await ctx.reply("📋 В данный момент нет задач в работе.", await start(ctx.from.id));
@@ -389,8 +404,10 @@ adminTasksInProgressScene.action('back', async (ctx) => {
         // Сбрасываем выбранную задачу
         ctx.session.selectedTask = null;
         
-        // Получаем все задачи в работе
-        const tasks = await taskService.getTasksByState('progress');
+        // Получаем все задачи в работе (status = progress и time)
+        const progressTasks = await taskService.getTasksByState('progress');
+        const timeTasks = await taskService.getTasksByState('time');
+        const tasks = [...progressTasks, ...timeTasks];
         
         if (!tasks || tasks.length === 0) {
             await ctx.editMessageText("📋 В данный момент нет задач в работе.");
