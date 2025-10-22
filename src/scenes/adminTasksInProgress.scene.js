@@ -23,6 +23,12 @@ function buildTaskInfo(task) {
     const buyerName = task.buyer?.username || 'Не указан';
     const creatorName = task.creator?.username || 'Не назначен';
     
+    // Обрезаем описание если оно слишком длинное
+    let description = task.description || '';
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    }
+    
     // Формируем информацию о статусе задачи
     const stateLabels = {
         'progress': '🔄 В работе',
@@ -49,7 +55,7 @@ function buildTaskInfo(task) {
 🎯 Название: ${task.name}
 📊 Статус: ${stateLabel}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 👨‍💼 Заказчик: ${buyerName}
 👨‍🎨 Креативщик: ${creatorName}
@@ -61,7 +67,8 @@ ${exampleLine}
 }
 
 // Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
-const MAX_TG_TEXT = 4000;
+const MAX_TG_TEXT = 3500; // Уменьшено для безопасности при редактировании
+const MAX_DESCRIPTION_LENGTH = 2000; // Максимальная длина описания
 
 // Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
 function splitLongText(text, maxLen = MAX_TG_TEXT) {
@@ -84,8 +91,14 @@ function splitLongText(text, maxLen = MAX_TG_TEXT) {
 // Редактирует исходное сообщение первым куском и досылает остальные куски отдельными сообщениями
 async function editLongWithKeyboard(ctx, text, keyboard) {
     const parts = splitLongText(text);
-    // первый кусок — редактирование исходного сообщения с клавиатурой
-    await ctx.editMessageText(parts[0], keyboard);
+    try {
+        // первый кусок — редактирование исходного сообщения с клавиатурой
+        await ctx.editMessageText(parts[0], keyboard);
+    } catch (error) {
+        // Если редактирование не удалось (например, сообщение слишком длинное), отправляем новое
+        console.error('Ошибка редактирования сообщения:', error.message);
+        await ctx.reply(parts[0], keyboard);
+    }
     // остальные — отдельными сообщениями без клавиатуры
     for (let i = 1; i < parts.length; i++) {
         await ctx.reply(parts[i]);
