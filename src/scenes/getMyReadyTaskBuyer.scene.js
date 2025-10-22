@@ -12,6 +12,7 @@ const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const { Markup } = require('telegraf');
 const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
 const splitLongMessage = require('../utils/splitMessage.util');
+const { formatDateMSK, formatDateTimeMSK } = require('../utils/formatDate.util');
 
 
 
@@ -33,8 +34,8 @@ function buildTaskInfo(task, state) {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
-📅 Дата выполнения: ${task.completionDate.toLocaleDateString()}`;
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
+📅 Дата выполнения: ${formatDateMSK(task.completionDate)}`;
 
     // Добавляем информацию о CTR, если она задана
     if (task.CTR !== null && task.CTR !== undefined) {
@@ -714,7 +715,7 @@ ${rejectionMessage}
         // Базовое описание с учетом комментария заказчика
         const commentBlock = `\n\n📝 Комментарий заказчика:\n${commentText}`;
         // Дата и время запроса (для однозначной привязки комментария)
-        const commentDate = new Date().toLocaleString('ru-RU');
+        const commentDate = formatDateTimeMSK(new Date());
         // Базовое описание без предыдущих комментариев заказчика
         let baseDescription = String(task.description || '');
         // Отсекаем всё после первого маркера комментария (если он был)
@@ -753,7 +754,7 @@ ${rejectionMessage}
                 const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
                     `📌 Название: ${createdTask?.name}\n` +
                     `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${(createdTask?.createdAt ? new Date(createdTask.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+                    `📅 Создано: ${formatDateTimeMSK(createdTask?.createdAt || new Date())}`;
 
                 const hasMediaOld = Array.isArray(task.example_creative)
                   ? task.example_creative.length
@@ -764,7 +765,7 @@ ${rejectionMessage}
                     `🔗 Приложение: ${task.link_app}\n` +
                     `📝 Описание: ${task.description}\n` +
                     `🎨 Примеры креатива: ${hasMediaOld || 0}\n` +
-                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
 
                 const composed = `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
 
@@ -815,7 +816,7 @@ ${rejectionMessage}
                 const newTaskInfoA = `🆕 Новая задача (ADAPTIV)\n\n` +
                     `📌 Название: ${createdAdaptiv?.name}\n` +
                     `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${(createdAdaptiv?.createdAt ? new Date(createdAdaptiv.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+                    `📅 Создано: ${formatDateTimeMSK(createdAdaptiv?.createdAt || new Date())}`;
 
                 const hasMediaOldA = Array.isArray(task.example_creative)
                   ? task.example_creative.length
@@ -826,7 +827,7 @@ ${rejectionMessage}
                     `🔗 Приложение: ${task.link_app}\n` +
                     `📝 Описание: ${task.description}\n` +
                     `🎨 Примеры креатива: ${hasMediaOldA || 0}\n` +
-                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
 
                 const composedA = `${newTaskInfoA}\n\n— — —\n\n${oldTaskInfoA}`;
                 
@@ -878,7 +879,7 @@ ${rejectionMessage}
                 const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +
                     `📌 Название: ${createdTaskDU?.name}\n` +
                     `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${(createdTaskDU?.createdAt ? new Date(createdTaskDU.createdAt) : new Date()).toLocaleString('ru-RU')}`;
+                    `📅 Создано: ${formatDateTimeMSK(createdTaskDU?.createdAt || new Date())}`;
 
                 const hasMediaOldDU = Array.isArray(task.example_creative)
                   ? task.example_creative.length
@@ -889,7 +890,7 @@ ${rejectionMessage}
                     `🔗 Приложение: ${task.link_app}\n` +
                     `📝 Описание: ${task.description}\n` +
                     `🎨 Примеры креатива: ${hasMediaOldDU || 0}\n` +
-                    `📅 Создано: ${task.createdAt ? task.createdAt.toLocaleString('ru-RU') : ''}`;
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
 
                 const composedDU = `${newTaskInfoDU}\n\n— — —\n\n${oldTaskInfoDU}`;
                 

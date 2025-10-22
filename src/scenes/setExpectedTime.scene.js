@@ -3,6 +3,7 @@ const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
 const taskService = require('../services/task.service');
+const { formatDateMSK } = require('../utils/formatDate.util');
 
 const setExpectedTimeScene = new BaseScene('setExpectedTimeScene');
 

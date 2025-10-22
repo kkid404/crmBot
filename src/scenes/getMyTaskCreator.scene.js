@@ -1,8 +1,9 @@
 const { Scenes } = require('telegraf');
 const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
-const { start } = require('../keyboards/start.keyboard');
-const { creatorTasks } = require('../keyboards/get_my_tt.keyboard');
+const { back_to_task } = require('../keyboards/back_to_task.keyboard');
+const { back_or_done_Creator } = require('../keyboards/back_or_done_Creator.keyboard');
+const { formatDateMSK } = require('../utils/formatDate.util');
 const userService = require('../services/user.service');
 const taskChekerService = require('../services/taskCheker.service');
 const taskService = require('../services/task.service');
@@ -164,7 +165,7 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
         .map(r => {
             // Предпочтительно используем updatedAt, если он есть, иначе createdAt
             const dateSource = r.updatedAt || r.createdAt || Date.now();
-            const dateStr = new Date(dateSource).toLocaleDateString();
+            const dateStr = formatDateMSK(dateSource);
             return `${dateStr}\n${r.message}`;
         });
 
@@ -175,7 +176,7 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
     const formatTaskInfo = (task, exampleLine, correctionsText) => {
         // Форматируем ожидаемую дату выполнения
         const expectedDateStr = task.expectedDate ? 
-            new Date(task.expectedDate).toLocaleDateString() : 
+            formatDateMSK(task.expectedDate) : 
             'не указана';
         
         // Добавляем время выполнения, если оно указано
@@ -198,7 +199,7 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}
 ${correctionsText}${bonusStr}${ctrStr}`;
     }

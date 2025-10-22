@@ -12,6 +12,7 @@ const { back_to_task } = require("../keyboards/back_to_task.keyboard");
 const extractRegion = require("../utils/region.util");
 const TopicService = require("../services/topic.service");
 const splitLongMessage = require('../utils/splitMessage.util');
+const { formatDateMSK } = require('../utils/formatDate.util');
 const dayjs = require("dayjs");
 const ruLocale = require("dayjs/locale/ru.js");
 dayjs.locale(ruLocale);
@@ -45,7 +46,7 @@ const formatTaskInfo = (task) => {
   // Формируем информацию о ожидаемой дате выполнения
   let expectedDateInfo = "Не указана";
   if (task.expectedDate) {
-    expectedDateInfo = new Date(task.expectedDate).toLocaleDateString("ru-RU");
+    expectedDateInfo = formatDateMSK(task.expectedDate);
     if (task.expectedTime) {
       expectedDateInfo += ` к ${task.expectedTime}`;
     }
@@ -75,7 +76,7 @@ ${exampleLine}
 }
 💎 Тип работы: ${workTypeInfo}
 ⭐ Баллы: ${pointsInfo}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
 👨‍💼 Заказчик: ${buyerName}
     `;
@@ -160,7 +161,7 @@ const checkAndFinalizeTask = async (ctx) => {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
 
 правки:
 ${corrections}

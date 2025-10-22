@@ -7,6 +7,7 @@ const { date } = require('../keyboards/date.keyboard');
 const { done_or_cancel } = require('../keyboards/done_or_cancel.keyboard');
 const { start } = require('../keyboards/start.keyboard');
 const { setExpectedTimeKeyboard } = require('../keyboards/setExpectedTime.keyboard');
+const { formatDateMSK } = require('../utils/formatDate.util');
 const userService = require('../services/user.service');
 
 const { getPooledBuyerTasksKeyboard, markTaskAsSelectedFromPool, manualRefreshPooledTasksAction } = require('../keyboards/pooledBuyerTasks.keyboard');
@@ -99,7 +100,7 @@ async function processSelectedTask(ctx, taskId) {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
         `;
 
         ctx.session.taskInfo = taskInfo;
@@ -380,7 +381,7 @@ getTTScene.action("auto_assign", async (ctx) => {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
         `;
 
         ctx.session.taskInfo = taskInfo;
@@ -618,7 +619,7 @@ getTTScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное в�
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;
 
     ctx.session.taskInfo = taskInfo;

@@ -10,6 +10,7 @@ const { editTaskBuyerBot } = require('../keyboards/editTaskBuyerBot.keyboard');
 const { managementBuyerTasks } = require('../keyboards/managementBuyerTasks.keyboard');
 const { backInline } = require('../keyboards/backInline.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
+const { formatDateMSK } = require('../utils/formatDate.util');
 
 
 
@@ -32,13 +33,13 @@ function buildTaskInfo(task, state) {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;
 
     // Если состояние "progress" — добавляем дату выполнения
     // (если она есть в задаче)
     if (state === 'progress' && task.completionDate) {
-        taskInfo += `\n🗓 Дата выполнения: ${task.completionDate.toLocaleDateString()}`;
+        taskInfo += `\n🗓 Дата выполнения: ${formatDateMSK(task.completionDate)}`;
     }
 
     return taskInfo;
@@ -654,7 +655,7 @@ const formatTaskInfo = (task, creatorName) => {
     // Ожидаемая дата выполнения
     let dateInfo = '';
     if (task.expectedDate) {
-        const expectedDateStr = new Date(task.expectedDate).toLocaleDateString('ru-RU'); // <-- добавлена локаль
+        const expectedDateStr = formatDateMSK(task.expectedDate); // <-- добавлена локаль
         const expectedTimeStr = task.expectedTime ? ` к ${task.expectedTime}` : '';
         dateInfo = `⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}\n`;
     }
@@ -664,7 +665,7 @@ const formatTaskInfo = (task, creatorName) => {
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
-${dateInfo}📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+${dateInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;
 }
 

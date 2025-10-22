@@ -7,6 +7,7 @@ const userService = require('../services/user.service');
 const taskService = require('../services/task.service');
 const { backInline } = require('../keyboards/backInline.keyboard');
 const { back_or_done_Creator } = require('../keyboards/back_or_done_Creator.keyboard');
+const { formatDateMSK } = require('../utils/formatDate.util');
 const { points_for_creatives } = require('../keyboards/points_for_creatives.keyboard');
 const { Markup } = require('telegraf');
 
@@ -186,7 +187,7 @@ async function handleTaskSelect(ctx) {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
  `;
 
 
@@ -425,7 +426,7 @@ ttToModerateScene.on('text', async (ctx) => {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${task.description}
 ${exampleLine}
-📅 Дата создания: ${task.createdAt.toLocaleDateString()}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
                 `;
                 
                 await ctx.reply(taskInfo, back_or_done_Creator());
