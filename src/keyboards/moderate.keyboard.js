@@ -1,8 +1,13 @@
 const { Markup } = require('telegraf');
 const ruMessage = require('../lang/ru.json');
 
-function moderate(task) {
+function moderate(task, options = {}) {
   const buttons = [];
+  
+  // Добавляем кнопку полного описания если нужно
+  if (options.hasFullDescription) {
+    buttons.push([Markup.button.callback('📝 Полное описание', 'show_full_description')]);
+  }
   
   // Проверяем, есть ли медиа-примеры
   let hasMediaExample = false;

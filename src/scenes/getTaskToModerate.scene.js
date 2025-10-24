@@ -21,7 +21,7 @@ const { setExpectedTimeKeyboard } = require("../keyboards/setExpectedTime.keyboa
 
 const getTaskToModerateScene = new BaseScene("getTaskToModerateScene");
 
-const MAX_DESCRIPTION_LENGTH = 800; // Максимальная длина описания
+const MAX_DESCRIPTION_LENGTH = 600; // Максимальная длина описания
 
 const formatTaskInfo = (task) => {
   // Определяем, есть ли медиафайлы
@@ -66,9 +66,11 @@ const formatTaskInfo = (task) => {
   const workTypeInfo = task.workType || "Не указан";
   const pointsInfo = task.points ? task.points : "Не указано";
 
-  // Обрезаем описание если оно слишком длинное
-  let description = task.description || '';
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
+  // Ограничиваем описание
+  const fullDescription = task.description || '';
+  let description = fullDescription;
+  const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+  if (hasFullDescription) {
     description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
   }
 
@@ -89,7 +91,7 @@ ${exampleLine}
 👨‍💼 Заказчик: ${buyerName}
     `;
 
-  return taskInfo;
+  return { taskInfo, fullDescription, hasFullDescription };
 };
 
 // Функция для безопасного редактирования сообщения (если потребуется где‑то ещё)
@@ -488,7 +490,11 @@ getTaskToModerateScene.enter(async (ctx) => {
 
       if (task) {
         // Directly use the task information to display it
-        const taskInfo = formatTaskInfo(task);
+        const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task);
+        
+        // Сохраняем в сессии
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Display the task results (media)
         if (task.result) {
@@ -579,7 +585,9 @@ getTaskToModerateScene.enter(async (ctx) => {
         }
 
         // Display task info and moderation controls
-        const moderateKeyboard = moderate(task);
+        const moderateKeyboard = moderate(task, {
+          hasFullDescription: ctx.session.hasFullDescription
+        });
         const taskMessage = await ctx.reply(taskInfo, {
           ...moderateKeyboard,
           reply_markup: {
@@ -618,7 +626,11 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     }
 
     ctx.session.selectedTask = taskId;
-    const taskInfo = formatTaskInfo(task);
+    const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task);
+    
+    // Сохраняем в сессии
+    ctx.session.fullDescription = fullDescription;
+    ctx.session.hasFullDescription = hasFullDescription;
 
     // Отправляем результат креатива
     if (task.result) {
@@ -715,7 +727,9 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     // Отправляем описание задачи с удалением обычной клавиатуры
     // Разбиваем длинное сообщение на части, если необходимо
     const messageParts = splitLongMessage(taskInfo);
-    const moderateKeyboard = moderate(task);
+    const moderateKeyboard = moderate(task, {
+      hasFullDescription: ctx.session.hasFullDescription
+    });
     
     // Первая часть с клавиатурой
     const taskMessage = await ctx.reply(messageParts[0], {
@@ -952,13 +966,19 @@ getTaskToModerateScene.on("text", async (ctx) => {
     const task = await taskService.findTaskById(selectedTask);
     if (task) {
       await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
-      const taskInfo = formatTaskInfo(task);
+      const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task);
+      
+      // Сохраняем в сессии
+      ctx.session.fullDescription = fullDescription;
+      ctx.session.hasFullDescription = hasFullDescription;
       
       // Разбиваем длинное сообщение на части
       const messageParts = splitLongMessage(taskInfo);
       
       // Первая часть с клавиатурой
-      await ctx.reply(messageParts[0], moderate(task));
+      await ctx.reply(messageParts[0], moderate(task, {
+        hasFullDescription: ctx.session.hasFullDescription
+      }));
       
       // Остальные части без клавиатуры
       for (let i = 1; i < messageParts.length; i++) {
@@ -1016,7 +1036,11 @@ getTaskToModerateScene.action("show_example", async (ctx) => {
     // Инициализируем массив для ID сообщений
     ctx.session.exampleMediaMessageIds = [];
 
-    const taskInfo = formatTaskInfo(task);
+    const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task);
+    
+    // Сохраняем в сессии
+    ctx.session.fullDescription = fullDescription;
+    ctx.session.hasFullDescription = hasFullDescription;
     
     // Разбиваем длинное сообщение на части
     const messageParts = splitLongMessage(taskInfo);
@@ -1145,13 +1169,19 @@ getTaskToModerateScene.action("back_to_task", async (ctx) => {
       return;
     }
 
-    const taskInfo = formatTaskInfo(task);
+    const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task);
+    
+    // Сохраняем в сессии
+    ctx.session.fullDescription = fullDescription;
+    ctx.session.hasFullDescription = hasFullDescription;
     
     // Разбиваем длинное сообщение на части
     const messageParts = splitLongMessage(taskInfo);
     
     // Первая часть с клавиатурой
-    await ctx.editMessageText(messageParts[0], moderate(task));
+    await ctx.editMessageText(messageParts[0], moderate(task, {
+      hasFullDescription: ctx.session.hasFullDescription
+    }));
     
     // Остальные части без клавиатуры
     for (let i = 1; i < messageParts.length; i++) {
@@ -1303,6 +1333,28 @@ getTaskToModerateScene.action("back", async (ctx) => {
   } catch (error) {
     console.error('Error in moderate "back" action:', error);
     await ctx.answerCbQuery("Произошла ошибка при переходе назад");
+  }
+});
+
+// Обработчик для показа полного описания
+getTaskToModerateScene.action('show_full_description', async (ctx) => {
+  try {
+    const fullDescription = ctx.session.fullDescription;
+    if (!fullDescription) {
+      await ctx.answerCbQuery('Описание недоступно');
+      return;
+    }
+    
+    // Разбиваем на части и отправляем
+    const parts = splitLongMessage(fullDescription);
+    for (const part of parts) {
+      await ctx.reply(`📝 Полное описание:\n\n${part}`);
+    }
+    
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Ошибка при показе полного описания:', error);
+    await ctx.answerCbQuery('Произошла ошибка');
   }
 });
 

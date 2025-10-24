@@ -1,11 +1,18 @@
 const { Markup } = require('telegraf');
 const ruMessage = require('../lang/ru.json');
 
-function selected_or_back() {
-  const inlineKeyboard = Object.entries(ruMessage.keyboards.selected_or_back).map(([callbackData, buttonText]) => {
-    return [Markup.button.callback(buttonText, callbackData)]; // Оборачиваем каждую кнопку в массив
+function selected_or_back(options = {}) {
+  const buttons = [];
+  
+  if (options.hasFullDescription) {
+    buttons.push([Markup.button.callback('📝 Полное описание', 'show_full_description')]);
+  }
+  
+  Object.entries(ruMessage.keyboards.selected_or_back).forEach(([callbackData, buttonText]) => {
+    buttons.push([Markup.button.callback(buttonText, callbackData)]);
   });
-  return Markup.inlineKeyboard(inlineKeyboard);
+  
+  return Markup.inlineKeyboard(buttons);
 }
 
 module.exports = { selected_or_back };

@@ -96,11 +96,17 @@ async function processSelectedTask(ctx, taskId) {
             : "🎨 Примеры креатива: отсутствуют";
 
         // Ограничиваем длину описания чтобы избежать слишком длинных сообщений
-        const MAX_DESCRIPTION_LENGTH = 800;
-        let description = task.description || '';
-        if (description.length > MAX_DESCRIPTION_LENGTH) {
+        const MAX_DESCRIPTION_LENGTH = 600;
+        const fullDescription = task.description || '';
+        let description = fullDescription;
+        const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+        if (hasFullDescription) {
             description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
         }
+        
+        // Сохраняем в сессии
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         const taskInfo = `
 🎯 Название: ${task.name}
@@ -114,7 +120,9 @@ ${exampleLine}
         ctx.session.taskname = task.name;
 
         // Отображаем информацию о задаче и предлагаем выбрать дату или вернуться (с разбиением длинного текста)
-        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
+        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back({
+            hasFullDescription: ctx.session.hasFullDescription
+        }));
 
         ctx.session.exampleMediaMessageIds = [];
 
@@ -383,11 +391,17 @@ getTTScene.action("auto_assign", async (ctx) => {
             "🎨 Примеры креатива: отсутствуют";
 
         // Ограничиваем длину описания
-        const MAX_DESCRIPTION_LENGTH = 1500;
-        let description = task.description || '';
-        if (description.length > MAX_DESCRIPTION_LENGTH) {
+        const MAX_DESCRIPTION_LENGTH = 600;
+        const fullDescription = task.description || '';
+        let description = fullDescription;
+        const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+        if (hasFullDescription) {
             description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
         }
+        
+        // Сохраняем в сессии
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Формируем текст сообщения с информацией о задаче
         const taskInfo = `
@@ -402,7 +416,9 @@ ${exampleLine}
         ctx.session.taskname = task.name;
         
         // Отображаем информацию о задаче и предлагаем выбрать дату (с разбиением длинного текста)
-        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
+        await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back({
+            hasFullDescription: ctx.session.hasFullDescription
+        }));
         
         // Инициализируем массив для хранения ID отправленных медиасообщений
         ctx.session.exampleMediaMessageIds = [];
@@ -628,11 +644,17 @@ getTTScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное в�
         : "🎨 Примеры креатива: отсутствуют";
 
     // Ограничиваем длину описания
-    const MAX_DESCRIPTION_LENGTH = 800;
-    let description = task.description || '';
-    if (description.length > MAX_DESCRIPTION_LENGTH) {
+    const MAX_DESCRIPTION_LENGTH = 600;
+    const fullDescription = task.description || '';
+    let description = fullDescription;
+    const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+    if (hasFullDescription) {
         description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
     }
+    
+    // Сохраняем в сессии
+    ctx.session.fullDescription = fullDescription;
+    ctx.session.hasFullDescription = hasFullDescription;
 
     // Формируем текст сообщения с информацией о задаче
     const taskInfo = `
@@ -723,7 +745,9 @@ ${exampleLine}
         }
     }
     // Отправляем сообщение с информацией о задаче (с разбиением длинного текста)
-    await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back());
+    await editOrReplyLongWithKeyboard(ctx, taskInfo, selected_or_back({
+        hasFullDescription: ctx.session.hasFullDescription
+    }));
 
     await ctx.answerCbQuery(); // Подтверждаем обработку callback
 });
@@ -743,4 +767,25 @@ getTTScene.leave(async (ctx) => {
     ctx.session.waitingForTime = false;
 });
 
-module.exports = getTTScene
+// Обработчик для показа полного описания
+getTTScene.action('show_full_description', async (ctx) => {
+    try {
+        const fullDescription = ctx.session.fullDescription;
+        if (!fullDescription) {
+            await ctx.answerCbQuery('Описание недоступно');
+            return;
+        }
+        
+        const parts = splitLongMessage(fullDescription);
+        for (const part of parts) {
+            await ctx.reply(`📝 Полное описание:\n\n${part}`);
+        }
+        
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при показе полного описания:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
+
+module.exports = getTTScene;

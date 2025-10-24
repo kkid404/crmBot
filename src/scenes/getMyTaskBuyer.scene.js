@@ -176,7 +176,11 @@ MyTzBuyerScene.action('show_example', async (ctx) => {
             ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
             : 'не назначен';
 
-        const taskInfo = formatTaskInfo(task, creatorName);
+        const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task, creatorName);
+        
+        // Сохраняем в сессии
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Разбиваем длинное сообщение на части
         const messageParts = splitLongMessage(taskInfo);
@@ -293,7 +297,11 @@ MyTzBuyerScene.action('back_to_task', async (ctx) => {
             ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
             : 'не назначен';
 
-        const taskInfo = formatTaskInfo(task, creatorName);
+        const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task, creatorName);
+        
+        // Сохраняем в сессии
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Редактируем сообщение с описанием задания
         if (task.result) {
@@ -392,14 +400,18 @@ MyTzBuyerScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
         ? `${task.creator.firstName || ''} ${task.creator.lastName || ''}`.trim() || task.creator.username 
         : 'не назначен';
 
-    const taskInfo = formatTaskInfo(task, creatorName);
+    const { taskInfo, fullDescription, hasFullDescription } = formatTaskInfo(task, creatorName);
+    
+    // Сохраняем в сессии
+    ctx.session.fullDescription = fullDescription;
+    ctx.session.hasFullDescription = hasFullDescription;
 
     let keyboard;
     const currentState = ctx.session.stateGetTask;
     if (currentState === 'progress') {
       keyboard = backInline();
     } else {
-      keyboard = managementBuyerTasks();
+      keyboard = managementBuyerTasks({ hasFullDescription: ctx.session.hasFullDescription });
     }
   
     // Разбиваем длинное сообщение на части
@@ -675,22 +687,55 @@ MyTzBuyerScene.on('text', async (ctx) => {
 });
 
 // Функция форматирования информации о задаче с учетом времени выполнения
+const MAX_DESCRIPTION_LENGTH = 600;
+
 const formatTaskInfo = (task, creatorName) => {
     // Ожидаемая дата выполнения
     let dateInfo = '';
     if (task.expectedDate) {
-        const expectedDateStr = formatDateMSK(task.expectedDate); // <-- добавлена локаль
+        const expectedDateStr = formatDateMSK(task.expectedDate);
         const expectedTimeStr = task.expectedTime ? ` к ${task.expectedTime}` : '';
         dateInfo = `⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}\n`;
     }
     
+    // Ограничиваем описание
+    const fullDescription = task.description || '';
+    let description = fullDescription;
+    const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+    if (hasFullDescription) {
+        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    }
+    
     // Формируем всю строку информации о задаче
-    return `
+    const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${dateInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;
+    
+    return { taskInfo, fullDescription, hasFullDescription };
 }
+
+// Обработчик для показа полного описания
+MyTzBuyerScene.action('show_full_description', async (ctx) => {
+    try {
+        const fullDescription = ctx.session.fullDescription;
+        if (!fullDescription) {
+            await ctx.answerCbQuery('Описание недоступно');
+            return;
+        }
+        
+        const parts = splitLongMessage(fullDescription);
+        for (const part of parts) {
+            await ctx.reply(`📝 Полное описание:\n\n${part}`);
+        }
+        
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при показе полного описания:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
 
 module.exports = MyTzBuyerScene;

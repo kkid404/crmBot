@@ -1,11 +1,18 @@
 const { Markup } = require('telegraf');
 const ruMessage = require('../lang/ru.json');
 
-function managementBuyerTasks() {
-  const inlineKeyboard = Object.entries(ruMessage.keyboards.managementBuyerTasks).map(([callbackData, buttonText]) => {
-    return [Markup.button.callback(buttonText, callbackData)]; // Оборачиваем каждую кнопку в массив
+function managementBuyerTasks(options = {}) {
+  const buttons = [];
+  
+  if (options.hasFullDescription) {
+    buttons.push([Markup.button.callback('📝 Полное описание', 'show_full_description')]);
+  }
+  
+  Object.entries(ruMessage.keyboards.managementBuyerTasks).forEach(([callbackData, buttonText]) => {
+    buttons.push([Markup.button.callback(buttonText, callbackData)]);
   });
-  return Markup.inlineKeyboard(inlineKeyboard);
+  
+  return Markup.inlineKeyboard(buttons);
 }
 
 module.exports = { managementBuyerTasks };

@@ -18,6 +18,8 @@ const { formatDateMSK, formatDateTimeMSK } = require('../utils/formatDate.util')
 
 
 // Функция для сборки текста задачи
+const MAX_DESCRIPTION_LENGTH = 600;
+
 function buildTaskInfo(task, state) {
     // Определяем, есть ли медиафайлы
     const hasMedia = Array.isArray(task.example_creative) 
@@ -29,10 +31,18 @@ function buildTaskInfo(task, state) {
         ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
         : "🎨 Примеры креатива: отсутствуют";
 
+    // Ограничиваем описание
+    const fullDescription = task.description || '';
+    let description = fullDescription;
+    const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+    if (hasFullDescription) {
+        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    }
+
     // Базовый текст
     let taskInfo = `🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
 📅 Дата выполнения: ${formatDateMSK(task.completionDate)}`;
@@ -47,7 +57,7 @@ ${exampleLine}
         taskInfo += `\n💰 Бонус для креативщика: ${task.bonus}`;
     }  
 
-    return taskInfo;
+    return { taskInfo, fullDescription, hasFullDescription };
 }
 
 const watchReadyTzScene = new BaseScene('watchReadyTzScene');
@@ -75,7 +85,10 @@ watchReadyTzScene.action('show_example', async (ctx) => {
         ctx.session.exampleMediaMessageIds = [];
 
         // Формируем строку с информацией о задаче
-        const taskInfo = buildTaskInfo(task);
+        const { taskInfo, fullDescription, hasFullDescription } = buildTaskInfo(task);
+        
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Если медиа (креативы) были отправлены ранее, удаляем их
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
@@ -91,7 +104,7 @@ watchReadyTzScene.action('show_example', async (ctx) => {
         
         // Остальные части без клавиатуры
         for (let i = 1; i < messageParts.length; i++) {
-            await ctx.reply(messageParts[i]);
+            await ctx.reply(messageParts[i], replyCreative({ hasFullDescription: ctx.session.hasFullDescription }));
         }
 
         // Обеспечиваем обратную совместимость, преобразуя строку в массив
@@ -196,7 +209,10 @@ watchReadyTzScene.action('back_to_task', async (ctx) => {
             return;
         }
 
-        const taskInfo = buildTaskInfo(task);
+        const { taskInfo, fullDescription, hasFullDescription } = buildTaskInfo(task);
+        
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Удаляем все медиа-примеры, если они есть
         if (ctx.session.exampleMediaMessageIds && ctx.session.exampleMediaMessageIds.length > 0) {
@@ -645,7 +661,7 @@ watchReadyTzScene.on('text', async (ctx) => {
             });
             
             // Формируем сообщение для креативщика
-            const taskInfo = buildTaskInfo(task);
+            const { taskInfo } = buildTaskInfo(task);
             const creativeMessage = `
 ❌ Задание "${task.name}" отклонено заказчиком и требует доработки:
 
@@ -962,7 +978,10 @@ ${rejectionMessage}
             const task = await taskService.findTaskById(selectedTask);
             if (task) {
                 // Вместо простого сообщения с именем задачи отправляем полную информацию
-                const taskInfo = buildTaskInfo(task);
+                const { taskInfo, fullDescription, hasFullDescription } = buildTaskInfo(task);
+                
+                ctx.session.fullDescription = fullDescription;
+                ctx.session.hasFullDescription = hasFullDescription;
                 
                 // Отправляем результат задачи, если он есть
                 if (task.result) {
@@ -1100,6 +1119,27 @@ ${rejectionMessage}
         // Если мы здесь, значит пользователь отправил текст, который не обрабатывается ни одним из обработчиков
         // Возвращаем информацию о текущем шаге
         await ctx.reply(`Не удалось обработать ваше сообщение. Текущий шаг: ${step}. Пожалуйста, следуйте инструкциям.`);
+    }
+});
+
+// Обработчик для показа полного описания
+watchReadyTzScene.action('show_full_description', async (ctx) => {
+    try {
+        const fullDescription = ctx.session.fullDescription;
+        if (!fullDescription) {
+            await ctx.answerCbQuery('Описание недоступно');
+            return;
+        }
+        
+        const parts = splitLongMessage(fullDescription);
+        for (const part of parts) {
+            await ctx.reply(`📝 Полное описание:\n\n${part}`);
+        }
+        
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при показе полного описания:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
     }
 });
 
