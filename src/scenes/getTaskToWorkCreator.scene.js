@@ -776,7 +776,7 @@ getTTScene.action('show_full_description', async (ctx) => {
             return;
         }
         
-        const parts = splitLongMessage(fullDescription);
+        const parts = splitLongText(fullDescription);
         for (const part of parts) {
             await ctx.reply(`📝 Полное описание:\n\n${part}`);
         }
