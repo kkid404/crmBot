@@ -21,7 +21,7 @@ const { setExpectedTimeKeyboard } = require("../keyboards/setExpectedTime.keyboa
 
 const getTaskToModerateScene = new BaseScene("getTaskToModerateScene");
 
-const MAX_DESCRIPTION_LENGTH = 2000; // Максимальная длина описания
+const MAX_DESCRIPTION_LENGTH = 800; // Максимальная длина описания
 
 const formatTaskInfo = (task) => {
   // Определяем, есть ли медиафайлы

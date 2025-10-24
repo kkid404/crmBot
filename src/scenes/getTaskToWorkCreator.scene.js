@@ -95,10 +95,17 @@ async function processSelectedTask(ctx, taskId) {
             ? `🎨 Примеры креатива: ${task.example_creative.length}`
             : "🎨 Примеры креатива: отсутствуют";
 
+        // Ограничиваем длину описания чтобы избежать слишком длинных сообщений
+        const MAX_DESCRIPTION_LENGTH = 800;
+        let description = task.description || '';
+        if (description.length > MAX_DESCRIPTION_LENGTH) {
+            description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+        }
+
         const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
         `;
@@ -375,11 +382,18 @@ getTTScene.action("auto_assign", async (ctx) => {
             `🎨 Примеры креатива: ${task.example_creative.length}` : 
             "🎨 Примеры креатива: отсутствуют";
 
+        // Ограничиваем длину описания
+        const MAX_DESCRIPTION_LENGTH = 1500;
+        let description = task.description || '';
+        if (description.length > MAX_DESCRIPTION_LENGTH) {
+            description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+        }
+
         // Формируем текст сообщения с информацией о задаче
         const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
         `;
@@ -613,11 +627,18 @@ getTTScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регулярное в�
         ? `🎨 Примеры креатива: ${task.example_creative.length}`
         : "🎨 Примеры креатива: отсутствуют";
 
+    // Ограничиваем длину описания
+    const MAX_DESCRIPTION_LENGTH = 800;
+    let description = task.description || '';
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    }
+
     // Формируем текст сообщения с информацией о задаче
     const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;

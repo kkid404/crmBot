@@ -15,7 +15,7 @@ const { start } = require('../keyboards/start.keyboard');
 const getMyTtCreatorScene = new BaseScene('getMyTtCreatorScene');
 
 // Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
-const MAX_TG_TEXT = 3800; // Уменьшаем лимит для большей безопасности
+const MAX_TG_TEXT = 3000; // Уменьшаем лимит для большей безопасности
 
 // Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
 function splitLongText(text, maxLen = MAX_TG_TEXT) {
@@ -176,6 +176,32 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 
     // Формируем текст сообщения с информацией о задаче
     const formatTaskInfo = (task, exampleLine, correctionsText) => {
+        // Ограничиваем длину всех полей
+        const MAX_NAME_LENGTH = 150;
+        const MAX_LINK_LENGTH = 300;
+        const MAX_DESCRIPTION_LENGTH = 600;
+        const MAX_CORRECTIONS_LENGTH = 400;
+        
+        let name = task.name || '';
+        if (name.length > MAX_NAME_LENGTH) {
+            name = name.substring(0, MAX_NAME_LENGTH) + '...';
+        }
+        
+        let link = task.link_app || '';
+        if (link.length > MAX_LINK_LENGTH) {
+            link = link.substring(0, MAX_LINK_LENGTH) + '...';
+        }
+        
+        let description = task.description || '';
+        if (description.length > MAX_DESCRIPTION_LENGTH) {
+            description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+        }
+        
+        let limitedCorrections = correctionsText;
+        if (limitedCorrections.length > MAX_CORRECTIONS_LENGTH) {
+            limitedCorrections = limitedCorrections.substring(0, MAX_CORRECTIONS_LENGTH) + '\n...(правки обрезаны)';
+        }
+        
         // Форматируем ожидаемую дату выполнения
         const expectedDateStr = task.expectedDate ? 
             formatDateMSK(task.expectedDate) : 
@@ -197,13 +223,13 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
             '';
         
         return `
-🎯 Название: ${task.name}
-🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+🎯 Название: ${name}
+🔗 Ссылка на приложение: ${link}
+📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}
-${correctionsText}${bonusStr}${ctrStr}`;
+${limitedCorrections}${bonusStr}${ctrStr}`;
     }
 
     const taskInfo = formatTaskInfo(task, exampleLine, correctionsText);
