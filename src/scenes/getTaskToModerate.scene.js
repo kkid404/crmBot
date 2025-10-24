@@ -21,6 +21,8 @@ const { setExpectedTimeKeyboard } = require("../keyboards/setExpectedTime.keyboa
 
 const getTaskToModerateScene = new BaseScene("getTaskToModerateScene");
 
+const MAX_DESCRIPTION_LENGTH = 2000; // Максимальная длина описания
+
 const formatTaskInfo = (task) => {
   // Определяем, есть ли медиафайлы
   const hasMedia = Array.isArray(task.example_creative)
@@ -64,11 +66,17 @@ const formatTaskInfo = (task) => {
   const workTypeInfo = task.workType || "Не указан";
   const pointsInfo = task.points ? task.points : "Не указано";
 
+  // Обрезаем описание если оно слишком длинное
+  let description = task.description || '';
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+  }
+
   // Формируем текст с информацией о задании
   const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
-📝 Описание: ${task.description}
+📝 Описание: ${description}
 ${exampleLine}
 👨‍💻 Креатор: ${task.creator?.username || "Не назначен"}
 📝 Результат: ${
@@ -705,8 +713,12 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     }
 
     // Отправляем описание задачи с удалением обычной клавиатуры
+    // Разбиваем длинное сообщение на части, если необходимо
+    const messageParts = splitLongMessage(taskInfo);
     const moderateKeyboard = moderate(task);
-    const taskMessage = await ctx.reply(taskInfo, {
+    
+    // Первая часть с клавиатурой
+    const taskMessage = await ctx.reply(messageParts[0], {
       ...moderateKeyboard,
       reply_markup: {
         ...moderateKeyboard.reply_markup,
@@ -714,6 +726,11 @@ getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
       },
     });
     ctx.session.taskMessageId = taskMessage.message_id;
+    
+    // Остальные части без клавиатуры
+    for (let i = 1; i < messageParts.length; i++) {
+      await ctx.reply(messageParts[i]);
+    }
 
     await ctx.answerCbQuery();
   } catch (error) {
