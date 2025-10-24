@@ -67,8 +67,8 @@ ${exampleLine}
 }
 
 // Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
-const MAX_TG_TEXT = 3500; // Уменьшено для безопасности при редактировании
-const MAX_DESCRIPTION_LENGTH = 2000; // Максимальная длина описания
+const MAX_TG_TEXT = 2500; // Уменьшено для безопасности при редактировании с клавиатурами
+const MAX_DESCRIPTION_LENGTH = 1000; // Максимальная длина описания
 
 // Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
 function splitLongText(text, maxLen = MAX_TG_TEXT) {
@@ -97,6 +97,13 @@ async function editLongWithKeyboard(ctx, text, keyboard) {
     } catch (error) {
         // Если редактирование не удалось (например, сообщение слишком длинное), отправляем новое
         console.error('Ошибка редактирования сообщения:', error.message);
+        try {
+            // Пытаемся удалить исходное сообщение
+            await ctx.deleteMessage();
+        } catch (deleteError) {
+            console.error('Не удалось удалить исходное сообщение:', deleteError.message);
+        }
+        // Отправляем новое сообщение с клавиатурой
         await ctx.reply(parts[0], keyboard);
     }
     // остальные — отдельными сообщениями без клавиатуры
