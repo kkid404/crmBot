@@ -83,8 +83,16 @@ watchReadyTzScene.action('show_example', async (ctx) => {
             ctx.session.exampleMediaMessageIds = [];
         }
 
-        // Отправляем информацию о задаче
-        await ctx.editMessageText(taskInfo, back_to_task());
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.editMessageText(messageParts[0], back_to_task());
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
 
         // Обеспечиваем обратную совместимость, преобразуя строку в массив
         if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {

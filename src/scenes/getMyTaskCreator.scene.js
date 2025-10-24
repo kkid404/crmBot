@@ -15,7 +15,7 @@ const { start } = require('../keyboards/start.keyboard');
 const getMyTtCreatorScene = new BaseScene('getMyTtCreatorScene');
 
 // Максимальная длина текста для одного сообщения Telegram (запас от лимита 4096)
-const MAX_TG_TEXT = 4000;
+const MAX_TG_TEXT = 3800; // Уменьшаем лимит для большей безопасности
 
 // Универсальная функция разбиения длинного текста на части, стараясь резать по пустым строкам или строкам
 function splitLongText(text, maxLen = MAX_TG_TEXT) {
@@ -314,7 +314,9 @@ getMyTtCreatorScene.on('text', async (ctx) => {
         const task = await taskService.findTaskById(selectedTask);
         if (task) {
             await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
-            await replyLongWithKeyboard(ctx, ctx.session.taskInfo || "Информация о задаче недоступна", backInline(task));
+            // Всегда используем разбиение на части для безопасности
+            const infoToSend = ctx.session.taskInfo || "Информация о задаче недоступна";
+            await replyLongWithKeyboard(ctx, infoToSend, backInline(task));
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");
             const keyboard = await creatorTasks(user._id,  "progress");

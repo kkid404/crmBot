@@ -953,7 +953,17 @@ getTaskToModerateScene.on("text", async (ctx) => {
     if (task) {
       await ctx.reply(`Вы просматриваете задачу: ${task.name}`);
       const taskInfo = formatTaskInfo(task);
-      await ctx.reply(taskInfo, moderate(task));
+      
+      // Разбиваем длинное сообщение на части
+      const messageParts = splitLongMessage(taskInfo);
+      
+      // Первая часть с клавиатурой
+      await ctx.reply(messageParts[0], moderate(task));
+      
+      // Остальные части без клавиатуры
+      for (let i = 1; i < messageParts.length; i++) {
+        await ctx.reply(messageParts[i]);
+      }
     } else {
       await ctx.reply(
         "Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:"
@@ -1007,7 +1017,17 @@ getTaskToModerateScene.action("show_example", async (ctx) => {
     ctx.session.exampleMediaMessageIds = [];
 
     const taskInfo = formatTaskInfo(task);
-    await ctx.editMessageText(taskInfo, back_to_task());
+    
+    // Разбиваем длинное сообщение на части
+    const messageParts = splitLongMessage(taskInfo);
+    
+    // Первая часть с клавиатурой
+    await ctx.editMessageText(messageParts[0], back_to_task());
+    
+    // Остальные части без клавиатуры
+    for (let i = 1; i < messageParts.length; i++) {
+      await ctx.reply(messageParts[i]);
+    }
 
     // Обеспечиваем обратную совместимость, преобразуя строку в массив
     if (
@@ -1126,7 +1146,17 @@ getTaskToModerateScene.action("back_to_task", async (ctx) => {
     }
 
     const taskInfo = formatTaskInfo(task);
-    await ctx.editMessageText(taskInfo, moderate(task));
+    
+    // Разбиваем длинное сообщение на части
+    const messageParts = splitLongMessage(taskInfo);
+    
+    // Первая часть с клавиатурой
+    await ctx.editMessageText(messageParts[0], moderate(task));
+    
+    // Остальные части без клавиатуры
+    for (let i = 1; i < messageParts.length; i++) {
+      await ctx.reply(messageParts[i]);
+    }
 
     // Отправляем результат креатива
     if (task.result) {

@@ -11,6 +11,7 @@ const { managementBuyerTasks } = require('../keyboards/managementBuyerTasks.keyb
 const { backInline } = require('../keyboards/backInline.keyboard');
 const { back_to_task } = require('../keyboards/back_to_task.keyboard');
 const { formatDateMSK } = require('../utils/formatDate.util');
+const splitLongMessage = require('../utils/splitMessage.util');
 
 
 
@@ -177,9 +178,16 @@ MyTzBuyerScene.action('show_example', async (ctx) => {
 
         const taskInfo = formatTaskInfo(task, creatorName);
 
-
-        // Отправляем информацию о задаче
-        await ctx.editMessageText(taskInfo, back_to_task());
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.editMessageText(messageParts[0], back_to_task());
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
 
         // Обеспечиваем обратную совместимость, преобразуя строку в массив
         if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
@@ -325,8 +333,16 @@ MyTzBuyerScene.action('back_to_task', async (ctx) => {
           keyboard = managementBuyerTasks();
         }
       
-    
-        await ctx.reply(taskInfo, keyboard);
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.reply(messageParts[0], keyboard);
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
 
         // Подтверждаем callback
         await ctx.answerCbQuery();
@@ -386,14 +402,22 @@ MyTzBuyerScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
       keyboard = managementBuyerTasks();
     }
   
-    // Удаляем обычную клавиатуру перед отправкой inline клавиатуры
-    await ctx.reply(taskInfo, {
+    // Разбиваем длинное сообщение на части
+    const messageParts = splitLongMessage(taskInfo);
+    
+    // Первая часть с клавиатурой
+    await ctx.reply(messageParts[0], {
         ...keyboard,
         reply_markup: {
             ...keyboard.reply_markup,
             remove_keyboard: true
         }
     });
+    
+    // Остальные части без клавиатуры
+    for (let i = 1; i < messageParts.length; i++) {
+        await ctx.reply(messageParts[i]);
+    }
 
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
