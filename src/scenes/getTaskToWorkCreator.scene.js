@@ -283,6 +283,20 @@ getTTScene.action("select", async (ctx) => {
     await ctx.editMessageText(ruMessage.messages.getTT.select_date, await date());
 })
 
+// Обработчик для возврата к задаче из выбора даты
+getTTScene.action("back_to_task", async (ctx) => {
+    try {
+        // Возвращаем информацию о задаче с клавиатурой выбора
+        await editOrReplyLongWithKeyboard(ctx, ctx.session.taskInfo, selected_or_back({
+            hasFullDescription: ctx.session.hasFullDescription
+        }));
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при возврате к задаче:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+})
+
 getTTScene.action(/^date_.+$/, async (ctx) => { // Регулярное выражение для date_*
 
     // Извлекаем динамическую часть (например, "4.12" из "date_4.12")

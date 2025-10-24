@@ -20,6 +20,9 @@ function date() {
         keyboard.push([Markup.button.callback(formattedDate, `date_${formattedDate}`)]);
     }
 
+    // Добавляем кнопку "Назад"
+    keyboard.push([Markup.button.callback('⬅️ Назад', 'back_to_task')]);
+
     // Возвращаем inline-клавиатуру
     return Markup.inlineKeyboard(keyboard);
 }
