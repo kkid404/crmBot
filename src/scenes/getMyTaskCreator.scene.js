@@ -176,30 +176,20 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
 
     // Формируем текст сообщения с информацией о задаче
     const formatTaskInfo = (task, exampleLine, correctionsText) => {
-        // Ограничиваем длину всех полей
-        const MAX_NAME_LENGTH = 150;
-        const MAX_LINK_LENGTH = 300;
+        // Ограничиваем длину только описания и правок
         const MAX_DESCRIPTION_LENGTH = 600;
         const MAX_CORRECTIONS_LENGTH = 400;
         
-        let name = task.name || '';
-        if (name.length > MAX_NAME_LENGTH) {
-            name = name.substring(0, MAX_NAME_LENGTH) + '...';
-        }
-        
-        let link = task.link_app || '';
-        if (link.length > MAX_LINK_LENGTH) {
-            link = link.substring(0, MAX_LINK_LENGTH) + '...';
-        }
-        
         let description = task.description || '';
-        if (description.length > MAX_DESCRIPTION_LENGTH) {
+        let hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
+        if (hasFullDescription) {
             description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
         }
         
         let limitedCorrections = correctionsText;
-        if (limitedCorrections.length > MAX_CORRECTIONS_LENGTH) {
-            limitedCorrections = limitedCorrections.substring(0, MAX_CORRECTIONS_LENGTH) + '\n...(правки обрезаны)';
+        let hasFullCorrections = correctionsText.length > MAX_CORRECTIONS_LENGTH;
+        if (hasFullCorrections) {
+            limitedCorrections = correctionsText.substring(0, MAX_CORRECTIONS_LENGTH) + '\n...';
         }
         
         // Форматируем ожидаемую дату выполнения
@@ -223,8 +213,8 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
             '';
         
         return `
-🎯 Название: ${name}
-🔗 Ссылка на приложение: ${link}
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${description}
 ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
@@ -234,8 +224,17 @@ ${limitedCorrections}${bonusStr}${ctrStr}`;
 
     const taskInfo = formatTaskInfo(task, exampleLine, correctionsText);
 
+    // Сохраняем полные данные в сессии для кнопок
+    ctx.session.fullDescription = task.description;
+    ctx.session.fullCorrections = correctionsText;
+    ctx.session.hasFullDescription = (task.description || '').length > 600;
+    ctx.session.hasFullCorrections = correctionsText.length > 400;
+
     // Редактируем сообщение с информацией о задаче (с разбиением длинного текста)
-    await editLongWithKeyboard(ctx, taskInfo, backInline(task));
+    await editLongWithKeyboard(ctx, taskInfo, backInline(task, {
+        hasFullDescription: ctx.session.hasFullDescription,
+        hasFullCorrections: ctx.session.hasFullCorrections
+    }));
 
     ctx.session.taskInfo = taskInfo;
     ctx.session.taskname = task.name;
@@ -489,6 +488,50 @@ getMyTtCreatorScene.action('set_expected_time', async (ctx) => {
     } catch (error) {
         console.error('Ошибка в обработчике set_expected_time:', error);
         await ctx.answerCbQuery('Произошла ошибка. Пожалуйста, попробуйте позже.');
+    }
+});
+
+// Обработчик для показа полного описания
+getMyTtCreatorScene.action('show_full_description', async (ctx) => {
+    try {
+        const fullDescription = ctx.session.fullDescription;
+        if (!fullDescription) {
+            await ctx.answerCbQuery('Описание недоступно');
+            return;
+        }
+        
+        // Разбиваем на части и отправляем
+        const parts = splitLongText(fullDescription);
+        for (const part of parts) {
+            await ctx.reply(`📝 Полное описание:\n\n${part}`);
+        }
+        
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при показе полного описания:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
+
+// Обработчик для показа полных правок
+getMyTtCreatorScene.action('show_full_corrections', async (ctx) => {
+    try {
+        const fullCorrections = ctx.session.fullCorrections;
+        if (!fullCorrections) {
+            await ctx.answerCbQuery('Правки отсутствуют');
+            return;
+        }
+        
+        // Разбиваем на части и отправляем
+        const parts = splitLongText(fullCorrections);
+        for (const part of parts) {
+            await ctx.reply(`✏️ Полные правки:\n\n${part}`);
+        }
+        
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Ошибка при показе полных правок:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
     }
 });
 
