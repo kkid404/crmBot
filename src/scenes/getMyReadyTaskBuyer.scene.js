@@ -441,7 +441,11 @@ watchReadyTzScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
             task.example_creative = [];
         }
 
-        const taskInfo = buildTaskInfo(task);
+        const { taskInfo, fullDescription, hasFullDescription } = buildTaskInfo(task);
+        
+        // Сохраняем в сессии для использования позже
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
 
         // Инициализируем массив для хранения ID отправленных медиасообщений
         ctx.session.exampleMediaMessageIds = [];
