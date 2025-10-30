@@ -88,7 +88,6 @@ async function handleText(ctx) {
                     const notificationText = `⏳ Новая задача требует установки времени:
 
 🎯 Задача: "${taskData.name}"
-👨‍💼 Баер: @${buyerName}
 📝 Описание: ${taskData.description}
 
 Пожалуйста, установите ожидаемое время выполнения:`;

@@ -108,7 +108,6 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
                 const notificationText = `⏳ Новая задача требует установки времени:
 
 🎯 Задача: "${taskData.name}"
-👨‍💼 Баер: @${buyerName}
 📝 Описание: ${taskData.description}
 
 Пожалуйста, установите ожидаемое время выполнения:`;
