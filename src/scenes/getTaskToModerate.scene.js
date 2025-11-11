@@ -84,8 +84,12 @@ ${exampleLine}
 📝 Результат: ${
   resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
 }
+
+━━━━━━━━━━━━━━━━━━━━━━
 💎 Тип работы: ${workTypeInfo}
-⭐ Баллы: ${pointsInfo}
+⭐ Стандартные баллы: ${pointsInfo}
+━━━━━━━━━━━━━━━━━━━━━━
+
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
 👨‍💼 Заказчик: ${buyerName}
@@ -192,19 +196,10 @@ ${corrections}
         }
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
-        // Увеличиваем баллы на 0.125 только если задача одобрена с первого раза (version === 1)
-        // И НЕ является уникализацией, глубокой уникализацией или адаптацией
-        const currentPoints = task.points || 0;
-        const isExcludedType = task.workType && (
-          task.workType.includes('Уникализация') || 
-          task.workType.includes('Глубокая уникализация') || 
-          task.workType.includes('Адаптация')
-        );
-        const updatedPoints = (version === 1 && !isExcludedType) ? currentPoints + 0.125 : currentPoints;
-        
+        // Баллы теперь устанавливаются модератором вручную, не автоматически
         const finalizedTask = await taskService.updateTask(taskId, {
           state: "done",
-          points: updatedPoints,
+          points: task.points, // Используем баллы, установленные модератором
         });
         if (!finalizedTask) {
           console.error(`Failed to update and retrieve task ${taskId}`);
@@ -383,9 +378,15 @@ ${corrections}
             console.log(
               `[Moderation->Creator] Sending approval message for task ${finalizedTask._id}`
             );
+            
+            // Формируем уведомление с информацией о баллах и типе работы
+            const workTypeText = finalizedTask.workType || 'Не указан';
+            const pointsText = finalizedTask.points || 0;
+            const approvalMessage = `✅ ${finalizedTask.name} Одобрено!\n\n⭐ Начислено баллов: ${pointsText}\n💎 Тип работы: ${workTypeText}`;
+            
             const approveMsg = await ctx.telegram.sendMessage(
               creator.tg_id,
-              `✅ ${finalizedTask.name} Одобрено!`
+              approvalMessage
             );
             console.log(
               `[Moderation->Creator] Approval message sent. message_id=${approveMsg?.message_id}`
@@ -821,21 +822,22 @@ getTaskToModerateScene.action("done", async (ctx) => {
       return;
     }
 
-    // Создаем запись проверки с одобрением
-    await taskChekerService.createTaskChecker({
+    // Сохраняем в сессии данные для ожидания ввода баллов
+    ctx.session.waitingForPoints = true;
+    ctx.session.pendingApproval = {
       taskId,
-      chekerId: user._id,
-      status: "done",
       version,
-      message: "Задание принято",
-    });
+      userId: user._id,
+    };
 
-    // Запускаем логику финализации (без изменения интерфейса для чекера)
-    await checkAndFinalizeTask(ctx);
+    // Получаем информацию о типе работы и стандартных баллах
+    const workTypeInfo = task.workType || "Не указан";
+    const standardPoints = task.points || 0;
 
-    // Отправляем сообщение, что ответ принят, и показываем стартовую клавиатуру
-    await ctx.reply("Ответ принят", await start(ctx.from.id));
-    ctx.scene.leave();
+    await ctx.reply(
+      `✅ Задание одобрено!\n\n💎 Тип работы: ${workTypeInfo}\n⭐ Стандартные баллы за этот тип: ${standardPoints}\n\nПожалуйста, введите общее количество баллов для начисления креативщику:`
+    );
+    await ctx.answerCbQuery();
   } catch (error) {
     console.error('Error in moderate "done" action:', error);
     await ctx.answerCbQuery("Произошла ошибка при принятии задания");
@@ -910,6 +912,60 @@ getTaskToModerateScene.action("cancel", async (ctx) => {
 
 // Обработчик текстовых сообщений для ввода правок
 getTaskToModerateScene.on("text", async (ctx) => {
+  // Обработка ввода баллов при одобрении задачи
+  if (ctx.session.waitingForPoints && ctx.session.pendingApproval) {
+    try {
+      const pointsInput = ctx.message.text.trim();
+      const points = parseFloat(pointsInput);
+      
+      // Проверяем корректность ввода
+      if (isNaN(points) || points < 0) {
+        await ctx.reply(
+          "⚠️ Некорректное значение. Пожалуйста, введите положительное число (например: 1 или 0.5)"
+        );
+        return;
+      }
+
+      const { taskId, version, userId } = ctx.session.pendingApproval;
+      const task = await taskService.findTaskById(taskId);
+      
+      if (!task) {
+        await ctx.reply("Задача не найдена");
+        return;
+      }
+
+      // Обновляем баллы в задаче
+      await taskService.updateTask(taskId, { points });
+
+      // Создаем запись проверки с одобрением
+      await taskChekerService.createTaskChecker({
+        taskId,
+        chekerId: userId,
+        status: "done",
+        version,
+        message: `Задание принято с ${points} баллами`,
+      });
+
+      // Сбрасываем флаги ожидания
+      delete ctx.session.waitingForPoints;
+      delete ctx.session.pendingApproval;
+
+      // Запускаем логику финализации задания
+      await checkAndFinalizeTask(ctx);
+
+      // Отправляем стартовое меню с сообщением об успешном ответе
+      await ctx.reply(
+        `✅ Ответ принят. Креативщику начислено ${points} баллов.`,
+        await start(ctx.from.id)
+      );
+      ctx.scene.leave();
+    } catch (error) {
+      console.error("Error processing points input:", error);
+      await ctx.reply("Ошибка при обработке баллов");
+    }
+    return;
+  }
+
   if (ctx.session.waitingForCorrection && ctx.session.pendingCancelVote) {
     try {
       const correction = ctx.message.text;

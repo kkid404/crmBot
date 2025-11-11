@@ -26,9 +26,9 @@ async function handlePoints(ctx) {
     const taskInfo = {
         state: "wait",
         completionDate: today,
-        points: Number(points),
+        points: Number(points), // Сохраняем стандартное значение для отображения модератору
         result: ctx.session.mediaFiles, // Теперь используем массив файлов вместо одного
-        workType: workType // Добавляем тип работы
+        workType: workType // Добавляем тип работы для модератора
     };
     
     // Проверяем тип работы и устанавливаем соответствующий бонус
