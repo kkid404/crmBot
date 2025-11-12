@@ -196,10 +196,19 @@ ${corrections}
         }
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
-        // Баллы теперь устанавливаются модератором вручную, не автоматически
+        // Баллы устанавливаются модератором вручную, но добавляем +0.125 при первом одобрении
+        const currentPoints = task.points || 0;
+        const isExcludedType = task.workType && (
+          task.workType.includes('Уникализация') || 
+          task.workType.includes('Глубокая уникализация') || 
+          task.workType.includes('Адаптация')
+        );
+        // Добавляем бонус 0.125 только при первом одобрении (version === 1) и для не-исключенных типов
+        const updatedPoints = (version === 1 && !isExcludedType) ? currentPoints + 0.125 : currentPoints;
+        
         const finalizedTask = await taskService.updateTask(taskId, {
           state: "done",
-          points: task.points, // Используем баллы, установленные модератором
+          points: updatedPoints,
         });
         if (!finalizedTask) {
           console.error(`Failed to update and retrieve task ${taskId}`);
