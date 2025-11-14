@@ -598,7 +598,12 @@ getTaskToModerateScene.enter(async (ctx) => {
         const moderateKeyboard = moderate(task, {
           hasFullDescription: ctx.session.hasFullDescription
         });
-        const taskMessage = await ctx.reply(taskInfo, {
+        
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        const taskMessage = await ctx.reply(messageParts[0], {
           ...moderateKeyboard,
           reply_markup: {
             ...moderateKeyboard.reply_markup,
@@ -606,6 +611,11 @@ getTaskToModerateScene.enter(async (ctx) => {
           },
         });
         ctx.session.taskMessageId = taskMessage.message_id;
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+          await ctx.reply(messageParts[i]);
+        }
 
         return;
       }

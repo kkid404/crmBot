@@ -10,6 +10,7 @@ const { back_or_done_Creator } = require('../keyboards/back_or_done_Creator.keyb
 const { formatDateMSK } = require('../utils/formatDate.util');
 const { points_for_creatives } = require('../keyboards/points_for_creatives.keyboard');
 const { Markup } = require('telegraf');
+const splitLongMessage = require('../utils/splitMessage.util');
 
 const ttToModerateScene = new BaseScene('ttToModerateScene');
 
@@ -270,13 +271,23 @@ ${exampleLine}
     
     // Редактируем сообщение с информацией о задаче
     const keyboard = back_or_done_Creator();
-    await ctx.reply(taskInfo, {
+    
+    // Разбиваем длинное сообщение на части
+    const messageParts = splitLongMessage(taskInfo);
+    
+    // Первая часть с клавиатурой
+    await ctx.reply(messageParts[0], {
         ...keyboard,
         reply_markup: {
             ...keyboard.reply_markup,
             remove_keyboard: true
         }
     });
+    
+    // Остальные части без клавиатуры
+    for (let i = 1; i < messageParts.length; i++) {
+        await ctx.reply(messageParts[i]);
+    }
     
     ctx.session.taskInfo = taskInfo;
     await ctx.answerCbQuery();
@@ -413,7 +424,16 @@ ttToModerateScene.on('text', async (ctx) => {
         if (task) {
             await ctx.reply(`Вы работаете с задачей: ${task.name}`);
             if (ctx.session.taskInfo) {
-                await ctx.reply(ctx.session.taskInfo, back_or_done_Creator());
+                // Разбиваем длинное сообщение на части
+                const messageParts = splitLongMessage(ctx.session.taskInfo);
+                
+                // Первая часть с клавиатурой
+                await ctx.reply(messageParts[0], back_or_done_Creator());
+                
+                // Остальные части без клавиатуры
+                for (let i = 1; i < messageParts.length; i++) {
+                    await ctx.reply(messageParts[i]);
+                }
             } else {
                 // Формируем информацию о задаче
                 const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAAC");
@@ -429,7 +449,16 @@ ${exampleLine}
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
                 `;
                 
-                await ctx.reply(taskInfo, back_or_done_Creator());
+                // Разбиваем длинное сообщение на части
+                const messageParts = splitLongMessage(taskInfo);
+                
+                // Первая часть с клавиатурой
+                await ctx.reply(messageParts[0], back_or_done_Creator());
+                
+                // Остальные части без клавиатуры
+                for (let i = 1; i < messageParts.length; i++) {
+                    await ctx.reply(messageParts[i]);
+                }
             }
         } else {
             await ctx.reply("Выбранная задача не найдена. Пожалуйста, выберите задачу из списка:");

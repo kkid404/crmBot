@@ -316,7 +316,16 @@ watchReadyTzScene.action('back_to_task', async (ctx) => {
             }
         }
     
-        await ctx.reply(taskInfo, doneTask(task));
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.reply(messageParts[0], doneTask(task));
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
 
         // Подтверждаем callback
         await ctx.answerCbQuery();
@@ -543,7 +552,16 @@ watchReadyTzScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
             }
         }
 
-        await ctx.reply(taskInfo, doneTask(task));
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.reply(messageParts[0], doneTask(task));
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
 
         // Сохраняем информацию в сессии
         ctx.session.taskInfo = taskInfo;
@@ -675,8 +693,11 @@ ${taskInfo}
 ${rejectionMessage}
             `;
             
-            // Отправляем сообщение креативщику
-            await ctx.telegram.sendMessage(creator.tg_id, creativeMessage);
+            // Разбиваем длинное сообщение на части и отправляем креативщику
+            const messageParts = splitLongMessage(creativeMessage);
+            for (const part of messageParts) {
+                await ctx.telegram.sendMessage(creator.tg_id, part);
+            }
             
             // Сообщаем пользователю об успешном отклонении
             await ctx.reply(`✅ Задание "${task.name}" отклонено и возвращено креативщику на доработку.`);
@@ -1072,8 +1093,16 @@ ${rejectionMessage}
                     }
                 }
                 
-                // Отправляем информацию о задаче с кнопками
-                await ctx.reply(taskInfo, doneTask(task));
+                // Разбиваем длинное сообщение на части
+                const messageParts = splitLongMessage(taskInfo);
+                
+                // Первая часть с клавиатурой
+                await ctx.reply(messageParts[0], doneTask(task));
+                
+                // Остальные части без клавиатуры
+                for (let i = 1; i < messageParts.length; i++) {
+                    await ctx.reply(messageParts[i]);
+                }
             }
         } else {
             // Если не удалось определить состояние, возвращаем список задач
