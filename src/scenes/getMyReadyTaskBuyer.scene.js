@@ -1121,14 +1121,37 @@ ${rejectionMessage}
     // Добавляем обработку шагов для ввода CTR и бонуса
     if (step === 1) {
         // Пользователь ввел CTR
-        ctx.session.CTR = ctx.message.text;
+        let ctrInput = ctx.message.text.trim();
+        
+        // Убираем символ % если он есть
+        ctrInput = ctrInput.replace('%', '').trim();
+        
+        // Преобразуем в число
+        const ctrValue = parseFloat(ctrInput);
+        
+        // Проверяем, что это валидное число
+        if (isNaN(ctrValue)) {
+            await ctx.reply('❌ Ошибка: введите корректное числовое значение CTR.\nНапример: 3.5 или 3.5%');
+            return;
+        }
+        
+        ctx.session.CTR = ctrValue;
 
         // Переходим ко второму вопросу — запрос бонуса
         ctx.session.step = 2;
         await ctx.reply('Введите бонус для креативщика:\nНапример: 1000');
     } else if (step === 2) {
         // Пользователь ввел бонус
-        const bonus = ctx.message.text;
+        let bonusInput = ctx.message.text.trim();
+        
+        // Преобразуем в число
+        const bonusValue = parseFloat(bonusInput);
+        
+        // Проверяем, что это валидное число
+        if (isNaN(bonusValue)) {
+            await ctx.reply('❌ Ошибка: введите корректное числовое значение бонуса.\nНапример: 1000');
+            return;
+        }
 
         // Сохраняем значения в задаче
         const taskId = ctx.session.selectedTask;
@@ -1136,7 +1159,7 @@ ${rejectionMessage}
 
         if (task) {
             task.CTR = ctx.session.CTR;  // Обновляем CTR
-            task.bonus = bonus;  // Обновляем бонус
+            task.bonus = bonusValue;  // Обновляем бонус
 
             // Сохраняем обновленную задачу в базе данных
             await taskService.updateTask(taskId, { CTR: task.CTR, bonus: task.bonus });
