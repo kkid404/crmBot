@@ -363,6 +363,8 @@ const getKeyboard = async (isRetry = false) => {
     
     // Build current pool from unprocessed tasks in round state
     const availableTasks = [];
+    const tasksToMarkAsProcessed = []; // Задачи, которые не найдены и нужно пометить как обработанные
+    
     if (roundState.roundTasks) {
         for (const [buyerId, taskIds] of Object.entries(roundState.roundTasks)) {
             for (const taskId of taskIds) {
@@ -371,10 +373,20 @@ const getKeyboard = async (isRetry = false) => {
                     const task = allActiveTasks.find(t => t._id && t._id.toString() === taskIdStr);
                     if (task) {
                         availableTasks.push(task);
+                    } else {
+                        // Задача не найдена в активных - помечаем как обработанную
+                        console.log(`[pooledBuyerTasks.keyboard] Task ${taskIdStr} not found in active tasks, marking as processed`);
+                        tasksToMarkAsProcessed.push(taskIdStr);
                     }
                 }
             }
         }
+    }
+    
+    // Помечаем ненайденные задачи как обработанные
+    if (tasksToMarkAsProcessed.length > 0) {
+        console.log(`[pooledBuyerTasks.keyboard] Marking ${tasksToMarkAsProcessed.length} missing tasks as processed`);
+        await markTasksAsProcessed(tasksToMarkAsProcessed);
     }
     
     // Update current pool
