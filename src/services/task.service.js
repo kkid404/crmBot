@@ -327,8 +327,11 @@ static async getAutoAssignedTask(creatorId) {
         if (needNewRound) {
             // Берём все активные задачи
             const activeTasks = await Task.find({ state: 'active' }).populate('buyer').session(session);
+            console.log(`[TaskService] Found ${activeTasks?.length || 0} active tasks for new round`);
+            
             if (!activeTasks || activeTasks.length === 0) {
                 // Нет задач для нового круга
+                console.log('[TaskService] No active tasks found, clearing round state');
                 roundState.roundTasks = {};
                 roundState.processedTaskIds = [];
                 await roundState.save({ session });
@@ -339,13 +342,19 @@ static async getAutoAssignedTask(creatorId) {
             // Группируем задачи по баерам
             const tasksByBuyer = {};
             for (const task of activeTasks) {
+                console.log(`[TaskService] Task ${task._id}: buyer=${task.buyer?._id || 'NULL'}, name=${task.name}`);
                 if (task?.buyer?._id) {
                     const buyerId = task.buyer._id.toString();
                     if (!tasksByBuyer[buyerId]) tasksByBuyer[buyerId] = [];
                     tasksByBuyer[buyerId].push(task._id.toString());
+                } else {
+                    console.log(`[TaskService] WARNING: Task ${task._id} (${task.name}) has no buyer or buyer._id!`);
                 }
             }
 
+            console.log(`[TaskService] Grouped tasks by buyer:`, JSON.stringify(tasksByBuyer, null, 2));
+            console.log(`[TaskService] Total buyers in round: ${Object.keys(tasksByBuyer).length}`);
+            
             roundState.roundTasks = tasksByBuyer;
             roundState.processedTaskIds = [];
             roundState.roundStartTime = new Date();
