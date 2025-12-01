@@ -3,11 +3,14 @@ const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
 const { back } = require('../keyboards/back.keyboard');
+const { dont_example } = require('../keyboards/dont_example.keyboard');
 const userService = require('../services/user.service');
 const BuyerCreatorService = require('../services/buyerCreator.service');
 const taskService = require('../services/task.service');
 const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
 const { Markup } = require('telegraf');
+const { Mutex } = require('async-mutex');
+const mediaMutex = new Mutex();
 
 // Функция для создания имени задачи
 const createName = async (geo) => {
@@ -63,7 +66,9 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
         
         // Add optional fields if they exist in session
         if (ctx.session.link_app) taskData.link_app = ctx.session.link_app;
-        if (ctx.session.example_creative) taskData.example_creative = ctx.session.example_creative;
+        if (ctx.session.mediaFiles && ctx.session.mediaFiles.length > 0) {
+            taskData.example_creative = ctx.session.mediaFiles;
+        }
         if (ctx.session.workType) taskData.workType = ctx.session.workType;
         if (ctx.session.points) taskData.points = ctx.session.points;
         if (ctx.session.bonus) taskData.bonus = ctx.session.bonus;
@@ -244,6 +249,29 @@ createTaskWithCreatorScene.on('text', async (ctx) => {
             return;
         }
 
+        // Обработка текстового примера, когда ждем медиа
+        if (ctx.session.awaitingMedia && step === 3) {
+            // Инициализация массива медиафайлов
+            if (!ctx.session.mediaFiles) {
+                ctx.session.mediaFiles = [];
+            }
+
+            // Добавляем текст как пример
+            ctx.session.mediaFiles.push(userInput);
+
+            // Отправляем сообщение с кнопкой завершения
+            const sentMessage = await ctx.reply(
+                `Текстовый пример получен! Всего добавлено: ${ctx.session.mediaFiles.length}`,
+                Markup.inlineKeyboard([
+                    Markup.button.callback('✅ Сохранить и завершить', 'save_task')
+                ])
+            );
+
+            // Сохраняем ID нового сообщения
+            ctx.session.lastMediaMessageId = sentMessage.message_id;
+            return;
+        }
+
         switch (step) {
             case 1:
                 // Валидация ГЕО кода
@@ -266,39 +294,9 @@ createTaskWithCreatorScene.on('text', async (ctx) => {
                 ctx.session.description = userInput;
                 ctx.session.step = 3;
                 
-                // Проверяем количество связанных креативщиков
-                const buyer = await userService.findUserByTelegramId(ctx.session.buyerId);
-                const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(buyer._id);
-                
-                if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
-                    await ctx.reply(
-                        "⚠️ Ошибка при получении списка креативщиков.",
-                        await start(ctx.from.id)
-                    );
-                    ctx.session = {};
-                    ctx.scene.leave();
-                    return;
-                }
-                
-                // Если только один креативщик, автоматически назначаем задание
-                if (buyerCreator.creators.length === 1) {
-                    const creator = buyerCreator.creators[0];
-                    await createTaskForCreator(ctx, creator._id, creator.username);
-                    return;
-                }
-                
-                // Если несколько креативщиков, показываем выбор
-                const keyboard = await createCreatorsKeyboard(ctx.session.buyerId);
-                if (keyboard) {
-                    await ctx.reply("👨‍🎨 Выберите креативщика для назначения задачи:", keyboard);
-                } else {
-                    await ctx.reply(
-                        "⚠️ Ошибка при получении списка креативщиков.",
-                        await start(ctx.from.id)
-                    );
-                    ctx.session = {};
-                    ctx.scene.leave();
-                }
+                // Запрашиваем примеры
+                await ctx.reply(ruMessage.messages.writeTT.send_example, await dont_example());
+                ctx.session.awaitingMedia = true;
                 break;
                 
             default:
@@ -309,6 +307,158 @@ createTaskWithCreatorScene.on('text', async (ctx) => {
         }
     } catch (error) {
         console.error('Ошибка в обработке текста:', error);
+        await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик медиафайлов
+async function handleMedia(ctx) {
+    const release = await mediaMutex.acquire(); // Блокируем выполнение до завершения предыдущей операции
+    try {
+        if (!ctx.session.awaitingMedia) return;
+
+        // Инициализация массива медиафайлов
+        if (!ctx.session.mediaFiles) {
+            ctx.session.mediaFiles = [];
+        }
+
+        // Получаем fileId
+        let fileId;
+        if (ctx.message.photo) {
+            fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        } else if (ctx.message.video) {
+            fileId = ctx.message.video.file_id;
+        }
+
+        if (!fileId) return;
+
+        // Добавляем fileId в массив
+        ctx.session.mediaFiles.push(fileId);
+
+        // Текст сообщения с количеством файлов
+        const messageText = `Медиафайл получен! Всего добавлено: ${ctx.session.mediaFiles.length}`;
+
+        // Отправляем новое сообщение с кнопкой
+        const sentMessage = await ctx.reply(
+            messageText,
+            Markup.inlineKeyboard([
+                Markup.button.callback('✅ Сохранить и завершить', 'save_task')
+            ])
+        );
+
+        // Сохраняем ID нового сообщения
+        ctx.session.lastMediaMessageId = sentMessage.message_id;
+
+    } catch (error) {
+        console.error("Ошибка при обработке медиафайла:", error);
+        await ctx.reply("Произошла ошибка. Попробуйте еще раз.");
+    } finally {
+        release(); // Освобождаем мьютекс после завершения
+    }
+}
+
+// Регистрируем обработчики медиа
+createTaskWithCreatorScene.on('photo', handleMedia);
+createTaskWithCreatorScene.on('video', handleMedia);
+
+// Обработчик сохранения задачи после добавления примеров
+createTaskWithCreatorScene.action('save_task', async (ctx) => {
+    if (!ctx.callbackQuery || !ctx.session.awaitingMedia) return;
+
+    try {
+        ctx.session.awaitingMedia = false;
+        ctx.session.step = 4;
+        
+        // Сохраняем примеры в example_creative
+        if (!ctx.session.mediaFiles) {
+            ctx.session.mediaFiles = [];
+        }
+        
+        // Проверяем количество связанных креативщиков
+        const buyer = await userService.findUserByTelegramId(ctx.session.buyerId);
+        const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(buyer._id);
+        
+        if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
+            await ctx.reply(
+                "⚠️ Ошибка при получении списка креативщиков.",
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+        
+        // Если только один креативщик, автоматически назначаем задание
+        if (buyerCreator.creators.length === 1) {
+            const creator = buyerCreator.creators[0];
+            await createTaskForCreator(ctx, creator._id, creator.username);
+            return;
+        }
+        
+        // Если несколько креативщиков, показываем выбор
+        const keyboard = await createCreatorsKeyboard(ctx.session.buyerId);
+        if (keyboard) {
+            await ctx.reply("👨‍🎨 Выберите креативщика для назначения задачи:", keyboard);
+        } else {
+            await ctx.reply(
+                "⚠️ Ошибка при получении списка креативщиков.",
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+        }
+    } catch (error) {
+        console.error("Ошибка:", error);
+        await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
+        ctx.session = {};
+        ctx.scene.leave();
+    }
+});
+
+// Обработчик нажатия на кнопку "Нет примера"
+createTaskWithCreatorScene.action('no_example', async (ctx) => {
+    try {
+        ctx.session.mediaFiles = [];
+        ctx.session.awaitingMedia = false;
+        ctx.session.step = 4;
+        
+        // Проверяем количество связанных креативщиков
+        const buyer = await userService.findUserByTelegramId(ctx.session.buyerId);
+        const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(buyer._id);
+        
+        if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {
+            await ctx.reply(
+                "⚠️ Ошибка при получении списка креативщиков.",
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+        
+        // Если только один креативщик, автоматически назначаем задание
+        if (buyerCreator.creators.length === 1) {
+            const creator = buyerCreator.creators[0];
+            await createTaskForCreator(ctx, creator._id, creator.username);
+            return;
+        }
+        
+        // Если несколько креативщиков, показываем выбор
+        const keyboard = await createCreatorsKeyboard(ctx.session.buyerId);
+        if (keyboard) {
+            await ctx.reply("👨‍🎨 Выберите креативщика для назначения задачи:", keyboard);
+        } else {
+            await ctx.reply(
+                "⚠️ Ошибка при получении списка креативщиков.",
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+        }
+    } catch (error) {
+        console.error("Ошибка:", error);
         await ctx.reply("Произошла ошибка. Пожалуйста, попробуйте позже.", await start(ctx.from.id));
         ctx.session = {};
         ctx.scene.leave();
