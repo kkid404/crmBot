@@ -56,6 +56,30 @@ class UserService {
             position: 'creator'
         });
     }
+
+    /** Забанить пользователя */
+    static async banUser(tg_id) {
+        return User.findOneAndUpdate(
+            { tg_id },
+            { isBan: true },
+            { new: true }
+        );
+    }
+
+    /** Разбанить пользователя */
+    static async unbanUser(tg_id) {
+        return User.findOneAndUpdate(
+            { tg_id },
+            { isBan: false },
+            { new: true }
+        );
+    }
+
+    /** Проверить, забанен ли пользователь */
+    static async isBanned(tg_id) {
+        const user = await User.findOne({ tg_id });
+        return user && user.isBan === true;
+    }
 }
 
 module.exports = UserService;

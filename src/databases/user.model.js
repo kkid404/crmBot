@@ -14,7 +14,8 @@ const userSchema = new Schema({
         enum: ['buyer', 'creator', 'finance', 'owner'],
         default: null 
     },
-    cheker: { type: Boolean, default: false }
+    cheker: { type: Boolean, default: false },
+    isBan: { type: Boolean, default: false }
 }, {
     timestamps: true, 
 });
