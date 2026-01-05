@@ -14,22 +14,42 @@ const monthNames = [
  *  • Креативы-по-креативщикам
  *
  * Поддерживает вызовы:
- *  • exportPointsReport('05','2025')       → май 2025
- *  • exportPointsReport('18.03')           → 18 марта текущего года
- *  • exportPointsReport('18.03','25.03')   → диапазон 18–25 марта
+ *  • exportPointsReport('05','2025')           → май 2025
+ *  • exportPointsReport('18.03')               → 18 марта текущего года
+ *  • exportPointsReport('18.03.2025')          → 18 марта 2025
+ *  • exportPointsReport('18.03','25.03')       → диапазон 18–25 марта текущего года
+ *  • exportPointsReport('18.03.2025','25.03.2025') → диапазон 18–25 марта 2025
  */
 async function exportPointsReport (fromArg, toArg) {
   /* ---------- 1. определяем начальную/конечную даты ---------- */
   const isDM = s => typeof s === 'string' && /^\d{1,2}\.\d{1,2}$/.test(s);
+  const isDMY = s => typeof s === 'string' && /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s);
+  
   const parseDM = dm => {
     const [d, m] = dm.split('.').map(Number);
     const y      = new Date().getFullYear();
     return new Date(y, m - 1, d);
   };
+  
+  const parseDMY = dmy => {
+    const [d, m, y] = dmy.split('.').map(Number);
+    return new Date(y, m - 1, d);
+  };
 
   let start, end, title;
 
-  if (isDM(fromArg) && isDM(toArg)) {               // DD.MM-DD.MM
+  // Проверяем формат DD.MM.YYYY для обоих аргументов
+  if (isDMY(fromArg) && isDMY(toArg)) {             // DD.MM.YYYY-DD.MM.YYYY
+    start = parseDMY(fromArg);
+    end   = parseDMY(toArg);
+    end.setHours(23,59,59,999);
+    title = `Рейтинг ${fromArg}-${toArg}`;
+  } else if (isDMY(fromArg)) {                      // одиночная DD.MM.YYYY
+    start = parseDMY(fromArg);
+    end   = new Date(start);
+    end.setHours(23,59,59,999);
+    title = `Рейтинг ${fromArg}`;
+  } else if (isDM(fromArg) && isDM(toArg)) {        // DD.MM-DD.MM
     start = parseDM(fromArg);
     end   = parseDM(toArg);
     end.setHours(23,59,59,999);

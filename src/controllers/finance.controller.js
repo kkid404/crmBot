@@ -10,17 +10,36 @@ const monthNames = [
 
 /**
  * Экспортирует финансовый отчёт в Google Sheets.
- * @param {number|string} monthOrStartDate  1-based номер месяца **или** дата 'DD.MM'
- * @param {number|string} yearOrEndDate     год **или** дата 'DD.MM'
- * @param {number}        [year]            год (если указан диапазон дат)
+ * @param {number|string} monthOrStartDate  1-based номер месяца **или** дата 'DD.MM' **или** 'DD.MM.YYYY'
+ * @param {number|string} yearOrEndDate     год **или** дата 'DD.MM' **или** 'DD.MM.YYYY'
+ * @param {number}        [year]            год (если указан диапазон дат без года)
  * @returns {Promise<string>} публичный URL таблицы
  */
 async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
   /* ---------------- 0. вычисляем период ---------------- */
   const dateRegex = /^(0[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])$/;
+  const dateWithYearRegex = /^(0[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])\.(\d{4})$/;
   let periodStart, periodEnd, title;
 
-  if (dateRegex.test(monthOrStartDate) && dateRegex.test(yearOrEndDate)) {
+  // Проверяем формат DD.MM.YYYY
+  if (dateWithYearRegex.test(monthOrStartDate) && dateWithYearRegex.test(yearOrEndDate)) {
+    /* Диапазон DD.MM.YYYY-DD.MM.YYYY */
+    const [sD, sM, sY] = monthOrStartDate.split('.').map(Number);
+    const [eD, eM, eY] = yearOrEndDate.split('.').map(Number);
+
+    periodStart = new Date(sY, sM - 1, sD, 0, 0, 0);
+    periodEnd   = new Date(eY, eM - 1, eD, 23, 59, 59);
+
+    title = `Финансы – ${monthOrStartDate}-${yearOrEndDate}`;
+  } else if (dateWithYearRegex.test(monthOrStartDate)) {
+    /* Одиночная дата DD.MM.YYYY */
+    const [sD, sM, sY] = monthOrStartDate.split('.').map(Number);
+    
+    periodStart = new Date(sY, sM - 1, sD, 0, 0, 0);
+    periodEnd   = new Date(sY, sM - 1, sD, 23, 59, 59);
+
+    title = `Финансы – ${monthOrStartDate}`;
+  } else if (dateRegex.test(monthOrStartDate) && dateRegex.test(yearOrEndDate)) {
     /* Диапазон DD.MM-DD.MM */
     const currentYear = year || new Date().getFullYear();
     const [sD, sM] = monthOrStartDate.split('.').map(Number);

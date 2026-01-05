@@ -33,8 +33,8 @@ async function handleGenerate (ctx) {
 }
 
 /* -------- новые обработчики свободного ввода -------- */
-const reSingle = /^\d{1,2}\.\d{1,2}$/;                     // 18.03
-const reRange  = /^\d{1,2}\.\d{1,2}\s*[-–]\s*\d{1,2}\.\d{1,2}$/; // 18.03-25.03
+const reSingle = /^\d{1,2}\.\d{1,2}(\.\d{4})?$/;                     // 18.03 или 18.03.2025
+const reRange  = /^\d{1,2}\.\d{1,2}(\.\d{4})?\s*[-–]\s*\d{1,2}\.\d{1,2}(\.\d{4})?$/; // 18.03-25.03 или 18.03.2025-25.03.2025
 
 async function handleSingleDate (ctx) {
   const date = ctx.message.text.trim();                    // "18.03"

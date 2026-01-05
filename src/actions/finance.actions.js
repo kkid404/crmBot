@@ -118,7 +118,7 @@ async function handleDateRange(ctx) {
   ctx.session.financeState = 'waiting_start_date';
   
   await ctx.reply(
-    'Введите начальную дату в формате ДД.ММ (например, 12.05):',
+    'Введите начальную дату в формате ДД.ММ или ДД.ММ.ГГГГ (например, 12.05 или 12.05.2025):',
     Markup.forceReply()
   );
 }
@@ -159,19 +159,24 @@ const actions = bot => {
       financeStartDate: ctx.session?.financeStartDate
     });
     
-    // Функция проверки формата даты ДД.ММ
+    // Функция проверки формата даты ДД.ММ или ДД.ММ.ГГГГ
     const isValidDateFormat = (dateStr) => {
-      // Проверка на формат даты ДД.ММ
-      const regex = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])$/;
-      if (!regex.test(dateStr)) {
+      // Проверка на формат даты ДД.ММ или ДД.ММ.ГГГГ
+      const regexDM = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])$/;
+      const regexDMY = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.(\d{4})$/;
+      
+      if (!regexDM.test(dateStr) && !regexDMY.test(dateStr)) {
         console.log(`[FINANCE HANDLER] Invalid date format: ${dateStr}`);
         return false;
       }
       
       // Дополнительная проверка корректности даты
-      const [day, month] = dateStr.split('.').map(Number);
-      const currentYear = new Date().getFullYear();
-      const date = new Date(currentYear, month - 1, day);
+      const parts = dateStr.split('.').map(Number);
+      const day = parts[0];
+      const month = parts[1];
+      const year = parts[2] || new Date().getFullYear();
+      
+      const date = new Date(year, month - 1, day);
       const isValid = date.getDate() === day && date.getMonth() === month - 1;
       
       if (!isValid) {
@@ -187,7 +192,7 @@ const actions = bot => {
       const startDate = ctx.message.text.trim();
       
       if (!isValidDateFormat(startDate)) {
-        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ (например, 12.05):');
+        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ или ДД.ММ.ГГГГ (например, 12.05 или 12.05.2025):');
         return;
       }
       
@@ -195,7 +200,7 @@ const actions = bot => {
       ctx.session.financeStartDate = startDate;
       ctx.session.financeState = 'waiting_end_date';
       
-      await ctx.reply('Теперь введите конечную дату в формате ДД.ММ (например, 22.05):');
+      await ctx.reply('Теперь введите конечную дату в формате ДД.ММ или ДД.ММ.ГГГГ (например, 22.05 или 22.05.2025):');
       return;
     }
     
@@ -205,7 +210,7 @@ const actions = bot => {
       const endDate = ctx.message.text.trim();
       
       if (!isValidDateFormat(endDate)) {
-        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ (например, 22.05):');
+        await ctx.reply('Пожалуйста, введите корректную дату в формате ДД.ММ или ДД.ММ.ГГГГ (например, 22.05 или 22.05.2025):');
         return;
       }
       
@@ -219,10 +224,9 @@ const actions = bot => {
       // Генерируем отчёт за диапазон дат
       const loading = await ctx.reply(ru.messages.finance.generating);
       try {
-        // Явно передаём текущий год для корректной обработки дат
-        const currentYear = new Date().getFullYear();
-        console.log(`[FINANCE HANDLER] Generating report for date range: ${startDate} - ${endDate}, year: ${currentYear}`);
-        const url = await exportFinanceReport(startDate, endDate, currentYear);
+        // Если даты содержат год, передаём их как есть, иначе добавляем текущий год
+        console.log(`[FINANCE HANDLER] Generating report for date range: ${startDate} - ${endDate}`);
+        const url = await exportFinanceReport(startDate, endDate);
         await ctx.reply(
           `${ru.messages.finance.done}\n${url}`,
           start(ctx.chat.id)
