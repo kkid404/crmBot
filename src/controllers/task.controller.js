@@ -37,6 +37,7 @@ const exportTasksInProgressCsv = async () => {
             state: { $in: ['progress', 'active'] } 
         })
             .populate('buyer')
+            .populate('createdBy')
             .populate('creator')
             .sort({ createdAt: -1 });
             
@@ -148,6 +149,7 @@ const exportTasksDoneCsv = async () => {
         // Получаем выполненные задачи
         const tasks = await Task.find({ state: 'done' })
             .populate('buyer')
+            .populate('createdBy')
             .populate('creator')
             .sort({ completionDate: -1 }); // Сортировка по completionDate (убывание)
             
@@ -358,6 +360,7 @@ const exportAllTasksCsv = async () => {
         // Получаем все задачи
         const tasks = await Task.find({})
             .populate('buyer')
+            .populate('createdBy')
             .populate('creator')
             .sort([
                 ['state', 1], // Сначала сортируем по состоянию (для группировки)
@@ -542,7 +545,7 @@ async function exportProgressLikeToNewSpreadsheet () {
         // Fetch all data once to avoid multiple queries
         console.log('Fetching task data...');
         const doneTasks = await Task.find({ state: 'done' })
-            .populate('buyer').populate('creator')
+            .populate('buyer').populate('createdBy').populate('creator')
             .sort({ completionDate: -1 });
         console.log(`Found ${doneTasks.length} completed tasks`);
         
@@ -643,7 +646,7 @@ async function exportProgressLikeToNewSpreadsheet () {
         // ---------- Лист 3: Все креативы ----------
         console.log('Creating "Все креативы" sheet...');
         const allTasks = await Task.find({})
-            .populate('buyer').populate('creator')
+            .populate('buyer').populate('createdBy').populate('creator')
             .sort([
                 ['state', 1],
                 ['completionDate', -1],

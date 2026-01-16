@@ -6,6 +6,7 @@ const { back } = require('../keyboards/back.keyboard');
 const { dont_example } = require('../keyboards/dont_example.keyboard');
 const userService = require('../services/user.service');
 const BuyerCreatorService = require('../services/buyerCreator.service');
+const BuyerLinkService = require('../services/buyerLink.service');
 const taskService = require('../services/task.service');
 const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
 const { Markup } = require('telegraf');
@@ -22,6 +23,41 @@ const createName = async (geo) => {
     countTaskToday = countTaskToday.length + 1;
     return `${geo}_${day}_${month}_${year}_${countTaskToday}`;
 };
+
+// Функция для создания клавиатуры выбора баера
+async function createBuyerSelectionKeyboard(buyerId) {
+    try {
+        const buyer = await userService.findUserByTelegramId(buyerId);
+        const buyerLinks = await BuyerLinkService.getLinkedBuyersByMainBuyer(buyer._id);
+        
+        const buttons = [];
+        
+        // Добавляем самого баера
+        buttons.push([
+            Markup.button.callback(
+                `@${buyer.username || 'Я'}`,
+                `select_buyer_fast_${buyer._id}`
+            )
+        ]);
+        
+        // Добавляем связанных баеров
+        if (buyerLinks && buyerLinks.linkedBuyers && buyerLinks.linkedBuyers.length > 0) {
+            buyerLinks.linkedBuyers.forEach(linkedBuyer => {
+                buttons.push([
+                    Markup.button.callback(
+                        `@${linkedBuyer.username || 'без_username'}`,
+                        `select_buyer_fast_${linkedBuyer._id}`
+                    )
+                ]);
+            });
+        }
+        
+        return Markup.inlineKeyboard(buttons);
+    } catch (error) {
+        console.error('Ошибка при создании клавиатуры выбора баера:', error);
+        return null;
+    }
+}
 
 // Функция для создания клавиатуры с креативщиками
 async function createCreatorsKeyboard(buyerId) {
@@ -56,10 +92,14 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
         
+        // Используем выбранного баера или текущего пользователя
+        const buyerId = ctx.session.selectedBuyerId || user._id;
+        
         const taskData = {
             name: ctx.session.name,
             description: ctx.session.description,
-            buyer: user._id,
+            buyer: buyerId, // От лица какого баера
+            createdBy: user._id, // Кто физически создал
             creator: creatorId,
             state: 'time' // Задача ожидает установки времени админом
         };
@@ -219,9 +259,24 @@ createTaskWithCreatorScene.enter(async (ctx) => {
             return;
         }
         
-        // Инициализируем сессию
+        // Проверяем, есть ли у баера связанные баеры
+        const buyerLinks = await BuyerLinkService.getLinkedBuyersByMainBuyer(user._id);
+        
+        // Если есть связанные баеры, показываем выбор
+        if (buyerLinks && buyerLinks.linkedBuyers && buyerLinks.linkedBuyers.length > 0) {
+            const keyboard = await createBuyerSelectionKeyboard(tgId);
+            if (keyboard) {
+                ctx.session.awaitingBuyerSelection = true;
+                ctx.session.buyerId = tgId;
+                await ctx.reply("👨‍💼 От лица какого баера создать заказ?", keyboard);
+                return;
+            }
+        }
+        
+        // Если нет связанных баеров, продолжаем обычный флоу
         ctx.session.step = 1;
         ctx.session.buyerId = tgId;
+        ctx.session.selectedBuyerId = user._id;
         
         await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
         
@@ -358,6 +413,22 @@ async function handleMedia(ctx) {
         release(); // Освобождаем мьютекс после завершения
     }
 }
+
+// Обработчик выбора баера
+createTaskWithCreatorScene.action(/^select_buyer_fast_(.+)$/, async (ctx) => {
+    try {
+        const selectedBuyerId = ctx.match[1];
+        ctx.session.selectedBuyerId = selectedBuyerId;
+        ctx.session.awaitingBuyerSelection = false;
+        ctx.session.step = 1;
+        
+        await ctx.answerCbQuery();
+        await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+    } catch (error) {
+        console.error('Ошибка при выборе баера:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
 
 // Регистрируем обработчики медиа
 createTaskWithCreatorScene.on('photo', handleMedia);

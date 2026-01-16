@@ -12,7 +12,8 @@ const taskSchema = new Schema({
         enum: ['active', 'progress', 'time', 'wait', 'done', 'failed', 'canceled'],
         index: true, // Индекс для оптимизации запросов по статусу
     },
-    buyer: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    buyer: { type: Schema.Types.ObjectId, ref: 'User', required: true }, // От лица какого баера создан заказ
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }, // Кто физически создал заказ
     creator: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     points: { type: Number, default: null }, 
     expectedDate: { type: Date, default: null },

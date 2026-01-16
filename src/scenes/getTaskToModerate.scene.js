@@ -45,6 +45,15 @@ const formatTaskInfo = (task) => {
     }
   }
 
+  // Проверяем, создан ли заказ от лица другого баера
+  let createdByInfo = "";
+  if (task.createdBy && task.buyer && 
+      task.createdBy._id && task.buyer._id &&
+      task.createdBy._id.toString() !== task.buyer._id.toString()) {
+    const createdByName = task.createdBy.username || "неизвестно";
+    createdByInfo = `\n👤 Создал: @${createdByName}`;
+  }
+
   // Формируем информацию о ожидаемой дате выполнения
   let expectedDateInfo = "Не указана";
   if (task.expectedDate) {
@@ -81,6 +90,7 @@ const formatTaskInfo = (task) => {
 📝 Описание: ${description}
 ${exampleLine}
 👨‍💻 Креатор: ${task.creator?.username || "Не назначен"}
+👨‍💼 Заказчик: @${buyerName}${createdByInfo}
 📝 Результат: ${
   resultCount > 0 ? `✅ Загружен (${resultCount} файлов)` : "❌ Отсутствует"
 }

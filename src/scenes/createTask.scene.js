@@ -10,6 +10,7 @@ const { Mutex } = require('async-mutex');
 const mediaMutex = new Mutex();
 const taskService = require('../services/task.service');
 const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
+const BuyerLinkService = require('../services/buyerLink.service');
 
 function handleError(error) {
     console.error(`Error occurred: ${error.message}`);
@@ -24,6 +25,41 @@ const createName = async (geo) => {
     let counTaskToday = await taskService.getTaskToday()
     counTaskToday = counTaskToday.length + 1
     return `${geo}_${day}_${month}_${year}_${counTaskToday}`
+}
+
+// Функция для создания клавиатуры выбора баера
+async function createBuyerSelectionKeyboard(buyerId) {
+    try {
+        const buyer = await userService.findUserByTelegramId(buyerId);
+        const buyerLinks = await BuyerLinkService.getLinkedBuyersByMainBuyer(buyer._id);
+        
+        const buttons = [];
+        
+        // Добавляем самого баера
+        buttons.push([
+            Markup.button.callback(
+                `@${buyer.username || 'Я'}`,
+                `select_buyer_${buyer._id}`
+            )
+        ]);
+        
+        // Добавляем связанных баеров
+        if (buyerLinks && buyerLinks.linkedBuyers && buyerLinks.linkedBuyers.length > 0) {
+            buyerLinks.linkedBuyers.forEach(linkedBuyer => {
+                buttons.push([
+                    Markup.button.callback(
+                        `@${linkedBuyer.username || 'без_username'}`,
+                        `select_buyer_${linkedBuyer._id}`
+                    )
+                ]);
+            });
+        }
+        
+        return Markup.inlineKeyboard(buttons);
+    } catch (error) {
+        console.error('Ошибка при создании клавиатуры выбора баера:', error);
+        return null;
+    }
 }
 
 async function handleText(ctx) {
@@ -61,12 +97,16 @@ async function handleText(ctx) {
             // Создаем задачу с указанным креативщиком
             const user = await userService.findUserByTelegramId(tgId);
             
+            // Используем выбранного баера или текущего пользователя
+            const buyerId = ctx.session.selectedBuyerId || user._id;
+            
             const taskData = {
                 name: ctx.session.name,
                 link_app: ctx.session.app,
                 description: ctx.session.description,
                 example_creative: ctx.session.mediaFiles || [],
-                buyer: user._id,
+                buyer: buyerId, // От лица какого баера
+                createdBy: user._id, // Кто физически создал
                 creator: creator._id,
                 state: 'time' // Задача ожидает установки времени креативщиком
             };
@@ -303,9 +343,53 @@ async function handleSaveTask(ctx) {
 const writeTTScene = new BaseScene('writeTTScene');
 
 writeTTScene.enter(async (ctx) => {
-    ctx.session.step = 1;
-    ctx.session.mediaFiles = ctx.session.mediaFiles || []; // Убедитесь, что массив существует
-    await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+    try {
+        const tgId = String(ctx.from.id);
+        const user = await userService.findUserByTelegramId(tgId);
+        
+        // Проверяем, есть ли у баера связанные баеры
+        if (user && user.position === 'buyer') {
+            const buyerLinks = await BuyerLinkService.getLinkedBuyersByMainBuyer(user._id);
+            
+            // Если есть связанные баеры, показываем выбор
+            if (buyerLinks && buyerLinks.linkedBuyers && buyerLinks.linkedBuyers.length > 0) {
+                const keyboard = await createBuyerSelectionKeyboard(tgId);
+                if (keyboard) {
+                    ctx.session.awaitingBuyerSelection = true;
+                    await ctx.reply("👨‍💼 От лица какого баера создать заказ?", keyboard);
+                    return;
+                }
+            }
+        }
+        
+        // Если нет связанных баеров или произошла ошибка, продолжаем обычный флоу
+        ctx.session.step = 1;
+        ctx.session.mediaFiles = ctx.session.mediaFiles || [];
+        ctx.session.selectedBuyerId = user._id; // Сохраняем ID баера
+        await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+    } catch (error) {
+        console.error('Ошибка при входе в сцену создания задачи:', error);
+        ctx.session.step = 1;
+        ctx.session.mediaFiles = ctx.session.mediaFiles || [];
+        await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+    }
+});
+
+// Обработчик выбора баера
+writeTTScene.action(/^select_buyer_(.+)$/, async (ctx) => {
+    try {
+        const selectedBuyerId = ctx.match[1];
+        ctx.session.selectedBuyerId = selectedBuyerId;
+        ctx.session.awaitingBuyerSelection = false;
+        ctx.session.step = 1;
+        ctx.session.mediaFiles = ctx.session.mediaFiles || [];
+        
+        await ctx.answerCbQuery();
+        await ctx.reply(ruMessage.messages.writeTT.send_geo, back());
+    } catch (error) {
+        console.error('Ошибка при выборе баера:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
 });
 
 writeTTScene.on('text', handleText)
@@ -362,12 +446,16 @@ async function createTaskWithoutCreator(ctx) {
     const tgId = String(ctx.from.id);
     const user = await userService.findUserByTelegramId(tgId);
     
+    // Используем выбранного баера или текущего пользователя
+    const buyerId = ctx.session.selectedBuyerId || user._id;
+    
     const taskData = {
         name: ctx.session.name,
         link_app: ctx.session.app,
         description: ctx.session.description,
         example_creative: ctx.session.mediaFiles || [],
-        buyer: user._id
+        buyer: buyerId, // От лица какого баера
+        createdBy: user._id // Кто физически создал
     };
 
     let maxRetries = 5;

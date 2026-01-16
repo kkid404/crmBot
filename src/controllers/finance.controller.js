@@ -69,6 +69,7 @@ async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
     state: { $nin: ['canceled', 'draft'] }
   })
     .populate('buyer')
+    .populate('createdBy')
     .populate('creator');
 
   /* ---------------- 2. агрегируем суммы ---------------- */
@@ -114,14 +115,19 @@ async function exportFinanceReport(monthOrStartDate, yearOrEndDate, year) {
   const penaltyBuyerRows    = makeRows(['Баер','К-во штрафных','Сумма'],        penaltyByBuyer);
 
   /* детальные листы */
-  const creativesByBuyerRows = [['Баер','ТЗ','Бонус','Штрафной','Дата']];
-  const creativesByCreatorRows = [['Креативщик','ТЗ','Бонус','Штрафной','Дата']];
+  const creativesByBuyerRows = [['Баер','ТЗ','Бонус','Штрафной','Создал','Дата']];
+  const creativesByCreatorRows = [['Креативщик','ТЗ','Бонус','Штрафной','Создал','Дата']];
 
   tasks.forEach(t => {
+    const createdByInfo = t.createdBy && t.createdBy._id.toString() !== t.buyer._id.toString() 
+      ? safeUsername(t.createdBy) 
+      : '';
+    
     const row = [
       t.name,
       Number(t.bonus) || 0,
       t.isPenaltyBonus ? 'Да' : '',
+      createdByInfo,
       new Date(t.completionDate).toLocaleDateString('ru-RU')
     ];
     creativesByBuyerRows.push([safeUsername(t.buyer),   ...row]);
