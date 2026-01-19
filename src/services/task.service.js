@@ -130,7 +130,11 @@ class TaskService {
             // Фильтруем по роли, если она указана
             if (role) {
                 if (role === 'buyer') {
-                    query.buyer = userId;
+                    // Для баеров показываем задачи где они являются buyer ИЛИ createdBy
+                    query.$or = [
+                        { buyer: userId },
+                        { createdBy: userId }
+                    ];
                 } else if (role === 'creator') {
                     query.creator = userId;
                 } else {
@@ -139,7 +143,7 @@ class TaskService {
             }
 
             // Выполняем поиск задач
-            return await Task.find(query).populate('buyer').populate('creator').lean();
+            return await Task.find(query).populate('buyer').populate('createdBy').populate('creator').lean();
         } catch (error) {
             throw new Error(`Ошибка получения задач для пользователя: ${error.message}`);
         }

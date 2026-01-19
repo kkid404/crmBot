@@ -21,9 +21,23 @@ const myTasks = async (id, role = '', state, page = 0) => {
     const inlineKeyboard = tasksForPage.map(task => {
         // Add 💰 emoji for tasks with bonus
         const bonusIndicator = task.bonus ? '💰 ' : '';
+        
+        // Добавляем индикатор если задача создана от лица другого баера
+        let delegateIndicator = '';
+        if (role === 'buyer' && task.createdBy && task.buyer) {
+            const createdById = task.createdBy._id ? task.createdBy._id.toString() : task.createdBy.toString();
+            const buyerId = task.buyer._id ? task.buyer._id.toString() : task.buyer.toString();
+            const currentUserId = id.toString();
+            
+            // Если текущий пользователь создал задачу, но она от лица другого баера
+            if (createdById === currentUserId && buyerId !== currentUserId) {
+                delegateIndicator = '👤 ';
+            }
+        }
+        
         // Ограничиваем длину названия задачи
         const taskName = task.name.length > 30 ? task.name.substring(0, 27) + '...' : task.name;
-        return [Markup.button.callback(`${bonusIndicator}${taskName}`, task._id.toString())];
+        return [Markup.button.callback(`${bonusIndicator}${delegateIndicator}${taskName}`, task._id.toString())];
     });
 
     // Добавляем кнопки навигации, если есть несколько страниц

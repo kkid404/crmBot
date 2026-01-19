@@ -698,20 +698,27 @@ const formatTaskInfo = (task, creatorName) => {
         dateInfo = `⏱️ Ожидаемая дата выполнения: ${expectedDateStr}${expectedTimeStr}\n`;
     }
     
-    // Ограничиваем описание
-    const fullDescription = task.description || '';
-    let description = fullDescription;
-    const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
-    if (hasFullDescription) {
-        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    // Проверяем, создан ли заказ от лица другого баера
+    let createdByInfo = '';
+    if (task.createdBy && task.buyer && 
+        task.createdBy._id && task.buyer._id &&
+        task.createdBy._id.toString() !== task.buyer._id.toString()) {
+        const createdByName = task.createdBy.username || 'неизвестно';
+        const buyerName = task.buyer.username || 'неизвестно';
+        createdByInfo = `👤 Создал: @${createdByName} от лица @${buyerName}\n`;
     }
+    
+    // Полное описание - будет разбито на части функцией splitLongMessage
+    const fullDescription = task.description || '';
+    const description = fullDescription;
+    const hasFullDescription = false; // Не нужна кнопка, т.к. показываем полностью
     
     // Формируем всю строку информации о задаче
     const taskInfo = `
 🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${description}
-${dateInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
+${createdByInfo}${dateInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
     `;
     
     return { taskInfo, fullDescription, hasFullDescription };

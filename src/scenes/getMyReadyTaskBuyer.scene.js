@@ -31,20 +31,27 @@ function buildTaskInfo(task, state) {
         ? `🎨 Примеры креатива: ${Array.isArray(task.example_creative) ? task.example_creative.length : 1}`
         : "🎨 Примеры креатива: отсутствуют";
 
-    // Ограничиваем описание
-    const fullDescription = task.description || '';
-    let description = fullDescription;
-    const hasFullDescription = description.length > MAX_DESCRIPTION_LENGTH;
-    if (hasFullDescription) {
-        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    // Проверяем, создан ли заказ от лица другого баера
+    let createdByInfo = '';
+    if (task.createdBy && task.buyer && 
+        task.createdBy._id && task.buyer._id &&
+        task.createdBy._id.toString() !== task.buyer._id.toString()) {
+        const createdByName = task.createdBy.username || 'неизвестно';
+        const buyerName = task.buyer.username || 'неизвестно';
+        createdByInfo = `👤 Создал: @${createdByName} от лица @${buyerName}\n`;
     }
+
+    // Полное описание - будет разбито на части функцией splitLongMessage
+    const fullDescription = task.description || '';
+    const description = fullDescription;
+    const hasFullDescription = false; // Не нужна кнопка, т.к. показываем полностью
 
     // Базовый текст
     let taskInfo = `🎯 Название: ${task.name}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${description}
 ${exampleLine}
-📅 Дата создания: ${formatDateMSK(task.createdAt)}
+${createdByInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
 📅 Дата выполнения: ${formatDateMSK(task.completionDate)}`;
 
     // Добавляем информацию о CTR, если она задана
