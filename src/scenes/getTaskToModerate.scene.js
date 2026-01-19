@@ -1430,10 +1430,17 @@ getTaskToModerateScene.action('show_full_description', async (ctx) => {
       return;
     }
     
-    // Разбиваем на части и отправляем
-    const parts = splitLongMessage(fullDescription);
-    for (const part of parts) {
-      await ctx.reply(`📝 Полное описание:\n\n${part}`);
+    // Разбиваем на части (учитываем заголовок "📝 Полное описание:\n\n")
+    const headerLength = '📝 Полное описание:\n\n'.length;
+    const maxLength = 4096 - headerLength; // Оставляем место для заголовка
+    const parts = splitLongMessage(fullDescription, maxLength);
+    
+    // Отправляем первую часть с заголовком
+    await ctx.reply(`📝 Полное описание:\n\n${parts[0]}`);
+    
+    // Остальные части без заголовка
+    for (let i = 1; i < parts.length; i++) {
+      await ctx.reply(parts[i]);
     }
     
     await ctx.answerCbQuery();
