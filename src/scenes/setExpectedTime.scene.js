@@ -4,6 +4,7 @@ const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
 const taskService = require('../services/task.service');
 const { formatDateMSK } = require('../utils/formatDate.util');
+const { selectDateKeyboard } = require('../keyboards/selectDate.keyboard');
 
 const setExpectedTimeScene = new BaseScene('setExpectedTimeScene');
 
@@ -37,13 +38,10 @@ function formatDate(date) {
 // Enter the scene
 setExpectedTimeScene.enter(async (ctx) => {
     try {
-        // First, ask for the date
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const formattedDate = formatDate(tomorrow);
-        
-        await ctx.reply(`📅 Пожалуйста, введите дату сдачи в формате ДД.ММ.ГГГГ (например, ${formattedDate}):`);
+        // Ask user to select date using buttons
+        await ctx.reply('📅 Выберите дату сдачи креатива:', selectDateKeyboard());
         ctx.session.expectedDate = null; // Reset any previous date
+        ctx.session.waitingForDateSelection = true; // Flag to indicate we're waiting for date selection
     } catch (error) {
         console.error('Error in setExpectedTimeScene.enter:', error);
         await ctx.reply('Произошла ошибка. Пожалуйста, попробуйте позже.', await start(ctx.from.id));
@@ -51,27 +49,53 @@ setExpectedTimeScene.enter(async (ctx) => {
     }
 });
 
-// Handle text input for date and time
+// Handle date selection buttons
+setExpectedTimeScene.action('date_today', async (ctx) => {
+    try {
+        const today = new Date();
+        const formattedDate = formatDate(today);
+        
+        ctx.session.expectedDate = formattedDate;
+        ctx.session.waitingForDateSelection = false;
+        
+        await ctx.editMessageText('⏰ Введите время сдачи в формате ЧЧ:ММ (например, 18:30):');
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in date_today handler:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
+
+setExpectedTimeScene.action('date_tomorrow', async (ctx) => {
+    try {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const formattedDate = formatDate(tomorrow);
+        
+        ctx.session.expectedDate = formattedDate;
+        ctx.session.waitingForDateSelection = false;
+        
+        await ctx.editMessageText('⏰ Введите время сдачи в формате ЧЧ:ММ (например, 18:30):');
+        await ctx.answerCbQuery();
+    } catch (error) {
+        console.error('Error in date_tomorrow handler:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+    }
+});
+
+// Handle text input for time
 setExpectedTimeScene.on('text', async (ctx) => {
     try {
         const userInput = ctx.message.text.trim();
         
-        if (!ctx.session.expectedDate) {
-            // First step: validate and save date
-            if (!isValidDateFormat(userInput)) {
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                const formattedDate = formatDate(tomorrow);
-                
-                await ctx.reply(`❌ Неверный формат даты.\nПожалуйста, введите дату в формате ДД.ММ.ГГГГ (например, ${formattedDate}):`);
-                return;
-            }
-            
-            // Save the date and ask for time
-            ctx.session.expectedDate = userInput;
-            await ctx.reply('⏰ Теперь введите время сдачи в формате ЧЧ:ММ (например, 18:30):');
-        } else {
-            // Second step: validate and save time
+        // If we're still waiting for date selection, ignore text input
+        if (ctx.session.waitingForDateSelection) {
+            await ctx.reply('Пожалуйста, выберите дату с помощью кнопок выше.');
+            return;
+        }
+        
+        if (ctx.session.expectedDate) {
+            // Validate and save time
             if (!isValidTimeFormat(userInput)) {
                 await ctx.reply('❌ Неверный формат времени. Пожалуйста, введите время в формате ЧЧ:ММ (например, 18:30):');
                 return;
@@ -143,7 +167,10 @@ setExpectedTimeScene.on('text', async (ctx) => {
             // Clear session and leave scene
             ctx.session.taskIdForTimeSetting = null;
             ctx.session.expectedDate = null;
+            ctx.session.waitingForDateSelection = false;
             ctx.scene.leave();
+        } else {
+            await ctx.reply('Пожалуйста, сначала выберите дату с помощью кнопок.');
         }
     } catch (error) {
         console.error('Error in setExpectedTimeScene text handler:', error);
@@ -154,13 +181,12 @@ setExpectedTimeScene.on('text', async (ctx) => {
 
 // Handle any other content types
 setExpectedTimeScene.on('message', async (ctx) => {
-    if (!ctx.session.expectedDate) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const formattedDate = formatDate(tomorrow);
-        await ctx.reply(`Пожалуйста, введите дату в формате ДД.ММ.ГГГГ (например, ${formattedDate}):`);
-    } else {
+    if (ctx.session.waitingForDateSelection) {
+        await ctx.reply('Пожалуйста, выберите дату с помощью кнопок выше.');
+    } else if (ctx.session.expectedDate) {
         await ctx.reply('Пожалуйста, введите время в формате ЧЧ:ММ (например, 18:30):');
+    } else {
+        await ctx.reply('Пожалуйста, выберите дату с помощью кнопок.');
     }
 });
 

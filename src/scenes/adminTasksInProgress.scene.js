@@ -23,11 +23,17 @@ function buildTaskInfo(task) {
     const buyerName = task.buyer?.username || 'Не указан';
     const creatorName = task.creator?.username || 'Не назначен';
     
-    // Обрезаем описание если оно слишком длинное
-    let description = task.description || '';
-    if (description.length > MAX_DESCRIPTION_LENGTH) {
-        description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
+    // Проверяем, создан ли заказ от лица другого баера
+    let createdByInfo = '';
+    if (task.createdBy && task.buyer && 
+        task.createdBy._id && task.buyer._id &&
+        task.createdBy._id.toString() !== task.buyer._id.toString()) {
+        const createdByName = task.createdBy.username || 'неизвестно';
+        createdByInfo = `👤 Создал: @${createdByName} от лица @${buyerName}\n`;
     }
+    
+    // Полное описание - будет разбито на части функцией splitLongText
+    const description = task.description || '';
     
     // Формируем информацию о статусе задачи
     const stateLabels = {
@@ -57,7 +63,7 @@ function buildTaskInfo(task) {
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${description}
 ${exampleLine}
-👨‍💼 Заказчик: ${buyerName}
+${createdByInfo}👨‍💼 Заказчик: ${buyerName}
 👨‍🎨 Креативщик: ${creatorName}
 📅 Дата создания: ${task.createdAt.toLocaleDateString()}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
