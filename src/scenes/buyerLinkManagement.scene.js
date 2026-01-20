@@ -2,6 +2,7 @@ const { Scenes } = require('telegraf');
 const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
+const { back } = require('../keyboards/back.keyboard');
 const userService = require('../services/user.service');
 const BuyerLinkService = require('../services/buyerLink.service');
 
@@ -10,7 +11,7 @@ const BuyerLinkManagementScene = new BaseScene('buyerLinkManagementScene');
 BuyerLinkManagementScene.enter(async (ctx) => {
     try {
         ctx.session.buyerLinkStep = 'main_buyer';
-        await ctx.reply(ruMessage.messages.buyerLinkManagement.enter_main_buyer);
+        await ctx.reply(ruMessage.messages.buyerLinkManagement.enter_main_buyer, back());
     } catch (error) {
         console.error('Ошибка при входе в сцену связывания баеров:', error);
         await ctx.reply(ruMessage.messages.error, await start(ctx.from.id));
@@ -61,7 +62,7 @@ BuyerLinkManagementScene.on('text', async (ctx) => {
             ctx.session.mainBuyerUsername = mainBuyer.username;
             ctx.session.buyerLinkStep = 'linked_buyer';
 
-            await ctx.reply(ruMessage.messages.buyerLinkManagement.enter_linked_buyer);
+            await ctx.reply(ruMessage.messages.buyerLinkManagement.enter_linked_buyer, back());
 
         } else if (step === 'linked_buyer') {
             // Ищем баера для привязки
