@@ -25,6 +25,17 @@ BuyerLinkManagementScene.on('text', async (ctx) => {
         const userInput = ctx.message.text.trim();
         const step = ctx.session.buyerLinkStep;
 
+        // Обработка команды /start
+        if (userInput === '/start') {
+            await ctx.reply(
+                ruMessage.messages.start.replace('{name}', ctx.from.first_name),
+                await start(ctx.from.id)
+            );
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+
         // Обработка кнопки "Назад"
         if (userInput === ruMessage.keyboards.back[0]) {
             await ctx.reply(
