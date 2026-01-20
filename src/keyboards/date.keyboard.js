@@ -1,29 +1,24 @@
 const { Markup } = require('telegraf');
 
 /**
- * Генерация inline-клавиатуры с ближайшими 4 днями
+ * Генерация inline-клавиатуры для выбора даты (Сегодня/Завтра)
  * @returns {Object} Inline-клавиатура с датами
  */
 function date() {
-    const today = new Date(); // Получаем текущую дату
-    const keyboard = []; // Массив для хранения кнопок
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
 
-    // Генерируем 4 даты, начиная с сегодняшнего дня
-    for (let i = 0; i < 4; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() + i); // Добавляем i дней к текущей дате
+    // Форматируем даты в формат "день.месяц" (например, "20.1")
+    const todayFormatted = `${today.getDate()}.${today.getMonth() + 1}`;
+    const tomorrowFormatted = `${tomorrow.getDate()}.${tomorrow.getMonth() + 1}`;
 
-        // Форматируем дату в формат "день.месяц" (например, "4.12")
-        const formattedDate = `${date.getDate()}.${date.getMonth() + 1}`;
+    const keyboard = [
+        [Markup.button.callback(`📅 Сегодня (${todayFormatted})`, `date_${todayFormatted}`)],
+        [Markup.button.callback(`📅 Завтра (${tomorrowFormatted})`, `date_${tomorrowFormatted}`)],
+        [Markup.button.callback('⬅️ Назад', 'back_to_task')]
+    ];
 
-        // Создаем кнопку с датой
-        keyboard.push([Markup.button.callback(formattedDate, `date_${formattedDate}`)]);
-    }
-
-    // Добавляем кнопку "Назад"
-    keyboard.push([Markup.button.callback('⬅️ Назад', 'back_to_task')]);
-
-    // Возвращаем inline-клавиатуру
     return Markup.inlineKeyboard(keyboard);
 }
 
