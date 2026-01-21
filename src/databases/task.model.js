@@ -26,6 +26,9 @@ const taskSchema = new Schema({
     version: { type: Number, default: 1 },
     result: { type: [String], default: [] },
     workType: { type: String, default: null },
+    // Поля блокировки модерации, чтобы один чекер не мешал другому
+    moderationLockedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    moderationLockedAt: { type: Date, default: null },
 }, {
     timestamps: true, // Добавляет createdAt и updatedAt
 });

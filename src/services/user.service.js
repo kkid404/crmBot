@@ -18,6 +18,15 @@ class UserService {
         return User.findOneAndUpdate({ tg_id }, updates, { new: true });
     }
 
+    // Обновить пользователя по ID
+    static async updateUserById(id, updates) {
+        try {
+            return await User.findOneAndUpdate({ _id: id }, updates, { new: true });
+        } catch (error) {
+            throw new Error(`Ошибка обновления пользователя: ${error.message}`);
+        }
+    }
+
     static async deleteUser(tg_id) {
         return User.findOneAndDelete({ tg_id });
     }

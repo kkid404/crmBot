@@ -17,7 +17,10 @@ class TaskService {
     // Поиск задачи по ID
     static async findTaskById(taskId) {
         try {
-            return await Task.findById(taskId).populate('buyer').populate('creator');
+            return await Task.findById(taskId)
+                .populate('buyer')
+                .populate('creator')
+                .populate('moderationLockedBy');
         } catch (error) {
             throw new Error(`Ошибка поиска задачи: ${error.message}`);
         }
@@ -541,6 +544,56 @@ static async getAutoAssignedTask(creatorId) {
         } catch (error) {
             console.error('Error in assignTask:', error);
             throw new Error(`Ошибка назначения задачи: ${error.message}`);
+        }
+    }
+
+    /**
+     * Acquire moderation lock for a task.
+     * Succeeds if task is not locked, lock expired, or already locked by same user.
+     * @returns {Promise<Object|null>} updated task (with populated moderationLockedBy) or null if failed
+     */
+    static async acquireModerationLock(taskId, userId, ttlMinutes = 30) {
+        try {
+            const expireBefore = new Date(Date.now() - ttlMinutes * 60 * 1000);
+            const updated = await Task.findOneAndUpdate(
+                {
+                    _id: taskId,
+                    $or: [
+                        { moderationLockedBy: null },
+                        { moderationLockedAt: null },
+                        { moderationLockedAt: { $lt: expireBefore } },
+                        { moderationLockedBy: userId }
+                    ]
+                },
+                {
+                    $set: {
+                        moderationLockedBy: userId,
+                        moderationLockedAt: new Date()
+                    }
+                },
+                { new: true }
+            ).populate('buyer').populate('creator').populate('moderationLockedBy');
+            return updated;
+        } catch (error) {
+            console.error('Error in acquireModerationLock:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Release moderation lock if held by the given user.
+     */
+    static async releaseModerationLock(taskId, userId) {
+        try {
+            const updated = await Task.findOneAndUpdate(
+                { _id: taskId, moderationLockedBy: userId },
+                { $set: { moderationLockedBy: null, moderationLockedAt: null } },
+                { new: true }
+            );
+            return updated;
+        } catch (error) {
+            console.error('Error in releaseModerationLock:', error);
+            return null;
         }
     }
 }

@@ -491,6 +491,13 @@ getTaskToModerateScene.enter(async (ctx) => {
       return;
     }
 
+    // Доступ только для чекеров
+    if (!user.cheker) {
+      await ctx.reply(ruMessage.messages.errors.error_protected, await start(ctx.from.id));
+      ctx.scene.leave();
+      return;
+    }
+
     // Initialize page in session if not exists
     ctx.session.currentPage = 0;
 
@@ -506,7 +513,16 @@ getTaskToModerateScene.enter(async (ctx) => {
     // If we have a task ID from a direct link (like moderate_task:xxx), load it immediately
     if (preselectedTaskId) {
       ctx.session.selectedTask = preselectedTaskId;
-      const task = await taskService.findTaskById(preselectedTaskId);
+      // Пытаемся захватить блокировку модерации
+      const lockedTask = await taskService.acquireModerationLock(preselectedTaskId, user._id);
+      if (!lockedTask) {
+        const current = await taskService.findTaskById(preselectedTaskId);
+        const lockerName = current?.moderationLockedBy?.username ? `@${current.moderationLockedBy.username}` : 'другой модератор';
+        await ctx.reply(`⚠️ Это ТЗ уже проверяет ${lockerName}. Выберите другое.`);
+      } else {
+        ctx.session.lockedTaskId = preselectedTaskId;
+      }
+      const task = lockedTask || await taskService.findTaskById(preselectedTaskId);
 
       if (task) {
         // Directly use the task information to display it
@@ -649,7 +665,23 @@ getTaskToModerateScene.enter(async (ctx) => {
 getTaskToModerateScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
   try {
     const taskId = ctx.callbackQuery.data;
-    const task = await taskService.findTaskById(taskId);
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    // Освобождаем предыдущую блокировку, если была другая задача
+    if (ctx.session.lockedTaskId && ctx.session.lockedTaskId !== taskId) {
+      await taskService.releaseModerationLock(ctx.session.lockedTaskId, user?._id);
+      ctx.session.lockedTaskId = null;
+    }
+    // Пытаемся захватить блокировку
+    const locked = await taskService.acquireModerationLock(taskId, user._id);
+    if (!locked) {
+      const current = await taskService.findTaskById(taskId);
+      const lockerName = current?.moderationLockedBy?.username ? `@${current.moderationLockedBy.username}` : 'другой модератор';
+      await ctx.answerCbQuery(`ТЗ уже проверяет ${lockerName}`);
+      return;
+    }
+    ctx.session.lockedTaskId = taskId;
+    const task = locked;
     if (!task) {
       await ctx.answerCbQuery(ruMessage.messages.taskNotFound);
       return;
@@ -979,14 +1011,22 @@ getTaskToModerateScene.on("text", async (ctx) => {
       delete ctx.session.waitingForPoints;
       delete ctx.session.pendingApproval;
 
-      // Запускаем логику финализации задания
-      await checkAndFinalizeTask(ctx);
+      // Один голос достаточно: финализируем сразу как done
+      const finalizedTask = await taskService.updateTask(taskId, {
+        state: "done",
+        points
+      });
+
+      // Освобождаем блокировку
+      try {
+        if (ctx.session.lockedTaskId) {
+          await taskService.releaseModerationLock(ctx.session.lockedTaskId, userId);
+          ctx.session.lockedTaskId = null;
+        }
+      } catch (_) {}
 
       // Отправляем стартовое меню с сообщением об успешном ответе
-      await ctx.reply(
-        `✅ Ответ принят. Креативщику начислено ${points} баллов.`,
-        await start(ctx.from.id)
-      );
+      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`, await start(ctx.from.id));
       ctx.scene.leave();
     } catch (error) {
       console.error("Error processing points input:", error);
@@ -1013,8 +1053,20 @@ getTaskToModerateScene.on("text", async (ctx) => {
       delete ctx.session.waitingForCorrection;
       delete ctx.session.pendingCancelVote;
 
-      // Запускаем финализацию задания
-      await checkAndFinalizeTask(ctx);
+      // Один голос достаточно: переводим в progress, увеличиваем версию и уведомляем
+      const task = await taskService.findTaskById(taskId);
+      await taskService.updateTask(taskId, {
+        state: "progress",
+        version: (task?.version || 1) + 1
+      });
+
+      // Освобождаем блокировку
+      try {
+        if (ctx.session.lockedTaskId) {
+          await taskService.releaseModerationLock(ctx.session.lockedTaskId, userId);
+          ctx.session.lockedTaskId = null;
+        }
+      } catch (_) {}
 
       // Удаляем inline-сообщение с заданием и отправляем стартовое меню с сообщением об успешном ответе
       try {
@@ -1100,8 +1152,30 @@ getTaskToModerateScene.action("quit", async (ctx) => {
     ruMessage.messages.start.replace("{name}", ctx.from.first_name),
     await start(ctx.from.id)
   );
+  // Освобождаем блокировку при выходе
+  try {
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (ctx.session?.lockedTaskId && user?._id) {
+      await taskService.releaseModerationLock(ctx.session.lockedTaskId, user._id);
+    }
+  } catch (_) {}
   ctx.session = {};
   ctx.scene.leave();
+});
+
+// Освобождаем блокировку при покидании сцены другим способом
+getTaskToModerateScene.leave(async (ctx) => {
+  try {
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (ctx.session?.lockedTaskId && user?._id) {
+      await taskService.releaseModerationLock(ctx.session.lockedTaskId, user._id);
+      ctx.session.lockedTaskId = null;
+    }
+  } catch (e) {
+    console.error('Ошибка при освобождении блокировки модерации:', e.message);
+  }
 });
 
 // Обработчик для показа примера задания
