@@ -1012,10 +1012,178 @@ getTaskToModerateScene.on("text", async (ctx) => {
       delete ctx.session.pendingApproval;
 
       // Один голос достаточно: финализируем сразу как done
+      // Добавляем бонус +0.125 при первом одобрении (version === 1) для не-исключенных типов
+      const isExcludedType = task.workType && (
+        task.workType.includes('Уникализация') || 
+        task.workType.includes('Глубокая уникализация') || 
+        task.workType.includes('Адаптация')
+      );
+      const finalPoints = (version === 1 && !isExcludedType) ? points + 0.125 : points;
+      
       const finalizedTask = await taskService.updateTask(taskId, {
         state: "done",
-        points
+        points: finalPoints
       });
+
+      if (!finalizedTask) {
+        await ctx.reply("Ошибка при финализации задачи");
+        return;
+      }
+
+      const { creator, buyer } = finalizedTask;
+
+      // --- Отправка в форум/архив --- //
+      try {
+        const topicIdMain = await TopicService.getOrCreate(
+          ctx,
+          process.env.FORUM_CHAT_ID,
+          extractRegion(finalizedTask.name)
+        );
+
+        const fmt = (iso) => iso ? dayjs(iso).locale("ru").format("DD.MM.YYYY HH:mm") : "—";
+
+        const labels = {
+          name: "📌 Задача",
+          description: "📝 Описание",
+          link_app: "🔗 Приложение",
+          workType: "💼 Тип работы",
+          expectedDate: "⏰ Предполагаемая дата сдачи",
+          completionDate: "✅ Завершено",
+          buyer: "👤 Баер",
+          creator: "👨‍💻 Креативщик",
+        };
+
+        const taskObj = finalizedTask.toObject();
+        delete taskObj.points;
+        delete taskObj.state;
+        delete taskObj.ctr;
+        delete taskObj.bonus;
+        delete taskObj.result;
+        delete taskObj.example_creative;
+        delete taskObj.__v;
+
+        const flat = {
+          name: taskObj.name,
+          description: taskObj.description,
+          link_app: taskObj.link_app,
+          workType: taskObj.workType,
+          expectedDate: fmt(taskObj.expectedDate),
+          completionDate: fmt(taskObj.completionDate),
+          buyer: `@${taskObj.buyer.username}`,
+          creator: `@${taskObj.creator.username}`,
+        };
+
+        const message = Object.entries(flat)
+          .map(([k, v]) => `<b>${labels[k]}:</b> ${v}`)
+          .join("\n\n");
+
+        await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, message, {
+          parse_mode: "HTML",
+          message_thread_id: topicIdMain,
+        });
+
+        // Отправка готового креатива
+        if (finalizedTask.result && finalizedTask.result.length > 0) {
+          const resultMedia = Array.isArray(finalizedTask.result)
+            ? finalizedTask.result
+            : [finalizedTask.result];
+          const resultCaption = `Готовый - ${finalizedTask.name}`;
+          if (resultMedia.length > 1) {
+            await ctx.telegram.sendMediaGroup(
+              process.env.FORUM_CHAT_ID,
+              resultMedia.map((fileId, i) => ({
+                type: fileId.startsWith("BA") ? "video" : "photo",
+                media: fileId,
+                caption: i === 0 ? resultCaption : undefined,
+              })),
+              { message_thread_id: topicIdMain }
+            );
+          } else if (resultMedia.length === 1) {
+            const fileId = resultMedia[0];
+            const method = fileId.startsWith("BA") ? "sendVideo" : "sendPhoto";
+            await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, {
+              caption: resultCaption,
+              message_thread_id: topicIdMain,
+            });
+          }
+        }
+
+        // Отправка примера креатива
+        if (finalizedTask.example_creative && finalizedTask.example_creative.length > 0) {
+          const exampleMedia = Array.isArray(finalizedTask.example_creative)
+            ? finalizedTask.example_creative
+            : [finalizedTask.example_creative];
+          const exampleCaption = `Пример для - ${finalizedTask.name}`;
+
+          const isValidMedia = exampleMedia.every(
+            (fileId) =>
+              fileId.startsWith("AgAC") ||
+              fileId.startsWith("BAA") ||
+              fileId.startsWith("BQA") ||
+              fileId.startsWith("CQA") ||
+              fileId.startsWith("DQA")
+          );
+
+          if (isValidMedia) {
+            if (exampleMedia.length > 1) {
+              await ctx.telegram.sendMediaGroup(
+                process.env.FORUM_CHAT_ID,
+                exampleMedia.map((fileId, i) => ({
+                  type: fileId.startsWith("BA") ? "video" : "photo",
+                  media: fileId,
+                  caption: i === 0 ? exampleCaption : undefined,
+                })),
+                { message_thread_id: topicIdMain }
+              );
+            } else if (exampleMedia.length === 1) {
+              const fileId = exampleMedia[0];
+              const method = fileId.startsWith("BA") ? "sendVideo" : "sendPhoto";
+              await ctx.telegram[method](process.env.FORUM_CHAT_ID, fileId, {
+                caption: exampleCaption,
+                message_thread_id: topicIdMain,
+              });
+            }
+          } else {
+            await ctx.telegram.sendMessage(
+              process.env.FORUM_CHAT_ID,
+              `${exampleCaption}\n\n${exampleMedia.join("\n")}`,
+              { message_thread_id: topicIdMain }
+            );
+          }
+        }
+        await forwardToSecondChat(ctx, finalizedTask, extractRegion(finalizedTask.name));
+      } catch (e) {
+        console.error("Ошибка при пересылке данных в форум:", e);
+      }
+
+      // --- Уведомления пользователям ---
+      try {
+        if (creator && creator.tg_id) {
+          if (!finalizedTask.expectedDate && finalizedTask.state !== 'done') {
+            await ctx.telegram.sendMessage(
+              creator.tg_id,
+              `🔔 Для задачи "${finalizedTask.name}" укажите дату и время сдачи:`,
+              setExpectedTimeKeyboard(finalizedTask._id)
+            );
+          }
+
+          const workTypeText = finalizedTask.workType || 'Не указан';
+          const pointsText = finalizedTask.points || 0;
+          const approvalMessage = `✅ ${finalizedTask.name} Одобрено!\n\n⭐ Начислено баллов: ${pointsText}\n💎 Тип работы: ${workTypeText}`;
+          
+          await ctx.telegram.sendMessage(creator.tg_id, approvalMessage);
+        }
+      } catch (error) {
+        console.error(`Failed to send messages to creator for task ${finalizedTask.name}:`, error);
+      }
+
+      try {
+        if (buyer && buyer.tg_id) {
+          await ctx.telegram.sendMessage(buyer.tg_id, `✅ ${finalizedTask.name} готово!`);
+        }
+      } catch (error) {
+        console.error(`Failed to send completion message to buyer for task ${finalizedTask.name}:`, error.message);
+      }
 
       // Освобождаем блокировку
       try {
@@ -1026,7 +1194,7 @@ getTaskToModerateScene.on("text", async (ctx) => {
       } catch (_) {}
 
       // Отправляем стартовое меню с сообщением об успешном ответе
-      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`, await start(ctx.from.id));
+      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${finalPoints} баллов.`, await start(ctx.from.id));
       ctx.scene.leave();
     } catch (error) {
       console.error("Error processing points input:", error);
@@ -1059,6 +1227,37 @@ getTaskToModerateScene.on("text", async (ctx) => {
         state: "progress",
         version: (task?.version || 1) + 1
       });
+
+      // Уведомляем креативщика о правках
+      try {
+        const creator = await userService.findById(task.creator);
+        if (creator && creator.tg_id) {
+          let exampleLine = "🎨 Пример креатива: отсутствует";
+          if (Array.isArray(task.example_creative) && task.example_creative.length > 0) {
+            exampleLine = `🎨 Примеры креатива: ${task.example_creative.length}`;
+          } else if (typeof task.example_creative === "string" && task.example_creative.trim() !== "") {
+            const isMedia = task.example_creative.startsWith("AgAC") || task.example_creative.startsWith("BAA");
+            exampleLine = isMedia ? "🎨 Пример креатива ниже" : `🎨 Пример креатива: ${task.example_creative}`;
+          }
+
+          const creativeMessage = `
+🎯 Название: ${task.name}
+🔗 Ссылка на приложение: ${task.link_app}
+📝 Описание: ${task.description}
+${exampleLine}
+📅 Дата создания: ${formatDateMSK(task.createdAt)}
+
+правки:
+${correction}
+          `;
+          const messageParts = splitLongMessage(creativeMessage);
+          for (const part of messageParts) {
+            await ctx.telegram.sendMessage(creator.tg_id, part);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to send correction to creator:', error);
+      }
 
       // Освобождаем блокировку
       try {
