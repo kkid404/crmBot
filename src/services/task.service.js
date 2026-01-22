@@ -20,6 +20,7 @@ class TaskService {
             return await Task.findById(taskId)
                 .populate('buyer')
                 .populate('creator')
+                .populate('createdBy')
                 .populate('moderationLockedBy');
         } catch (error) {
             throw new Error(`Ошибка поиска задачи: ${error.message}`);
@@ -38,7 +39,7 @@ class TaskService {
                 taskId, 
                 updates, 
                 { new: true }
-            ).populate('buyer').populate('creator');
+            ).populate('buyer').populate('creator').populate('createdBy');
             
             // If state changed to 'progress', 'done', or 'canceled', update round state
             if (isStateChanging && (updates.state === 'progress' || updates.state === 'done' || updates.state === 'canceled')) {
