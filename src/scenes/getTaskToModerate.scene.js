@@ -47,11 +47,21 @@ const formatTaskInfo = (task) => {
 
   // Проверяем, создан ли заказ от лица другого баера
   let createdByInfo = "";
-  if (task.createdBy && task.buyer && 
-      task.createdBy._id && task.buyer._id &&
-      task.createdBy._id.toString() !== task.buyer._id.toString()) {
-    const createdByName = task.createdBy.username || "неизвестно";
-    createdByInfo = `\n👤 Создал: @${createdByName}`;
+  if (task.createdBy && task.buyer) {
+    // Проверяем, что createdBy - это объект (populate сработал), а не просто ObjectId
+    const createdById = typeof task.createdBy === 'object' && task.createdBy._id 
+      ? task.createdBy._id.toString() 
+      : task.createdBy.toString();
+    const buyerId = typeof task.buyer === 'object' && task.buyer._id 
+      ? task.buyer._id.toString() 
+      : task.buyer.toString();
+    
+    if (createdById !== buyerId) {
+      const createdByName = (typeof task.createdBy === 'object' && task.createdBy.username) 
+        ? task.createdBy.username 
+        : "неизвестно";
+      createdByInfo = `\n👤 Создал: @${createdByName}`;
+    }
   }
 
   // Формируем информацию о ожидаемой дате выполнения
