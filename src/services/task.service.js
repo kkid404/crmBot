@@ -573,7 +573,7 @@ static async getAutoAssignedTask(creatorId) {
                     }
                 },
                 { new: true }
-            ).populate('buyer').populate('creator').populate('moderationLockedBy');
+            ).populate('buyer').populate('creator').populate('createdBy').populate('moderationLockedBy');
             return updated;
         } catch (error) {
             console.error('Error in acquireModerationLock:', error);

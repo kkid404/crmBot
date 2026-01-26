@@ -57,10 +57,18 @@ const formatTaskInfo = (task) => {
       : task.buyer.toString();
     
     if (createdById !== buyerId) {
-      const createdByName = (typeof task.createdBy === 'object' && task.createdBy.username) 
-        ? task.createdBy.username 
-        : "неизвестно";
-      createdByInfo = `\n👤 Создал: @${createdByName}`;
+      // Отладка: проверяем, что пришло в createdBy
+      console.log('[DEBUG] task.createdBy:', JSON.stringify(task.createdBy));
+      console.log('[DEBUG] typeof task.createdBy:', typeof task.createdBy);
+      
+      let createdByName = "неизвестно";
+      if (typeof task.createdBy === 'object' && task.createdBy !== null) {
+        // Пробуем username, если нет - tg_id
+        createdByName = task.createdBy.username || task.createdBy.tg_id || "неизвестно";
+      }
+      
+      const buyerNameForDisplay = buyerName !== "Не указан" ? buyerName : "баера";
+      createdByInfo = `\n👤 Создал: @${createdByName} от лица @${buyerNameForDisplay}`;
     }
   }
 
@@ -448,6 +456,24 @@ ${corrections}
             `Failed to send completion message to buyer for task ${finalizedTask.name}:`,
             error.message
           );
+        }
+
+        // Уведомляем главного баера (createdBy), если задача создана от лица другого
+        try {
+          const { createdBy } = finalizedTask;
+          if (createdBy && typeof createdBy === 'object' && createdBy.tg_id) {
+            const createdById = createdBy._id ? createdBy._id.toString() : null;
+            const buyerId = buyer && buyer._id ? buyer._id.toString() : null;
+            
+            if (createdById && buyerId && createdById !== buyerId) {
+              await ctx.telegram.sendMessage(
+                createdBy.tg_id,
+                `✅ ${finalizedTask.name} готово!\n(создано от лица @${buyer.username || 'баера'})`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to send completion message to createdBy for task ${finalizedTask.name}:`, error.message);
         }
       }
       return true;
@@ -1193,6 +1219,24 @@ getTaskToModerateScene.on("text", async (ctx) => {
         }
       } catch (error) {
         console.error(`Failed to send completion message to buyer for task ${finalizedTask.name}:`, error.message);
+      }
+
+      // Уведомляем главного баера (createdBy), если задача создана от лица другого
+      try {
+        const { createdBy } = finalizedTask;
+        if (createdBy && typeof createdBy === 'object' && createdBy.tg_id) {
+          const createdById = createdBy._id ? createdBy._id.toString() : null;
+          const buyerId = buyer && buyer._id ? buyer._id.toString() : null;
+          
+          if (createdById && buyerId && createdById !== buyerId) {
+            await ctx.telegram.sendMessage(
+              createdBy.tg_id,
+              `✅ ${finalizedTask.name} готово!\n(создано от лица @${buyer.username || 'баера'})`
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to send completion message to createdBy for task ${finalizedTask.name}:`, error.message);
       }
 
       // Освобождаем блокировку
