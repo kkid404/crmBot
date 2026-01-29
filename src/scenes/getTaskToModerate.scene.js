@@ -120,7 +120,6 @@ ${exampleLine}
 
 📅 Дата создания: ${formatDateMSK(task.createdAt)}
 ⏱️ Ожидаемая дата выполнения: ${expectedDateInfo}
-👨‍💼 Заказчик: ${buyerName}
     `;
 
   return { taskInfo, fullDescription, hasFullDescription };
