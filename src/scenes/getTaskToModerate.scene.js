@@ -223,19 +223,12 @@ ${corrections}
         }
       } else {
         // Все одобрили задание – обновляем состояние и получаем свежую версию задачи
-        // Баллы устанавливаются модератором вручную, но добавляем +0.125 при первом одобрении
+        // Баллы устанавливаются модератором вручную
         const currentPoints = task.points || 0;
-        const isExcludedType = task.workType && (
-          task.workType.includes('Уникализация') || 
-          task.workType.includes('Глубокая уникализация') || 
-          task.workType.includes('Адаптация')
-        );
-        // Добавляем бонус 0.125 только при первом одобрении (version === 1) и для не-исключенных типов
-        const updatedPoints = (version === 1 && !isExcludedType) ? currentPoints + 0.125 : currentPoints;
         
         const finalizedTask = await taskService.updateTask(taskId, {
           state: "done",
-          points: updatedPoints,
+          points: currentPoints,
         });
         if (!finalizedTask) {
           console.error(`Failed to update and retrieve task ${taskId}`);
@@ -1047,17 +1040,11 @@ getTaskToModerateScene.on("text", async (ctx) => {
       delete ctx.session.pendingApproval;
 
       // Один голос достаточно: финализируем сразу как done
-      // Добавляем бонус +0.125 при первом одобрении (version === 1) для не-исключенных типов
-      const isExcludedType = task.workType && (
-        task.workType.includes('Уникализация') || 
-        task.workType.includes('Глубокая уникализация') || 
-        task.workType.includes('Адаптация')
-      );
-      const finalPoints = (version === 1 && !isExcludedType) ? points + 0.125 : points;
+      // Баллы устанавливаются модератором вручную
       
       const finalizedTask = await taskService.updateTask(taskId, {
         state: "done",
-        points: finalPoints
+        points: points
       });
 
       if (!finalizedTask) {
