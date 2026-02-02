@@ -1234,7 +1234,7 @@ getTaskToModerateScene.on("text", async (ctx) => {
       } catch (_) {}
 
       // Отправляем стартовое меню с сообщением об успешном ответе
-      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${finalPoints} баллов.`, await start(ctx.from.id));
+      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`, await start(ctx.from.id));
       ctx.scene.leave();
     } catch (error) {
       console.error("Error processing points input:", error);
