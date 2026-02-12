@@ -405,33 +405,108 @@ static async getAutoAssignedTask(creatorId) {
 // ...
 
     // Метод для установки бонуса по умолчанию для задач без бонуса
+    // Дополнительно: каждая 3-я задача на креативщика получает 3x defaultBonus (пример: 500, 500, 1500, 500, 500, 1500 ...)
     static async setDefaultBonus(defaultBonus = 500, timeFrame = 30) {
         try {
-            // Вычисляем дату, раньше которой будем искать задачи (например, старше 30 дней)
+            // 1) Дата отсечения
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - timeFrame);
 
-            // Находим все задачи со статусом "done", у которых нет бонуса (bonus === null)
-            // и которые были выполнены раньше указанной даты (т.е. старше чем timeFrame дней)
-            const result = await Task.updateMany(
-                {
-                    state: 'done',
-                    bonus: null,
-                    completionDate: { $lt: cutoffDate }
-                },
-                {
-                    $set: {
-                        bonus: defaultBonus,
-                        isPenaltyBonus: true
-                    }
+            // 2) Находим все подходящие задачи (старые, выполненные, без бонуса)
+            const matchedTasks = await Task.find({
+                state: 'done',
+                bonus: null,
+                completionDate: { $lt: cutoffDate }
+            }, {
+                _id: 1,
+                creator: 1,
+                completionDate: 1,
+                createdAt: 1
+            }).lean();
+
+            if (!matchedTasks || matchedTasks.length === 0) {
+                return {
+                    success: true,
+                    message: 'Подходящих задач без бонуса не найдено',
+                    modifiedCount: 0,
+                    matchedCount: 0
+                };
+            }
+
+            // 3) Группируем по креативщику и сортируем по дате выполнения
+            const byCreator = new Map(); // creatorId -> tasks[]
+            for (const t of matchedTasks) {
+                const creatorId = (t.creator && t.creator.toString) ? t.creator.toString() : String(t.creator);
+                if (!byCreator.has(creatorId)) byCreator.set(creatorId, []);
+                byCreator.get(creatorId).push(t);
+            }
+            for (const [creatorId, list] of byCreator) {
+                list.sort((a, b) => {
+                    const da = a.completionDate ? new Date(a.completionDate).getTime() : 0;
+                    const db = b.completionDate ? new Date(b.completionDate).getTime() : 0;
+                    if (da !== db) return da - db;
+                    // стабильная сортировка по _id как запасной вариант
+                    return String(a._id).localeCompare(String(b._id));
+                });
+            }
+
+            // 4) Подсчитываем смещение (offset) для каждого креативщика, чтобы продолжить цикл
+            //    Считаем количество уже "забонусенных" задач ДО даты отсечения
+            const offsets = new Map(); // creatorId -> number
+            const creatorIds = Array.from(byCreator.keys());
+            if (creatorIds.length > 0) {
+                const priorAgg = await Task.aggregate([
+                    { $match: {
+                        state: 'done',
+                        bonus: { $ne: null },
+                        completionDate: { $lt: cutoffDate },
+                        creator: { $in: creatorIds.map(id => new mongoose.Types.ObjectId(id)) }
+                    }},
+                    { $group: { _id: '$creator', cnt: { $sum: 1 } } }
+                ]);
+                for (const row of priorAgg) {
+                    offsets.set(String(row._id), row.cnt);
                 }
-            );
+                // для тех, кого нет в priorAgg — offset = 0
+                for (const id of creatorIds) if (!offsets.has(id)) offsets.set(id, 0);
+            }
+
+            // 5) Формируем bulkWrite: каждый 3-й в последовательности получает 3x defaultBonus
+            const ops = [];
+            let totalModified = 0;
+            for (const [creatorId, list] of byCreator) {
+                let offset = offsets.get(creatorId) || 0;
+                for (let i = 0; i < list.length; i++) {
+                    const seqIndex = offset + (i + 1); // 1-based позиция в общей последовательности
+                    const isThird = seqIndex % 3 === 0;
+                    const amount = isThird ? defaultBonus * 3 : defaultBonus;
+                    ops.push({
+                        updateOne: {
+                            filter: { _id: list[i]._id, bonus: null },
+                            update: { $set: { bonus: amount, isPenaltyBonus: true } }
+                        }
+                    });
+                    totalModified += 1;
+                }
+            }
+
+            if (ops.length === 0) {
+                return {
+                    success: true,
+                    message: 'Подходящих задач без бонуса не найдено',
+                    modifiedCount: 0,
+                    matchedCount: matchedTasks.length
+                };
+            }
+
+            const bulkRes = await Task.bulkWrite(ops);
+            const modifiedCount = bulkRes.modifiedCount || 0;
 
             return {
                 success: true,
-                message: `Штрафной бонус ${defaultBonus} установлен для ${result.modifiedCount} задач`,
-                modifiedCount: result.modifiedCount,
-                matchedCount: result.matchedCount
+                message: `Штрафной бонус по умолчанию применён. Каждый 3-й = ${defaultBonus * 3}.`,
+                modifiedCount,
+                matchedCount: matchedTasks.length
             };
         } catch (error) {
             console.error('Ошибка при установке бонуса по умолчанию:', error);
