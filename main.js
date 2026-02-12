@@ -10,6 +10,7 @@ const { statisticsActions } = require('./src/actions/statistics.actions'); // Д
 const { pointsActions } = require('./src/actions/points.actions');
 const errorHandler = require('./src/middlewares/errorHandler.middleware');
 const { startDeadlineChecker } = require('./src/services/deadlineChecker.service');
+const usernameUpdater = require('./src/services/usernameUpdater.service');
 
 const botToken = process.env.TELEGRAM_TOKEN;
 
@@ -26,6 +27,8 @@ bot.use(errorHandler);
 
 // Запуск дедлайн чекера
 startDeadlineChecker(bot);
+// Запуск ежедневного обновления username из Telegram (03:00 по серверному времени)
+usernameUpdater.init(bot);
 
 const { Stage } = Scenes;
 
