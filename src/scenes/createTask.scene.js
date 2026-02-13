@@ -488,30 +488,38 @@ async function createTaskWithoutCreator(ctx) {
         console.error("Не удалось создать задачу после нескольких попыток");
         await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
     } else {
-        // Отправляем уведомления всем креативщикам о новом задании
+        // Отправляем уведомления только администраторам/чекерам о новом задании
         try {
-            // Находим всех пользователей с ролью creator
+            // Находим всех пользователей и выделяем админов/чекеров
             const allUsers = await userService.getAll();
-            const creators = allUsers.filter(user => user.position === 'creator');
-            console.log(`Найдено креативщиков: ${creators.length}`);
-            
-            if (creators.length > 0) {
-                // Формируем текст уведомления
+            const admins = allUsers.filter(u => u.role === 'admin');
+            const checkers = allUsers.filter(u => u.cheker === true);
+
+            // Собираем уникальный список получателей по tg_id
+            const recipientsMap = new Map();
+            for (const u of [...admins, ...checkers]) {
+                if (u && u.tg_id && !recipientsMap.has(u.tg_id)) {
+                    recipientsMap.set(u.tg_id, u);
+                }
+            }
+
+            const recipients = Array.from(recipientsMap.values());
+            console.log(`Получателей уведомления (админы/чекеры): ${recipients.length}`);
+
+            if (recipients.length > 0) {
                 const notificationText = `🎯 Новое задание доступно: "${taskData.name}"`;
-                
-                // Отправляем уведомление каждому креативщику
-                for (const creator of creators) {
+                for (const user of recipients) {
                     try {
-                        console.log(`Отправка уведомления креативщику: ${creator.tg_id}`);
-                        const sent = await ctx.telegram.sendMessage(creator.tg_id, notificationText);
-                        console.log(`Уведомление успешно отправлено креативщику: ${creator.tg_id}, message_id: ${sent.message_id}`);
+                        console.log(`Отправка уведомления (admin/checker): ${user.tg_id}`);
+                        const sent = await ctx.telegram.sendMessage(user.tg_id, notificationText);
+                        console.log(`Уведомление отправлено: ${user.tg_id}, message_id: ${sent.message_id}`);
                     } catch (err) {
-                        console.error(`Ошибка отправки уведомления креативщику ${creator.tg_id}:`, err);
+                        console.error(`Ошибка отправки уведомления пользователю ${user.tg_id}:`, err);
                     }
                 }
             }
         } catch (err) {
-            console.error("Ошибка при отправке уведомлений креативщикам:", err);
+            console.error("Ошибка при отправке уведомлений администраторам/чекерам:", err);
         }
     }
     

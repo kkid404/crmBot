@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Task = require('../databases/task.model');
 const RoundState = require('../databases/roundState.model');
+const notificationService = require('./notification.service');
 
 class TaskService {
     static processedBuyersInCurrentRound = new Set();
@@ -126,6 +127,10 @@ class TaskService {
                 // Для креативщиков включаем задачи со state=time вместе с другими статусами
                 if (role === 'creator' && state === 'progress') {
                     query.state = { $in: ['progress', 'time'] };
+                } else if (role === 'buyer' && state === 'progress') {
+                    // Для баеров в разделе "В работе" показываем также задачи на проверке
+                    // чтобы ТЗ не исчезало из списка при сдаче на модерацию
+                    query.state = { $in: ['progress', 'wait'] };
                 } else {
                     query.state = state;
                 }
@@ -367,6 +372,19 @@ static async getAutoAssignedTask(creatorId) {
             roundState.processedTaskIds = [];
             roundState.roundStartTime = new Date();
             await roundState.save({ session });
+
+            // Оповестить креативщиков о новых заданиях в пуле
+            try {
+                // Вызов вне транзакции: сначала зафиксируем текущие изменения
+                await session.commitTransaction();
+                await notificationService.notifyCreatorsNewRound();
+                // Начать новую транзакцию для дальнейшей логики выбора (если потребуется)
+                session.startTransaction();
+                // Перечитать roundState под новой транзакцией
+                roundState = await RoundState.findOne({ key: 'autoAssignQueue' }).session(session);
+            } catch (notifyErr) {
+                console.error('[TaskService] Failed to notify creators about new round:', notifyErr);
+            }
         }
 
         // Выбираем задачу для выдачи

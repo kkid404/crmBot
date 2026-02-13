@@ -37,7 +37,11 @@ const myTasks = async (id, role = '', state, page = 0) => {
         
         // Ограничиваем длину названия задачи
         const taskName = task.name.length > 30 ? task.name.substring(0, 27) + '...' : task.name;
-        return [Markup.button.callback(`${bonusIndicator}${delegateIndicator}${taskName}`, task._id.toString())];
+
+        // Добавляем пометку "(на правках)" для задач на модерации у баеров
+        const editLabel = role === 'buyer' && task.state === 'wait' ? ' (на правках)' : '';
+
+        return [Markup.button.callback(`${bonusIndicator}${delegateIndicator}${taskName}${editLabel}`, task._id.toString())];
     });
 
     // Добавляем кнопки навигации, если есть несколько страниц

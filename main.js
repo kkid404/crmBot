@@ -11,6 +11,7 @@ const { pointsActions } = require('./src/actions/points.actions');
 const errorHandler = require('./src/middlewares/errorHandler.middleware');
 const { startDeadlineChecker } = require('./src/services/deadlineChecker.service');
 const usernameUpdater = require('./src/services/usernameUpdater.service');
+const notificationService = require('./src/services/notification.service');
 
 const botToken = process.env.TELEGRAM_TOKEN;
 
@@ -29,11 +30,24 @@ bot.use(errorHandler);
 startDeadlineChecker(bot);
 // Запуск ежедневного обновления username из Telegram (03:00 по серверному времени)
 usernameUpdater.init(bot);
+// Инициализация сервиса уведомлений
+notificationService.init(bot);
 
 const { Stage } = Scenes;
 
 // Использование локальной сессии
 const localSession = new LocalSession({ database: 'session_db.json' });
+
+// Глобальная кнопка для быстрого перехода к пулу ТЗ
+bot.action('open_task_pool', async (ctx) => {
+  try {
+    await ctx.scene.enter('getTTScene');
+    await ctx.answerCbQuery();
+  } catch (e) {
+    console.error('Error handling open_task_pool:', e);
+    try { await ctx.answerCbQuery('Ошибка открытия пула заданий'); } catch {}
+  }
+});
 
 bot.use(localSession.middleware());
 
