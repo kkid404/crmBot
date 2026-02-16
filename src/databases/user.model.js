@@ -15,7 +15,10 @@ const userSchema = new Schema({
         default: null 
     },
     cheker: { type: Boolean, default: false },
-    isBan: { type: Boolean, default: false }
+    isBan: { type: Boolean, default: false },
+    // Показывает принадлежность баера: наш (true) или сторонний (false).
+    // Может быть null до классификации.
+    isOur: { type: Boolean, default: null }
 }, {
     timestamps: true, 
 });

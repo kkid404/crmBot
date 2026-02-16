@@ -89,6 +89,19 @@ class UserService {
         const user = await User.findOne({ tg_id });
         return user && user.isBan === true;
     }
+
+    /** Найти баеров по фильтрам принадлежности и бану */
+    static async findBuyers({ isOur = null, isBan = null } = {}) {
+        const query = { position: 'buyer' };
+        if (isOur !== null) query.isOur = isOur;
+        if (isBan !== null) query.isBan = isBan;
+        return User.find(query).sort({ createdAt: -1 });
+    }
+
+    /** Установить принадлежность баера (наш/не наш) */
+    static async setBuyerOurStatusById(id, isOur) {
+        return User.findOneAndUpdate({ _id: id }, { isOur }, { new: true });
+    }
 }
 
 module.exports = UserService;

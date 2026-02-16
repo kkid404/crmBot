@@ -3,6 +3,7 @@ const { BaseScene } = Scenes;
 const ruMessage = require('../lang/ru.json');
 const userService = require('../services/user.service');
 const { start } = require('../keyboards/start.keyboard');
+const notificationService = require('../services/notification.service');
 
 const tokenRolesMap = {
     "ee2433259b0fe399b40e81d2c98a38b6": { role: 'admin', position: 'creator', checker: true },
@@ -69,7 +70,7 @@ RegisterUserScene.on('text', async (ctx) => {
 
         try {
             // Создаем пользователя с ролью, позицией и флагом checker из маппинга
-            await userService.createUser({
+            const newUser = await userService.createUser({
                 tg_id: tgId,
                 role: tokenData.role,
                 position: tokenData.position,
@@ -77,6 +78,15 @@ RegisterUserScene.on('text', async (ctx) => {
                 checker: tokenData.checker, // Устанавливаем значение checker
                 created_at: new Date(),
             });
+
+            // Если зарегистрировался новый баер — уведомить админов-креативщиков
+            if (newUser && newUser.position === 'buyer') {
+                try {
+                    await notificationService.notifyCreatorAdminsNewBuyer(newUser);
+                } catch (notifyErr) {
+                    console.error('notifyCreatorAdminsNewBuyer error:', notifyErr);
+                }
+            }
 
             try {
                 await ctx.reply(
