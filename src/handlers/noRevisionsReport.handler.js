@@ -7,7 +7,7 @@ const Task = require('../databases/task.model');
  * Collects stats for tasks submitted without revisions (version === 1) within a period.
  */
 const handler = (bot) => {
-  const buttonText = ruMessage.keyboards.startAdmin[ruMessage.keyboards.startAdmin.length - 1];
+  const buttonText = 'Отчет тз без проверок';
 
   // 1) Entry point from admin menu
   bot.hears(buttonText, isAdmin, async (ctx) => {

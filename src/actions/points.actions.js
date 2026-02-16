@@ -69,11 +69,10 @@ const actions = bot => {
     return Array.isArray(key) ? key : Object.values(key);
   };
 
+  // Триггеры только для явных пунктов сбора отчёта, чтобы не перехватывать другие кнопки админ-меню
   const pointsTriggers = Array.from(new Set([
-    ...collectButtons(ru.keyboards.ownerKeyboard),
-    ...collectButtons(ru.keyboards.startAdmin),
-    '🏆 Собрать отчёт', // резерв на случай отсутствия в конфиге
-    '🏆 Собрать отчет', // поддержка "отчет" без ё
+    '🏆 Собрать отчёт',
+    '🏆 Собрать отчет'
   ]));
 
   bot.hears(pointsTriggers, showPeriodSelector);
