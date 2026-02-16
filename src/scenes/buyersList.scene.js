@@ -34,8 +34,8 @@ BuyersListScene.on('text', async (ctx) => {
 
   try {
     let filter = {};
-    if (text === kb.ours) filter = { isOur: true, isBan: false };
-    else if (text === kb.externals) filter = { isOur: false, isBan: false };
+    if (text === kb.ours) filter = { isOur: true };
+    else if (text === kb.externals) filter = { isOur: false };
     else if (text === kb.banned) filter = { isBan: true };
     else {
       await ctx.reply(ruMessage.messages.buyersList.title, await buyersList());
