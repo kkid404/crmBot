@@ -134,20 +134,46 @@ const actions = (bot) => {
         // Проверяем, ожидаем ли мы ввод периода
         if (ctx.session?.waitingForBonusPeriod === true) {
             console.log('[BONUS HANDLER] Processing period input');
-            const text = ctx.message.text;
-            const period = parseInt(text);
-            
-            if (isNaN(period) || period <= 0) {
-                await ctx.reply('❌ Пожалуйста, введите корректное число дней (положительное целое число).');
+            const text = (ctx.message.text || '').trim();
+
+            // 1) Попытка распарсить как DD.MM.YYYY
+            const dateMatch = text.match(/^([0-3]?\d)\.([0-1]?\d)\.(\d{4})$/);
+            if (dateMatch) {
+                const d = parseInt(dateMatch[1], 10);
+                const m = parseInt(dateMatch[2], 10) - 1; // 0-based month
+                const y = parseInt(dateMatch[3], 10);
+                const cutoffDate = new Date(y, m, d, 0, 0, 0, 0);
+
+                if (isNaN(cutoffDate.getTime())) {
+                    await ctx.reply('❌ Некорректная дата. Введите в формате ДД.MM.ГГГГ или количество дней.');
+                    return;
+                }
+
+                const now = new Date();
+                // Разница в днях: сколько дней назад была введённая дата
+                const diffMs = now.setHours(0,0,0,0) - cutoffDate.getTime();
+                const periodDays = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+
+                ctx.session.bonusPeriod = periodDays;
+                ctx.session.waitingForBonusPeriod = false;
+
+                await ctx.reply(`✅ Дата отсечения установлена: ${text} (период: ${periodDays} дн.)`);
+                await showBonusMenu(ctx);
                 return;
             }
-            
+
+            // 2) Иначе пробуем как число дней
+            const period = parseInt(text, 10);
+            if (isNaN(period) || period <= 0) {
+                await ctx.reply('❌ Пожалуйста, введите корректное число дней (положительное целое число) или дату в формате ДД.MM.ГГГГ.');
+                return;
+            }
+
             // Сохраняем период в сессии
             ctx.session.bonusPeriod = period;
             ctx.session.waitingForBonusPeriod = false;
-            
+
             await ctx.reply(`✅ Период установлен: ${period} дней`);
-            
             // Показываем меню бонуса с обновленным периодом
             await showBonusMenu(ctx);
             return;

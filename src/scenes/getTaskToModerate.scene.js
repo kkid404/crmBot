@@ -1232,10 +1232,22 @@ getTaskToModerateScene.on("text", async (ctx) => {
           ctx.session.lockedTaskId = null;
         }
       } catch (_) {}
+      
+      // Очищаем медиа и возвращаемся к списку ТЗ на проверке, оставаясь в сцене
+      try {
+        await deleteMediaMessages(ctx);
+      } catch (_) {}
 
-      // Отправляем стартовое меню с сообщением об успешном ответе
-      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`, await start(ctx.from.id));
-      ctx.scene.leave();
+      // Сбрасываем выбранную задачу и сообщение задачи
+      ctx.session.selectedTask = null;
+      ctx.session.taskMessageId = null;
+
+      // Показываем уведомление и клавиатуру со списком заданий на проверке
+      const moderator = await userService.findUserByTelegramId(String(ctx.from.id));
+      const page = ctx.session.currentPage || 0;
+      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`);
+      const keyboard = await myTasks(moderator._id, "", "wait", page);
+      await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {
       console.error("Error processing points input:", error);
       await ctx.reply("Ошибка при обработке баллов");
@@ -1306,12 +1318,21 @@ ${correction}
           ctx.session.lockedTaskId = null;
         }
       } catch (_) {}
-
-      // Удаляем inline-сообщение с заданием и отправляем стартовое меню с сообщением об успешном ответе
+      
+      // Возвращаемся к списку ТЗ на проверке, оставаясь в сцене
       try {
+        await deleteMediaMessages(ctx);
       } catch (e) {}
-      await ctx.reply("Ответ принят", await start(ctx.from.id));
-      ctx.scene.leave();
+
+      // Сбрасываем выбранную задачу и сообщение задачи
+      ctx.session.selectedTask = null;
+      ctx.session.taskMessageId = null;
+
+      const moderator = await userService.findUserByTelegramId(String(ctx.from.id));
+      const page = ctx.session.currentPage || 0;
+      await ctx.reply("Ответ принят");
+      const keyboard = await myTasks(moderator._id, "", "wait", page);
+      await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {
       console.error("Error processing correction text:", error);
       await ctx.reply("Ошибка при обработке вашего сообщения с правкой");
