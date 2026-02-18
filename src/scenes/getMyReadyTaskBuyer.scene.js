@@ -805,7 +805,6 @@ ${rejectionMessage}
 
                 const createdTask = await taskService.createTask(data);
                 console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
 
                 // Compose detailed message for creator: first new task, then original
                 const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
@@ -838,7 +837,7 @@ ${rejectionMessage}
                     `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
                     setExpectedTimeKeyboard(createdTask?._id)
                 );
-                await ctx.reply(`Вы выбрали креатив: Уник. Новый креатив создан с именем ${newName}`);
+                await ctx.reply(`Вы выбрали креатив: Уник. ✅Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
                 return;
@@ -901,7 +900,7 @@ ${rejectionMessage}
                     `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
                     setExpectedTimeKeyboard(createdAdaptiv?._id)
                 );
-                await ctx.reply(`Вы выбрали креатив: Адаптив. Новый креатив создан с именем ${newName}`);
+                await ctx.reply(`Вы выбрали креатив: Адаптив. ✅Новый креатив создан с именем ${newName}`);
                 ctx.session = {};
                 ctx.scene.leave();
                 return;
@@ -932,7 +931,6 @@ ${rejectionMessage}
 
                 const createdTaskDU = await taskService.createTask(dataDU);
                 console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
-                await ctx.reply(ruMessage.messages.writeTT.queued.replace('{name}', newName), await start(ctx.from.id));
 
                 // Compose detailed message for creator: first new task, then original
                 const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +

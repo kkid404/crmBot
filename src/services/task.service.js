@@ -128,9 +128,9 @@ class TaskService {
                 if (role === 'creator' && state === 'progress') {
                     query.state = { $in: ['progress', 'time'] };
                 } else if (role === 'buyer' && state === 'progress') {
-                    // Для баеров в разделе "В работе" показываем также задачи на проверке
-                    // чтобы ТЗ не исчезало из списка при сдаче на модерацию
-                    query.state = { $in: ['progress', 'wait'] };
+                    // Для баеров в разделе "В работе" показываем также задачи на проверке и ожидающие установки времени
+                    // чтобы ТЗ не исчезало из списка при сдаче на модерацию или после создания с состоянием time
+                    query.state = { $in: ['progress', 'wait', 'time'] };
                 } else {
                     query.state = state;
                 }

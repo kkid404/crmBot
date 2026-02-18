@@ -40,8 +40,10 @@ const myTasks = async (id, role = '', state, page = 0) => {
 
         // Добавляем пометку "(на правках)" для задач на модерации у баеров
         const editLabel = role === 'buyer' && task.state === 'wait' ? ' (на правках)' : '';
+        // Добавляем пометку для задач, ожидающих установки времени, чтобы баер их видел в списке "В работе"
+        const timeLabel = role === 'buyer' && task.state === 'time' ? ' (ожидает уст-ки времени)' : '';
 
-        return [Markup.button.callback(`${bonusIndicator}${delegateIndicator}${taskName}${editLabel}`, task._id.toString())];
+        return [Markup.button.callback(`${bonusIndicator}${delegateIndicator}${taskName}${editLabel}${timeLabel}`, task._id.toString())];
     });
 
     // Добавляем кнопки навигации, если есть несколько страниц
