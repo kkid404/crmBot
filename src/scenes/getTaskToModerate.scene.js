@@ -434,9 +434,15 @@ ${corrections}
 
         try {
           if (buyer && buyer.tg_id) {
+            // Создаем кнопку для перехода к просмотру готового крео
+            const viewCreativeKeyboard = Markup.inlineKeyboard([
+              [Markup.button.callback('👀 Посмотреть крео', `view_ready_task_${finalizedTask._id}`)]
+            ]);
+            
             await ctx.telegram.sendMessage(
               buyer.tg_id,
-              `✅ ${finalizedTask.name} готово!`
+              `✅ ${finalizedTask.name} готово!`,
+              viewCreativeKeyboard
             );
           } else {
             console.error(

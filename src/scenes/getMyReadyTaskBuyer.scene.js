@@ -75,6 +75,150 @@ watchReadyTzScene.enter(async (ctx) => {
     const user = await userService.findUserByTelegramId(tgId);
     // Initialize page in session if not exists
     ctx.session.currentPage = 0;
+    
+    // Если задача уже выбрана (переход по кнопке из уведомления), показываем её сразу
+    if (ctx.session.selectedTask) {
+        const taskId = ctx.session.selectedTask;
+        const task = await taskService.findTaskById(taskId);
+        
+        if (!task) {
+            await ctx.reply(ruMessage.messages.taskNotFound);
+            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
+            return;
+        }
+        
+        // Определяем, есть ли медиафайлы и преобразуем в массив, если нужно
+        const hasMedia = Array.isArray(task.example_creative) 
+            ? task.example_creative.length > 0 
+            : typeof task.example_creative === 'string' && task.example_creative.trim() !== '';
+        
+        if (typeof task.example_creative === 'string' && task.example_creative.trim() !== '') {
+            task.example_creative = [task.example_creative];
+        } else if (!Array.isArray(task.example_creative)) {
+            task.example_creative = [];
+        }
+
+        const { taskInfo, fullDescription, hasFullDescription } = buildTaskInfo(task);
+        
+        // Сохраняем в сессии для использования позже
+        ctx.session.fullDescription = fullDescription;
+        ctx.session.hasFullDescription = hasFullDescription;
+
+        // Инициализируем массив для хранения ID отправленных медиасообщений
+        ctx.session.exampleMediaMessageIds = [];
+        
+        // Очищаем старые ID сообщений с медиа
+        if (ctx.session.mediaMessageIds && ctx.session.mediaMessageIds.length > 0) {
+            ctx.session.mediaMessageIds = [];
+        }
+        
+        if (ctx.session.mediaMessageId) {
+            ctx.session.mediaMessageId = null;
+        }
+
+        if (task.result) {
+            try {
+                // Обрабатываем случай, когда result является массивом (новый формат)
+                if (Array.isArray(task.result) && task.result.length > 0) {
+                    // Разделяем медиафайлы по типам
+                    const mediaGroup = task.result.map(fileId => {
+                        // Определяем тип медиа по первым символам file_id
+                        const isVideo = fileId.startsWith('BAA');
+                        const isDocument = fileId.startsWith('BQA');
+                        const isAudio = fileId.startsWith('CQA');
+                        const isAnimation = fileId.startsWith('DQA');
+                        
+                        // Определяем тип медиа
+                        let type = 'photo'; // По умолчанию фото
+                        if (isVideo) type = 'video';
+                        else if (isDocument) type = 'document';
+                        else if (isAudio) type = 'audio';
+                        else if (isAnimation) type = 'animation';
+                        
+                        return {
+                            type: type,
+                            media: fileId
+                        };
+                    });
+                    
+                    // Отправляем медиагруппу (максимум 10 файлов в одной группе)
+                    if (mediaGroup.length > 0) {
+                        // Telegram поддерживает до 10 файлов в одной группе
+                        const chunks = [];
+                        for (let i = 0; i < mediaGroup.length; i += 10) {
+                            chunks.push(mediaGroup.slice(i, i + 10));
+                        }
+                        
+                        // Отправляем каждую группу отдельно
+                        for (const chunk of chunks) {
+                            if (chunk.length > 0) {
+                                const sentMessages = await ctx.telegram.sendMediaGroup(ctx.chat.id, chunk);
+                                
+                                // Сохраняем ID всех отправленных сообщений для возможного удаления позже
+                                if (sentMessages && sentMessages.length > 0) {
+                                    if (!ctx.session.mediaMessageIds) {
+                                        ctx.session.mediaMessageIds = [];
+                                    }
+                                    sentMessages.forEach(msg => {
+                                        ctx.session.mediaMessageIds.push(msg.message_id);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } 
+                // Обрабатываем случай, когда result является строкой (старый формат)
+                else if (typeof task.result === 'string') {
+                    // Если тип медиа сохранён, используем его
+                    let mediaResponse;
+                    if (task.mediaType === 'photo' || task.result.startsWith('AgAC')) {
+                        mediaResponse = await ctx.replyWithPhoto(task.result);
+                    } else if (task.mediaType === 'video' || task.result.startsWith('BAA')) {
+                        mediaResponse = await ctx.replyWithVideo(task.result);
+                    } else {
+                        // Если тип не сохранён, пробуем отправить как фото, а при ошибке – как видео
+                        try {
+                            mediaResponse = await ctx.replyWithPhoto(task.result);
+                        } catch (photoError) {
+                            try {
+                                mediaResponse = await ctx.replyWithVideo(task.result);
+                            } catch (videoError) {
+                                console.error("Не удалось отправить медиа:", videoError);
+                                await ctx.reply("Ошибка отправки медиафайла.");
+                            }
+                        }
+                    }
+            
+                    // Если медиа было отправлено, сохраняем его message_id для удаления
+                    if (mediaResponse && mediaResponse.message_id) {
+                        ctx.session.mediaMessageId = mediaResponse.message_id;
+                    }
+                }
+            } catch (error) {
+                console.error("Не удалось отправить медиа:", error);
+                await ctx.reply("Ошибка отправки медиафайла.");
+            }
+        }
+
+        // Разбиваем длинное сообщение на части
+        const messageParts = splitLongMessage(taskInfo);
+        
+        // Первая часть с клавиатурой
+        await ctx.reply(messageParts[0], doneTask(task));
+        
+        // Остальные части без клавиатуры
+        for (let i = 1; i < messageParts.length; i++) {
+            await ctx.reply(messageParts[i]);
+        }
+
+        // Сохраняем информацию в сессии
+        ctx.session.taskInfo = taskInfo;
+        ctx.session.taskname = task.name;
+        
+        return;
+    }
+    
+    // Если задача не выбрана, показываем список
     await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
 });
 
@@ -788,7 +932,7 @@ ${rejectionMessage}
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.example_creative,
+                    example_creative: task.result || task.example_creative,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,
@@ -851,7 +995,7 @@ ${rejectionMessage}
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.example_creative,
+                    example_creative: task.result || task.example_creative,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,
@@ -914,7 +1058,7 @@ ${rejectionMessage}
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.example_creative,
+                    example_creative: task.result || task.example_creative,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,

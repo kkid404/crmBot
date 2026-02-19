@@ -45,11 +45,10 @@ function doneTask(task) {
     buttonsList.push(Markup.button.callback(buttonText, callbackData));
   });
   
-  // В зависимости от роли и статуса задачи будем показывать разные кнопки
-  // if (task.state === 'done') {
-  //   // Add reject button for buyers to send tasks back to creators
-  //   buttonsList.push(Markup.button.callback('❌ Отклонить', 'reject_task'));
-  // }
+  // Добавляем кнопку отклонения для готовых задач
+  if (task && task.state === 'done') {
+    buttonsList.push(Markup.button.callback('✏️ Правки', 'reject_task'));
+  }
   
   // Добавляем кнопки назад и выйти
   buttonsList.push(Markup.button.callback('◀️ Назад', 'back'));

@@ -150,6 +150,24 @@ bot.action(/^moderate_task:(.+)$/, async (ctx) => {
   }
 });
 
+// Add handler for view_ready_task callback (buyer viewing completed creative)
+bot.action(/^view_ready_task_(.+)$/, async (ctx) => {
+  try {
+    // Extract task ID from callback data
+    const taskId = ctx.match[1];
+    
+    // Store the task ID in session
+    ctx.session.selectedTask = taskId;
+    
+    // Enter the ready tasks scene for buyers
+    await ctx.scene.enter('watchReadyTzScene');
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Error handling view_ready_task action:', error);
+    await ctx.answerCbQuery('Произошла ошибка при открытии задания');
+  }
+});
+
 // Initialize scheduler services
 const schedulerCommand = require('./src/commands/scheduler.command');
 // The command module initializes the scheduler automatically
