@@ -1105,10 +1105,37 @@ getTaskToModerateScene.on("text", async (ctx) => {
           .map(([k, v]) => `<b>${labels[k]}:</b> ${v}`)
           .join("\n\n");
 
-        await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, message, {
-          parse_mode: "HTML",
-          message_thread_id: topicIdMain,
-        });
+        // Разбиваем длинное сообщение на части (лимит Telegram - 4096 символов)
+        const MAX_MESSAGE_LENGTH = 4000; // Оставляем запас для HTML-тегов
+        if (message.length > MAX_MESSAGE_LENGTH) {
+          // Разбиваем сообщение на части
+          const parts = [];
+          let currentPart = '';
+          const lines = message.split('\n\n');
+          
+          for (const line of lines) {
+            if ((currentPart + '\n\n' + line).length > MAX_MESSAGE_LENGTH) {
+              if (currentPart) parts.push(currentPart);
+              currentPart = line;
+            } else {
+              currentPart += (currentPart ? '\n\n' : '') + line;
+            }
+          }
+          if (currentPart) parts.push(currentPart);
+          
+          // Отправляем части по очереди
+          for (const part of parts) {
+            await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, part, {
+              parse_mode: "HTML",
+              message_thread_id: topicIdMain,
+            });
+          }
+        } else {
+          await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, message, {
+            parse_mode: "HTML",
+            message_thread_id: topicIdMain,
+          });
+        }
 
         // Отправка готового креатива
         if (finalizedTask.result && finalizedTask.result.length > 0) {
