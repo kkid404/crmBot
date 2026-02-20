@@ -139,12 +139,18 @@ setExpectedTimeScene.on('text', async (ctx) => {
             await taskService.updateTask(taskId, updateData);
             
             // If task was in 'time' state, notify the creator
+            const userService = require('../services/user.service');
+            const currentUserTgId = String(ctx.from.id);
+            let isCreatorSettingTime = false;
+            
             if (task.state === 'time' && task.creator) {
                 try {
-                    const userService = require('../services/user.service');
                     const creator = await userService.findById(task.creator);
                     
                     if (creator && creator.tg_id) {
+                        // Проверяем, является ли текущий пользователь креативщиком этой задачи
+                        isCreatorSettingTime = (String(creator.tg_id) === currentUserTgId);
+                        
                         const notificationText = `🔔 Вам назначена новая задача: "${task.name}"
 
 📅 Ожидаемая дата сдачи: ${ctx.session.expectedDate} к ${userInput}
@@ -158,11 +164,13 @@ setExpectedTimeScene.on('text', async (ctx) => {
                 }
             }
             
-            // Notify the admin/user
-            await ctx.reply(
-                `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}${task.state === 'time' ? '\n\n✅ Задача переведена в работу и креативщик уведомлен.' : ''}`,
-                await start(ctx.from.id)
-            );
+            // Notify the admin/user (только если это не сам креативщик)
+            if (!isCreatorSettingTime) {
+                await ctx.reply(
+                    `✅ Время сдачи успешно установлено:\n📅 Дата: ${ctx.session.expectedDate}\n⏰ Время: ${userInput}`,
+                    await start(ctx.from.id)
+                );
+            }
             
             // Clear session and leave scene
             ctx.session.taskIdForTimeSetting = null;
