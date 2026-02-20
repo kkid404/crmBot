@@ -20,23 +20,33 @@ async function handlePoints(ctx) {
     const user = await userService.findUserByTelegramId(tgId).catch(handleError);
     if (!user) throw new Error("User not found");
     
+    // Получаем задачу для проверки количества
+    const taskId = ctx.session.selectedTask;
+    const task = await taskService.findTaskById(taskId).catch(handleError);
+    const quantity = task?.quantity || 1;
+    
     // Получаем описание типа работы из ru.json
-    const workType = ruMessage.keyboards.points_for_creatives[points];
+    let workType = ruMessage.keyboards.points_for_creatives[points];
+    
+    // Добавляем количество к типу работы, если больше 1
+    if (quantity > 1) {
+        workType = `${workType} x${quantity}`;
+    }
     
     const today = new Date();
     const taskInfo = {
         state: "wait",
         completionDate: today,
-        points: Number(points), // Сохраняем стандартное значение для отображения модератору
+        points: Number(points) * quantity, // Умножаем баллы на количество
         result: ctx.session.mediaFiles, // Теперь используем массив файлов вместо одного
-        workType: workType // Добавляем тип работы для модератора
+        workType: workType // Добавляем тип работы для модератора с количеством
     };
     
-    // Проверяем тип работы и устанавливаем соответствующий бонус
+    // Проверяем тип работы и устанавливаем соответствующий бонус (умножаем на количество)
     if (workType && workType.includes('🖼️ Глубокий уник')) {
-        taskInfo.bonus = 500;
+        taskInfo.bonus = 500 * quantity;
     } else if (workType && workType.includes('🎨 Дизайн приложения / Уник')) {
-        taskInfo.bonus = 300;
+        taskInfo.bonus = 300 * quantity;
     }
     
     await taskService.updateTask(ctx.session.selectedTask, taskInfo).catch(handleError);
@@ -148,12 +158,46 @@ async function handleDone(ctx) {
 // Обработчик завершения добавления файлов
 async function handleFinishAdding(ctx) {
     if (ctx.session.mediaFiles && ctx.session.mediaFiles.length > 0) {
+        // Проверяем количество файлов, если задача требует определенное количество
+        const taskId = ctx.session.selectedTask;
+        const task = await taskService.findTaskById(taskId);
+        
+        if (task && task.quantity && task.quantity > 1) {
+            const requiredQuantity = task.quantity;
+            const uploadedQuantity = ctx.session.mediaFiles.length;
+            
+            if (uploadedQuantity < requiredQuantity) {
+                await ctx.reply(
+                    `⚠️ Недостаточно файлов!\n\n` +
+                    `Требуется: ${requiredQuantity} шт.\n` +
+                    `Загружено: ${uploadedQuantity} шт.\n\n` +
+                    `Пожалуйста, добавьте еще ${requiredQuantity - uploadedQuantity} файл(ов).`
+                );
+                await ctx.answerCbQuery();
+                return;
+            } else if (uploadedQuantity > requiredQuantity) {
+                await ctx.reply(
+                    `⚠️ Слишком много файлов!\n\n` +
+                    `Требуется: ${requiredQuantity} шт.\n` +
+                    `Загружено: ${uploadedQuantity} шт.\n\n` +
+                    `Вы загрузили на ${uploadedQuantity - requiredQuantity} файл(ов) больше. Продолжить?`,
+                    Markup.inlineKeyboard([
+                        [Markup.button.callback('✅ Да, продолжить', 'confirm_extra_files')],
+                        [Markup.button.callback('❌ Нет, отменить', 'cancel_extra_files')]
+                    ])
+                );
+                await ctx.answerCbQuery();
+                return;
+            }
+        }
+        
         // Показываем клавиатуру с выбором типа работы
         await ctx.reply(ruMessage.messages.ttToModerate.select_points, points_for_creatives());
         ctx.session.awaitingMedia = false; // Сбрасываем флаг ожидания медиафайла
     } else {
-        await ctx.reply("Вы не отправили ни одного файла. Пожалуйста, отправьте как минимум один файл.");
+        await ctx.reply("Вы не добавили ни одного файла. Пожалуйста, отправьте хотя бы один файл.");
     }
+    await ctx.answerCbQuery();
 }
 
 // Обработчик для выбора задачи
@@ -390,6 +434,19 @@ ttToModerateScene.action("add_more", async (ctx) => {
     await ctx.answerCbQuery();
 });
 ttToModerateScene.action("finish_adding", handleFinishAdding);
+ttToModerateScene.action("confirm_extra_files", async (ctx) => {
+    // Продолжаем с избыточным количеством файлов
+    await ctx.reply(ruMessage.messages.ttToModerate.select_points, points_for_creatives());
+    ctx.session.awaitingMedia = false;
+    await ctx.answerCbQuery();
+});
+ttToModerateScene.action("cancel_extra_files", async (ctx) => {
+    // Отменяем и просим загрузить заново
+    ctx.session.mediaFiles = [];
+    ctx.session.awaitingMedia = true;
+    await ctx.reply("Загрузка отменена. Пожалуйста, загрузите файлы заново.");
+    await ctx.answerCbQuery();
+});
 ttToModerateScene.action(/^count_.+$/, handlePoints);
 ttToModerateScene.action(/^[a-f0-9]{24}$/, handleTaskSelect);
 

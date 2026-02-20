@@ -26,6 +26,7 @@ const taskSchema = new Schema({
     version: { type: Number, default: 1 },
     result: { type: [String], default: [] },
     workType: { type: String, default: null },
+    quantity: { type: Number, default: 1 }, // Количество креативов (для уников/глубоких уников)
     // Поля блокировки модерации, чтобы один чекер не мешал другому
     moderationLockedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     moderationLockedAt: { type: Date, default: null },

@@ -765,11 +765,15 @@ watchReadyTzScene.action(/^reply_/, async (ctx) => {
     // Сохраняем тип креатива в сессии для последующего использования
     ctx.session.replyType = replyType;
 
-    // Запрашиваем у пользователя комментарий, что нужно сделать
-    await ctx.editMessageText('✍️ Опишите, что нужно сделать по этому креативу:');
-
-    // Устанавливаем флаг ожидания комментария
-    ctx.session.awaitingComment = true;
+    // Для уников и глубоких уников запрашиваем количество
+    if (replyType === 'uniq' || replyType === 'deep_uniq') {
+        await ctx.editMessageText('🔢 Введите количество креативов (например: 3):');
+        ctx.session.awaitingQuantity = true;
+    } else {
+        // Для остальных типов сразу запрашиваем комментарий
+        await ctx.editMessageText('✍️ Опишите, что нужно сделать по этому креативу:');
+        ctx.session.awaitingComment = true;
+    }
     
     await ctx.answerCbQuery();
 });
@@ -804,8 +808,331 @@ watchReadyTzScene.action('reject_task', async (ctx) => {
     }
 });
 
+// Обработчик для кнопки "✅ Завершить ввод" комментария
+watchReadyTzScene.action('finish_comment_input', async (ctx) => {
+    try {
+        if (!ctx.session.commentParts || ctx.session.commentParts.length === 0) {
+            await ctx.answerCbQuery('Нет накопленного текста');
+            return;
+        }
+        
+        // Объединяем все части сообщения
+        const fullCommentText = ctx.session.commentParts.join('\n');
+        
+        // Сбрасываем флаги
+        ctx.session.awaitingComment = false;
+        ctx.session.commentParts = [];
+        
+        await ctx.answerCbQuery('Обработка комментария...');
+        await ctx.reply(`📝 Обрабатываю комментарий (${fullCommentText.length} символов)...`);
+        
+        // Получаем данные из сессии
+        const { replyType, selectedTask } = ctx.session;
+        const taskId = selectedTask;
+        const task = await taskService.findTaskById(taskId);
+
+        if (!task) {
+            await ctx.reply("Задача не найдена.");
+            return;
+        }
+
+        // Получаем данные пользователя
+        const tgId = String(ctx.from.id);
+        let user;
+        try {
+            user = await userService.findUserByTelegramId(tgId);
+        } catch (error) {
+            console.error("Ошибка получения пользователя:", error);
+            await ctx.reply("Ошибка при получении данных пользователя.");
+            return;
+        }
+
+        const creator = await userService.findById(task.creator);
+        if (!creator) {
+            await ctx.reply("Креативщик не найден.");
+            return;
+        }
+
+        // Переменная для создания нового имени креатива (номер по счету)
+        let newName;
+        // Базовое описание с учетом комментария заказчика
+        const commentBlock = `\n\n📝 Комментарий заказчика:\n${fullCommentText}`;
+        // Дата и время запроса (для однозначной привязки комментария)
+        const commentDate = formatDateTimeMSK(new Date());
+        // Базовое описание без предыдущих комментариев заказчика
+        let baseDescription = String(task.description || '');
+        // Отсекаем всё после первого маркера комментария (если он был)
+        baseDescription = baseDescription.split('\n📝 Комментарий заказчика:')[0];
+        // Удаляем возможную висящую строку даты запроса в конце
+        baseDescription = baseDescription.replace(/\n📅 Дата запроса:.*$/, '');
+
+        try {
+            if (replyType === 'uniq') {
+                const uniqCount = await taskService.getTaskSpecificUniqCount(task.name);
+                newName = `${task.name}_U_${uniqCount + 1}`;
+                
+                const quantity = ctx.session.creativeQuantity || 1;
+                const quantityText = quantity > 1 ? `\n🔢 Количество: ${quantity} шт.` : '';
+
+                const data = {
+                    name: newName,
+                    link_app: task.link_app,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${quantityText}${commentBlock}`,
+                    example_creative: task.result || task.example_creative,
+                    buyer: user._id,
+                    createdBy: task.createdBy || user._id,
+                    creator: creator._id,
+                    state: 'time',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    quantity: quantity,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                const createdTask = await taskService.createTask(data);
+                console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
+
+                // Compose detailed message for creator: first new task, then original
+                const quantityInfo = quantity > 1 ? `\n🔢 Количество креативов: ${quantity} шт.` : '';
+                const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
+                    `📌 Название: ${createdTask?.name}\n` +
+                    `📝 Комментарий заказчика:\n${fullCommentText}${quantityInfo}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(createdTask?.createdAt || new Date())}`;
+
+                const hasMediaOld = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfo = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOld || 0}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
+
+                const composed = `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
+
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messageParts = splitLongMessage(composed);
+                for (const part of messageParts) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
+
+                // Prompt to set expected time
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdTask?._id)
+                );
+                
+                // Уведомляем баера о создании задачи
+                await ctx.reply(
+                    `✅ Задача создана!
+
+` +
+                    `📌 Название: ${newName}
+` +
+                    `📤 Задача отправлена креативщику @${creator.username || creator.tg_id} на установку времени выполнения.`
+                );
+                
+                ctx.session = {};
+                ctx.scene.leave();
+                return;
+            }
+
+            if (replyType === 'adaptiv') {
+                const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name);
+                newName = `${task.name}_A_${adaptivCount + 1}`;
+
+                const newTaskAdaptiv = {
+                    name: newName,
+                    link_app: task.link_app,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
+                    example_creative: task.result || task.example_creative,
+                    buyer: user._id,
+                    createdBy: task.createdBy || user._id,
+                    creator: creator._id,
+                    state: 'time',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
+                console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
+
+                // Compose detailed message for creator: first new task, then original
+                const newTaskInfoA = `🆕 Новая задача (ADAPTIV)\n\n` +
+                    `📌 Название: ${createdAdaptiv?.name}\n` +
+                    `📝 Комментарий заказчика:\n${fullCommentText}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(createdAdaptiv?.createdAt || new Date())}`;
+
+                const hasMediaOldA = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfoA = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOldA || 0}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
+
+                const composedA = `${newTaskInfoA}\n\n— — —\n\n${oldTaskInfoA}`;
+                
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messagePartsA = splitLongMessage(composedA);
+                for (const part of messagePartsA) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
+
+                // Prompt to set expected time
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdAdaptiv?._id)
+                );
+                
+                // Уведомляем баера о создании задачи
+                await ctx.reply(
+                    `✅ Задача создана!
+
+` +
+                    `📌 Название: ${newName}
+` +
+                    `📤 Задача отправлена креативщику @${creator.username || creator.tg_id} на установку времени выполнения.`
+                );
+                
+                ctx.session = {};
+                ctx.scene.leave();
+                return;
+            }
+
+            if (replyType === 'deep_uniq') {
+                const deepUniqCount = await taskService.getTaskSpecificDeepUniqCount(task.name);
+                newName = `DU_${task.name}_${deepUniqCount + 1}`;
+                
+                const quantity = ctx.session.creativeQuantity || 1;
+                const quantityText = quantity > 1 ? `\n🔢 Количество: ${quantity} шт.` : '';
+
+                const dataDU = {
+                    name: newName,
+                    link_app: task.link_app,
+                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${quantityText}${commentBlock}`,
+                    example_creative: task.result || task.example_creative,
+                    buyer: user._id,
+                    createdBy: task.createdBy || user._id,
+                    creator: creator._id,
+                    state: 'time',
+                    points: null,
+                    completionDate: null,
+                    CTR: null,
+                    bonus: null,
+                    result: null,
+                    version: 1,
+                    quantity: quantity,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                const createdTaskDU = await taskService.createTask(dataDU);
+                console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
+
+                // Compose detailed message for creator: first new task, then original
+                const quantityInfoDU = quantity > 1 ? `\n🔢 Количество креативов: ${quantity} шт.` : '';
+                const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +
+                    `📌 Название: ${createdTaskDU?.name}\n` +
+                    `📝 Комментарий заказчика:\n${fullCommentText}${quantityInfoDU}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(createdTaskDU?.createdAt || new Date())}`;
+
+                const hasMediaOldDU = Array.isArray(task.example_creative)
+                  ? task.example_creative.length
+                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
+
+                const oldTaskInfoDU = `ℹ️ Исходная задача\n\n` +
+                    `📌 Название: ${task.name}\n` +
+                    `🔗 Приложение: ${task.link_app}\n` +
+                    `📝 Описание: ${task.description}\n` +
+                    `🎨 Примеры креатива: ${hasMediaOldDU || 0}\n` +
+                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
+
+                const composedDU = `${newTaskInfoDU}\n\n— — —\n\n${oldTaskInfoDU}`;
+                
+                // Разбиваем сообщение на части, если оно слишком длинное
+                const messagePartsDU = splitLongMessage(composedDU);
+                for (const part of messagePartsDU) {
+                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                }
+
+                // Prompt to set expected time
+                await ctx.telegram.sendMessage(
+                    creator.tg_id,
+                    `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
+                    setExpectedTimeKeyboard(createdTaskDU?._id)
+                );
+                
+                // Уведомляем баера о создании задачи
+                await ctx.reply(
+                    `✅ Задача создана!
+
+` +
+                    `📌 Название: ${newName}
+` +
+                    `📤 Задача отправлена креативщику @${creator.username || creator.tg_id} на установку времени выполнения.`
+                );
+                
+                ctx.session = {};
+                ctx.scene.leave();
+                return;
+            }
+
+            await ctx.reply('Неверный выбор.');
+            return;
+        } catch (error) {
+            console.error('Ошибка при создании нового задания:', error);
+            await ctx.reply(ruMessage.messages.errors?.writeTT || 'Ошибка при создании нового задания.');
+            ctx.session = {};
+            ctx.scene.leave();
+            return;
+        }
+    } catch (error) {
+        console.error('Error in finish_comment_input action:', error);
+        await ctx.answerCbQuery('Произошла ошибка при обработке комментария');
+    }
+});
+
 // Модифицируем обработчик текстовых сообщений, чтобы добавить обработку сообщений с правками
 watchReadyTzScene.on('text', async (ctx) => {
+    // Проверяем, ожидаем ли мы ввод количества креативов
+    if (ctx.session.awaitingQuantity) {
+        const quantityInput = ctx.message.text.trim();
+        const quantity = parseInt(quantityInput);
+        
+        // Проверяем корректность ввода
+        if (isNaN(quantity) || quantity < 1 || quantity > 20) {
+            await ctx.reply('⚠️ Некорректное значение. Введите число от 1 до 20:');
+            return;
+        }
+        
+        // Сохраняем количество и переходим к запросу комментария
+        ctx.session.creativeQuantity = quantity;
+        ctx.session.awaitingQuantity = false;
+        ctx.session.awaitingComment = true;
+        
+        await ctx.reply('✍️ Опишите, что нужно сделать по этому креативу:');
+        return;
+    }
+    
     // Проверяем, ожидаем ли мы сообщение с правками для отклонения задания
     if (ctx.session.waitingForRejectionMessage) {
         try {
@@ -879,248 +1206,34 @@ ${rejectionMessage}
     if (ctx.session.awaitingComment) {
         const commentText = ctx.message.text;
 
-        // Сохраняем и сбрасываем флаг ожидания комментария
-        ctx.session.userComment = commentText;
-        ctx.session.awaitingComment = false;
-
-        // Получаем данные из сессии
-        const { replyType, selectedTask } = ctx.session;
-        const taskId = selectedTask;
-        const task = await taskService.findTaskById(taskId);
-
-        if (!task) {
-            await ctx.reply("Задача не найдена.");
-            return;
+        // Инициализируем массив для накопления частей сообщения
+        if (!ctx.session.commentParts) {
+            ctx.session.commentParts = [];
         }
-
-        // Получаем данные пользователя
-        const tgId = String(ctx.from.id);
-        let user;
-        try {
-            user = await userService.findUserByTelegramId(tgId);
-        } catch (error) {
-            console.error("Ошибка получения пользователя:", error);
-            await ctx.reply("Ошибка при получении данных пользователя.");
-            return;
+        
+        // Добавляем текущую часть
+        ctx.session.commentParts.push(commentText);
+        
+        // Отправляем подтверждение и инструкцию
+        const keyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Завершить ввод', 'finish_comment_input')]
+        ]);
+        
+        if (ctx.session.commentParts.length === 1) {
+            await ctx.reply(
+                `✅ Текст получен (часть ${ctx.session.commentParts.length}).\n\n` +
+                `Если Telegram разбил ваше сообщение на несколько частей, дождитесь получения всех частей, затем нажмите кнопку ниже.`,
+                keyboard
+            );
+        } else {
+            await ctx.reply(
+                `✅ Получена часть ${ctx.session.commentParts.length}.\n\n` +
+                `Когда все части будут получены, нажмите кнопку "Завершить ввод".`,
+                keyboard
+            );
         }
-
-        const creator = await userService.findById(task.creator);
-        if (!creator) {
-            await ctx.reply("Креативщик не найден.");
-            return;
-        }
-
-        // Переменная для создания нового имени креатива (номер по счету)
-        let newName;
-        // Базовое описание с учетом комментария заказчика
-        const commentBlock = `\n\n📝 Комментарий заказчика:\n${commentText}`;
-        // Дата и время запроса (для однозначной привязки комментария)
-        const commentDate = formatDateTimeMSK(new Date());
-        // Базовое описание без предыдущих комментариев заказчика
-        let baseDescription = String(task.description || '');
-        // Отсекаем всё после первого маркера комментария (если он был)
-        baseDescription = baseDescription.split('\n📝 Комментарий заказчика:')[0];
-        // Удаляем возможную висящую строку даты запроса в конце
-        baseDescription = baseDescription.replace(/\n📅 Дата запроса:.*$/, '');
-
-        try {
-            if (replyType === 'uniq') {
-                const uniqCount = await taskService.getTaskSpecificUniqCount(task.name);
-                newName = `${task.name}_U_${uniqCount + 1}`;
-
-                const data = {
-                    name: newName,
-                    link_app: task.link_app,
-                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
-                    buyer: user._id,
-                    createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
-                    points: null,
-                    completionDate: null,
-                    CTR: null,
-                    bonus: null,
-                    result: null,
-                    version: 1,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                };
-
-                const createdTask = await taskService.createTask(data);
-                console.log(`[Reply->UNIQ] Created task: _id=${createdTask?._id}, name=${createdTask?.name}, creatorTG=${creator.tg_id}`);
-
-                // Compose detailed message for creator: first new task, then original
-                const newTaskInfo = `🆕 Новая задача (UNIQ)\n\n` +
-                    `📌 Название: ${createdTask?.name}\n` +
-                    `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(createdTask?.createdAt || new Date())}`;
-
-                const hasMediaOld = Array.isArray(task.example_creative)
-                  ? task.example_creative.length
-                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
-
-                const oldTaskInfo = `ℹ️ Исходная задача\n\n` +
-                    `📌 Название: ${task.name}\n` +
-                    `🔗 Приложение: ${task.link_app}\n` +
-                    `📝 Описание: ${task.description}\n` +
-                    `🎨 Примеры креатива: ${hasMediaOld || 0}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
-
-                const composed = `${newTaskInfo}\n\n— — —\n\n${oldTaskInfo}`;
-
-                // Разбиваем сообщение на части, если оно слишком длинное
-                const messageParts = splitLongMessage(composed);
-                for (const part of messageParts) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
-                }
-
-                // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdTask?._id)
-                );
-                await ctx.reply(`Вы выбрали креатив: Уник. ✅Новый креатив создан с именем ${newName}`);
-                ctx.session = {};
-                ctx.scene.leave();
-                return;
-            }
-
-            if (replyType === 'adaptiv') {
-                const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name);
-                newName = `${task.name}_A_${adaptivCount + 1}`;
-
-                const newTaskAdaptiv = {
-                    name: newName,
-                    link_app: task.link_app,
-                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
-                    buyer: user._id,
-                    createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
-                    points: null,
-                    completionDate: null,
-                    CTR: null,
-                    bonus: null,
-                    result: null,
-                    version: 1,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                };
-
-                const createdAdaptiv = await taskService.createTask(newTaskAdaptiv);
-                console.log(`[Reply->ADAPTIV] Created task: _id=${createdAdaptiv?._id}, name=${createdAdaptiv?.name}, creatorTG=${creator.tg_id}`);
-
-                // Compose detailed message for creator: first new task, then original
-                const newTaskInfoA = `🆕 Новая задача (ADAPTIV)\n\n` +
-                    `📌 Название: ${createdAdaptiv?.name}\n` +
-                    `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(createdAdaptiv?.createdAt || new Date())}`;
-
-                const hasMediaOldA = Array.isArray(task.example_creative)
-                  ? task.example_creative.length
-                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
-
-                const oldTaskInfoA = `ℹ️ Исходная задача\n\n` +
-                    `📌 Название: ${task.name}\n` +
-                    `🔗 Приложение: ${task.link_app}\n` +
-                    `📝 Описание: ${task.description}\n` +
-                    `🎨 Примеры креатива: ${hasMediaOldA || 0}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
-
-                const composedA = `${newTaskInfoA}\n\n— — —\n\n${oldTaskInfoA}`;
-                
-                // Разбиваем сообщение на части, если оно слишком длинное
-                const messagePartsA = splitLongMessage(composedA);
-                for (const part of messagePartsA) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
-                }
-
-                // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdAdaptiv?._id)
-                );
-                await ctx.reply(`Вы выбрали креатив: Адаптив. ✅Новый креатив создан с именем ${newName}`);
-                ctx.session = {};
-                ctx.scene.leave();
-                return;
-            }
-
-            if (replyType === 'deep_uniq') {
-                const deepUniqCount = await taskService.getTaskSpecificDeepUniqCount(task.name);
-                newName = `DU_${task.name}_${deepUniqCount + 1}`;
-
-                const dataDU = {
-                    name: newName,
-                    link_app: task.link_app,
-                    description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
-                    buyer: user._id,
-                    createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
-                    points: null,
-                    completionDate: null,
-                    CTR: null,
-                    bonus: null,
-                    result: null,
-                    version: 1,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                };
-
-                const createdTaskDU = await taskService.createTask(dataDU);
-                console.log(`[Reply->DEEP_UNIQ] Created task: _id=${createdTaskDU?._id}, name=${createdTaskDU?.name}, creatorTG=${creator.tg_id}`);
-
-                // Compose detailed message for creator: first new task, then original
-                const newTaskInfoDU = `🆕 Новая задача (DEEP_UNIQ)\n\n` +
-                    `📌 Название: ${createdTaskDU?.name}\n` +
-                    `📝 Комментарий заказчика:\n${commentText}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(createdTaskDU?.createdAt || new Date())}`;
-
-                const hasMediaOldDU = Array.isArray(task.example_creative)
-                  ? task.example_creative.length
-                  : (typeof task.example_creative === 'string' && task.example_creative.trim() !== '' ? 1 : 0);
-
-                const oldTaskInfoDU = `ℹ️ Исходная задача\n\n` +
-                    `📌 Название: ${task.name}\n` +
-                    `🔗 Приложение: ${task.link_app}\n` +
-                    `📝 Описание: ${task.description}\n` +
-                    `🎨 Примеры креатива: ${hasMediaOldDU || 0}\n` +
-                    `📅 Создано: ${formatDateTimeMSK(task.createdAt)}`;
-
-                const composedDU = `${newTaskInfoDU}\n\n— — —\n\n${oldTaskInfoDU}`;
-                
-                // Разбиваем сообщение на части, если оно слишком длинное
-                const messagePartsDU = splitLongMessage(composedDU);
-                for (const part of messagePartsDU) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
-                }
-
-                // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdTaskDU?._id)
-                );
-                ctx.session = {};
-                ctx.scene.leave();
-                return;
-            }
-
-            await ctx.reply('Неверный выбор.');
-            return;
-        } catch (error) {
-            console.error('Ошибка при создании нового задания:', error);
-            await ctx.reply(ruMessage.messages.errors?.writeTT || 'Ошибка при создании нового задания.');
-            ctx.session = {};
-            ctx.scene.leave();
-            return;
-        }
+        
+        return;
     }
 
     // Получаем данные из сессии
