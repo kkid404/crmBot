@@ -439,7 +439,8 @@ static async getAutoAssignedTask(creatorId) {
                 _id: 1,
                 creator: 1,
                 completionDate: 1,
-                createdAt: 1
+                createdAt: 1,
+                quantity: 1
             }).lean();
 
             if (!matchedTasks || matchedTasks.length === 0) {
@@ -469,7 +470,8 @@ static async getAutoAssignedTask(creatorId) {
             }
 
             // 4) Подсчитываем смещение (offset) для каждого креативщика, чтобы продолжить цикл
-            //    Считаем количество уже "забонусенных" задач ДО даты отсечения
+            //    Считаем количество уже "забонусенных" креативов ДО даты отсечения
+            //    Учитываем quantity - суммируем количество креативов, а не задач
             const offsets = new Map(); // creatorId -> number
             const creatorIds = Array.from(byCreator.keys());
             if (creatorIds.length > 0) {
@@ -480,28 +482,44 @@ static async getAutoAssignedTask(creatorId) {
                         completionDate: { $lt: cutoffDate },
                         creator: { $in: creatorIds.map(id => new mongoose.Types.ObjectId(id)) }
                     }},
-                    { $group: { _id: '$creator', cnt: { $sum: 1 } } }
+                    { $group: { 
+                        _id: '$creator', 
+                        totalCreatives: { $sum: { $ifNull: ['$quantity', 1] } } // Суммируем quantity
+                    }}
                 ]);
                 for (const row of priorAgg) {
-                    offsets.set(String(row._id), row.cnt);
+                    offsets.set(String(row._id), row.totalCreatives);
                 }
                 // для тех, кого нет в priorAgg — offset = 0
                 for (const id of creatorIds) if (!offsets.has(id)) offsets.set(id, 0);
             }
 
             // 5) Формируем bulkWrite: каждый 3-й в последовательности получает 3x defaultBonus
+            // Учитываем quantity - если задача содержит несколько креативов (например, x3),
+            // то рассчитываем бонус для каждого отдельно
             const ops = [];
             let totalModified = 0;
             for (const [creatorId, list] of byCreator) {
                 let offset = offsets.get(creatorId) || 0;
+                let currentPosition = offset; // Текущая позиция в последовательности
+                
                 for (let i = 0; i < list.length; i++) {
-                    const seqIndex = offset + (i + 1); // 1-based позиция в общей последовательности
-                    const isThird = seqIndex % 3 === 0;
-                    const amount = isThird ? defaultBonus * 3 : defaultBonus;
+                    const task = list[i];
+                    const quantity = task.quantity || 1; // Количество креативов в задаче
+                    let taskBonus = 0;
+                    
+                    // Рассчитываем бонус для каждого креатива в задаче
+                    for (let q = 0; q < quantity; q++) {
+                        currentPosition++; // Увеличиваем позицию для каждого креатива
+                        const isThird = currentPosition % 3 === 0;
+                        const amount = isThird ? defaultBonus * 3 : defaultBonus;
+                        taskBonus += amount;
+                    }
+                    
                     ops.push({
                         updateOne: {
-                            filter: { _id: list[i]._id, bonus: null },
-                            update: { $set: { bonus: amount, isPenaltyBonus: true } }
+                            filter: { _id: task._id, bonus: null },
+                            update: { $set: { bonus: taskBonus, isPenaltyBonus: true } }
                         }
                     });
                     totalModified += 1;
