@@ -37,7 +37,7 @@ async function handlePoints(ctx) {
     const taskInfo = {
         state: "wait",
         completionDate: today,
-        points: Number(points) * quantity, // Умножаем баллы на количество
+        points: Math.round((Number(points) * quantity) * 100) / 100, // Умножаем баллы на количество и округляем до 2 знаков
         result: ctx.session.mediaFiles, // Теперь используем массив файлов вместо одного
         workType: workType // Добавляем тип работы для модератора с количеством
     };
