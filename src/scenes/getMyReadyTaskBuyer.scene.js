@@ -836,6 +836,10 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
             return;
         }
 
+        console.log(`[REPLY_HANDLER] Task loaded: ${task.name}`);
+        console.log(`[REPLY_HANDLER] task.result:`, task.result);
+        console.log(`[REPLY_HANDLER] task.example_creative:`, task.example_creative);
+
         // Получаем данные пользователя
         const tgId = String(ctx.from.id);
         let user;
@@ -874,11 +878,18 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 const quantity = ctx.session.creativeQuantity || 1;
                 const quantityText = quantity > 1 ? `\n🔢 Количество: ${quantity} шт.` : '';
 
+                // Для уникализации берем result из исходной задачи как примеры
+                const examplesForUniq = (Array.isArray(task.result) && task.result.length > 0) 
+                    ? task.result 
+                    : (Array.isArray(task.example_creative) && task.example_creative.length > 0)
+                        ? task.example_creative
+                        : [];
+
                 const data = {
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${quantityText}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
+                    example_creative: examplesForUniq,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,
@@ -946,11 +957,18 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 const adaptivCount = await taskService.getTaskSpecificAdaptivCount(task.name);
                 newName = `${task.name}_A_${adaptivCount + 1}`;
 
+                // Для адаптива берем result из исходной задачи как примеры
+                const examplesForAdaptiv = (Array.isArray(task.result) && task.result.length > 0) 
+                    ? task.result 
+                    : (Array.isArray(task.example_creative) && task.example_creative.length > 0)
+                        ? task.example_creative
+                        : [];
+
                 const newTaskAdaptiv = {
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
+                    example_creative: examplesForAdaptiv,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,
@@ -1019,11 +1037,24 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 const quantity = ctx.session.creativeQuantity || 1;
                 const quantityText = quantity > 1 ? `\n🔢 Количество: ${quantity} шт.` : '';
 
+                // Для глубокой уникализации берем result из промежуточной задачи как примеры
+                // Проверяем, что массив не пустой
+                const examplesForDU = (Array.isArray(task.result) && task.result.length > 0) 
+                    ? task.result 
+                    : (Array.isArray(task.example_creative) && task.example_creative.length > 0)
+                        ? task.example_creative
+                        : [];
+                
+                console.log(`[DEEP_UNIQ] Creating task from ${task.name}`);
+                console.log(`[DEEP_UNIQ] task.result:`, task.result);
+                console.log(`[DEEP_UNIQ] task.example_creative:`, task.example_creative);
+                console.log(`[DEEP_UNIQ] examplesForDU:`, examplesForDU);
+
                 const dataDU = {
                     name: newName,
                     link_app: task.link_app,
                     description: `${baseDescription}\n📅 Дата запроса: ${commentDate}${quantityText}${commentBlock}`,
-                    example_creative: task.result || task.example_creative,
+                    example_creative: examplesForDU,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
                     creator: creator._id,
