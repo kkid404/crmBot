@@ -1032,25 +1032,64 @@ getTaskToModerateScene.on("text", async (ctx) => {
       // Обновляем баллы в задаче
       await taskService.updateTask(taskId, { points });
 
+      // Сбрасываем флаг ожидания баллов
+      delete ctx.session.waitingForPoints;
+
+      // Переходим к запросу бонуса
+      ctx.session.waitingForBonus = true;
+      await ctx.reply(
+        `✅ Баллы установлены: ${points}\n\n💰 Теперь введите бонус для креативщика (от 500 до 1500):`
+      );
+    } catch (error) {
+      console.error("Error processing points input:", error);
+      await ctx.reply("Ошибка при обработке баллов");
+    }
+    return;
+  }
+
+  // Обработка ввода бонуса после установки баллов
+  if (ctx.session.waitingForBonus && ctx.session.pendingApproval) {
+    try {
+      const bonusInput = ctx.message.text.trim();
+      const bonus = parseFloat(bonusInput);
+      
+      // Проверяем корректность ввода
+      if (isNaN(bonus) || bonus < 500 || bonus > 1500) {
+        await ctx.reply(
+          "⚠️ Некорректное значение. Пожалуйста, введите бонус от 500 до 1500:"
+        );
+        return;
+      }
+
+      const { taskId, version, userId } = ctx.session.pendingApproval;
+      const task = await taskService.findTaskById(taskId);
+      
+      if (!task) {
+        await ctx.reply("Задача не найдена");
+        return;
+      }
+
+      // Обновляем бонус в задаче
+      await taskService.updateTask(taskId, { bonus });
+
       // Создаем запись проверки с одобрением
       await taskChekerService.createTaskChecker({
         taskId,
         chekerId: userId,
         status: "done",
         version,
-        message: `Задание принято с ${points} баллами`,
+        message: `Задание принято с ${task.points} баллами и бонусом ${bonus}`,
       });
 
       // Сбрасываем флаги ожидания
-      delete ctx.session.waitingForPoints;
+      delete ctx.session.waitingForBonus;
       delete ctx.session.pendingApproval;
 
-      // Один голос достаточно: финализируем сразу как done
-      // Баллы устанавливаются модератором вручную
-      
+      // Финализируем задачу как done
       const finalizedTask = await taskService.updateTask(taskId, {
         state: "done",
-        points: points
+        points: task.points,
+        bonus: bonus
       });
 
       if (!finalizedTask) {
@@ -1106,9 +1145,8 @@ getTaskToModerateScene.on("text", async (ctx) => {
           .join("\n\n");
 
         // Разбиваем длинное сообщение на части (лимит Telegram - 4096 символов)
-        const MAX_MESSAGE_LENGTH = 4000; // Оставляем запас для HTML-тегов
+        const MAX_MESSAGE_LENGTH = 4000;
         if (message.length > MAX_MESSAGE_LENGTH) {
-          // Разбиваем сообщение на части
           const parts = [];
           let currentPart = '';
           const lines = message.split('\n\n');
@@ -1123,7 +1161,6 @@ getTaskToModerateScene.on("text", async (ctx) => {
           }
           if (currentPart) parts.push(currentPart);
           
-          // Отправляем части по очереди
           for (const part of parts) {
             await ctx.telegram.sendMessage(process.env.FORUM_CHAT_ID, part, {
               parse_mode: "HTML",
@@ -1224,7 +1261,8 @@ getTaskToModerateScene.on("text", async (ctx) => {
 
           const workTypeText = finalizedTask.workType || 'Не указан';
           const pointsText = finalizedTask.points || 0;
-          const approvalMessage = `✅ ${finalizedTask.name} Одобрено!\n\n⭐ Начислено баллов: ${pointsText}\n💎 Тип работы: ${workTypeText}`;
+          const bonusText = finalizedTask.bonus || 0;
+          const approvalMessage = `✅ ${finalizedTask.name} Одобрено!\n\n⭐ Начислено баллов: ${pointsText}\n💰 Бонус: ${bonusText}\n💎 Тип работы: ${workTypeText}`;
           
           await ctx.telegram.sendMessage(creator.tg_id, approvalMessage);
         }
@@ -1266,7 +1304,7 @@ getTaskToModerateScene.on("text", async (ctx) => {
         }
       } catch (_) {}
       
-      // Очищаем медиа и возвращаемся к списку ТЗ на проверке, оставаясь в сцене
+      // Очищаем медиа и возвращаемся к списку ТЗ на проверке
       try {
         await deleteMediaMessages(ctx);
       } catch (_) {}
@@ -1278,12 +1316,12 @@ getTaskToModerateScene.on("text", async (ctx) => {
       // Показываем уведомление и клавиатуру со списком заданий на проверке
       const moderator = await userService.findUserByTelegramId(String(ctx.from.id));
       const page = ctx.session.currentPage || 0;
-      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${points} баллов.`);
+      await ctx.reply(`✅ Ответ принят. Креативщику начислено ${task.points} баллов и бонус ${bonus}.`);
       const keyboard = await myTasks(moderator._id, "", "wait", page);
       await ctx.reply(ruMessage.messages.getTT.select_tt, keyboard);
     } catch (error) {
-      console.error("Error processing points input:", error);
-      await ctx.reply("Ошибка при обработке баллов");
+      console.error("Error processing bonus input:", error);
+      await ctx.reply("Ошибка при обработке бонуса");
     }
     return;
   }
