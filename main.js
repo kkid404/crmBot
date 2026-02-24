@@ -89,6 +89,76 @@ bot.action(/^set_expected_time(?::([0-9a-fA-F]{24}))?$/, async (ctx) => {
   }
 });
 
+// Global handler for postponing deadline
+bot.action(/^postpone_deadline_([0-9a-fA-F]{24})$/, async (ctx) => {
+  try {
+    if (!ctx.session) ctx.session = {};
+    
+    const taskId = ctx.match[1];
+    ctx.session.postponeTaskId = taskId;
+    
+    await ctx.scene.enter('postponeDeadlineScene');
+    await ctx.answerCbQuery();
+  } catch (error) {
+    console.error('Error handling postpone_deadline action:', error);
+    try { await ctx.answerCbQuery('Ошибка при переходе к переносу дедлайна.'); } catch {}
+  }
+});
+
+// Global handler for approving postpone request
+bot.action(/^postpone_approve_(.+)$/, async (ctx) => {
+  try {
+    const encodedData = ctx.match[1];
+    const postponeData = JSON.parse(Buffer.from(encodedData, 'base64').toString());
+    
+    const { taskId, creatorTgId, reason, newDate, newTime } = postponeData;
+    
+    // Store data in session for comment request
+    ctx.session.postponeApprovalData = {
+      taskId,
+      creatorTgId,
+      reason,
+      newDate,
+      newTime
+    };
+    
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    await ctx.reply('✅ Вы одобрили перенос дедлайна.\n\n📝 Напишите комментарий для баера:');
+    ctx.session.waitingForPostponeComment = true;
+    
+    await ctx.answerCbQuery('Запрос одобрен');
+  } catch (error) {
+    console.error('Error handling postpone_approve action:', error);
+    try { await ctx.answerCbQuery('Ошибка при одобрении запроса.'); } catch {}
+  }
+});
+
+// Global handler for rejecting postpone request
+bot.action(/^postpone_reject_([0-9a-fA-F]{24})_(\d+)$/, async (ctx) => {
+  try {
+    const taskId = ctx.match[1];
+    const creatorTgId = ctx.match[2];
+    
+    const taskService = require('./src/services/task.service');
+    const task = await taskService.findTaskById(taskId);
+    
+    if (task) {
+      // Notify creator that postpone was rejected
+      await ctx.telegram.sendMessage(
+        creatorTgId,
+        `❌ Ваш запрос на перенос дедлайна для задачи "${task.name}" был отклонен модератором.`
+      );
+    }
+    
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ Отклонено');
+    await ctx.answerCbQuery('Запрос отклонен');
+  } catch (error) {
+    console.error('Error handling postpone_reject action:', error);
+    try { await ctx.answerCbQuery('Ошибка при отклонении запроса.'); } catch {}
+  }
+});
+
 
 // Регистрация сцен
 const scenesPath = path.join(__dirname, 'src/scenes');
@@ -113,6 +183,86 @@ commandsFiles.forEach(file => {
 // Team lead menu button handler
 bot.hears('👨\u200d💼 Меню teamlead', (ctx) => {
     return ctx.scene.enter('TEAMLEAD_SCENE');
+});
+
+// Global text handler for postpone comment (must be before other handlers)
+bot.on('text', async (ctx, next) => {
+  if (ctx.session?.waitingForPostponeComment && ctx.session?.postponeApprovalData) {
+    try {
+      const { taskId, creatorTgId, reason, newDate, newTime } = ctx.session.postponeApprovalData;
+      const moderatorComment = ctx.message.text;
+      
+      const taskService = require('./src/services/task.service');
+      
+      // Get task
+      const task = await taskService.findTaskById(taskId);
+      
+      if (!task) {
+        await ctx.reply('❌ Задача не найдена');
+        delete ctx.session.waitingForPostponeComment;
+        delete ctx.session.postponeApprovalData;
+        return;
+      }
+      
+      // Parse new date (DD.MM.YYYY)
+      const [day, month, year] = newDate.split('.').map(Number);
+      const newExpectedDate = new Date(year, month - 1, day);
+      
+      // Update task with new deadline
+      await taskService.updateTask(taskId, {
+        expectedDate: newExpectedDate,
+        expectedTime: newTime
+      });
+      
+      // Notify buyer
+      if (task.buyer && task.buyer.tg_id) {
+        await ctx.telegram.sendMessage(
+          task.buyer.tg_id,
+          `📅 Задача "${task.name}" перенесена на ${newDate} к ${newTime}\n\n` +
+          `📝 Причина: ${reason}\n` +
+          `💬 Комментарий модератора: ${moderatorComment}`
+        );
+      }
+      
+      // Notify createdBy if different from buyer
+      if (task.createdBy && typeof task.createdBy === 'object' && task.createdBy.tg_id) {
+        const createdById = task.createdBy._id ? task.createdBy._id.toString() : null;
+        const buyerId = task.buyer && task.buyer._id ? task.buyer._id.toString() : null;
+        
+        if (createdById && buyerId && createdById !== buyerId) {
+          await ctx.telegram.sendMessage(
+            task.createdBy.tg_id,
+            `📅 Задача "${task.name}" перенесена на ${newDate} к ${newTime}\n\n` +
+            `📝 Причина: ${reason}\n` +
+            `💬 Комментарий модератора: ${moderatorComment}\n` +
+            `(создано от лица @${task.buyer.username || 'баера'})`
+          );
+        }
+      }
+      
+      // Notify creator
+      await ctx.telegram.sendMessage(
+        creatorTgId,
+        `✅ Ваш запрос на перенос дедлайна для задачи "${task.name}" одобрен!\n\n` +
+        `📅 Новый дедлайн: ${newDate} к ${newTime}`
+      );
+      
+      await ctx.reply('✅ Дедлайн обновлен, комментарий отправлен баеру, креативщик уведомлен об одобрении.');
+      
+      delete ctx.session.waitingForPostponeComment;
+      delete ctx.session.postponeApprovalData;
+      return;
+    } catch (error) {
+      console.error('Error processing postpone comment:', error);
+      await ctx.reply('Произошла ошибка при обработке комментария');
+      delete ctx.session.waitingForPostponeComment;
+      delete ctx.session.postponeApprovalData;
+      return;
+    }
+  }
+  
+  // Continue to next handler
+  return next();
 });
 
 // Регистрация обработчиков
