@@ -138,7 +138,7 @@ setExpectedTimeScene.on('text', async (ctx) => {
             
             await taskService.updateTask(taskId, updateData);
             
-            // If task was in 'time' state, notify the creator
+            // If task was in 'time' state, notify the creator and buyer
             const userService = require('../services/user.service');
             const currentUserTgId = String(ctx.from.id);
             let isCreatorSettingTime = false;
@@ -159,8 +159,36 @@ setExpectedTimeScene.on('text', async (ctx) => {
                         await ctx.telegram.sendMessage(creator.tg_id, notificationText);
                         console.log(`Уведомление о задаче отправлено креативщику ${creator.username} (${creator.tg_id})`);
                     }
+                    
+                    // Notify buyer about the task being taken to work
+                    if (task.buyer && task.buyer.tg_id) {
+                        try {
+                            const buyerNotification = `✅ Ваше задание "${task.name}" взято в работу\n\n📅 Планируемая дата сдачи: ${ctx.session.expectedDate} к ${userInput}`;
+                            await ctx.telegram.sendMessage(task.buyer.tg_id, buyerNotification);
+                            console.log(`Уведомление отправлено баеру: ${task.buyer.tg_id}`);
+                        } catch (err) {
+                            console.error(`Ошибка отправки уведомления баеру ${task.buyer.tg_id}:`, err);
+                        }
+                    }
+                    
+                    // Notify createdBy if different from buyer
+                    if (task.createdBy && typeof task.createdBy === 'object' && task.createdBy.tg_id) {
+                        const createdById = task.createdBy._id ? task.createdBy._id.toString() : null;
+                        const buyerId = task.buyer && task.buyer._id ? task.buyer._id.toString() : null;
+                        
+                        if (createdById && buyerId && createdById !== buyerId) {
+                            try {
+                                const buyerUsername = task.buyer.username || 'баера';
+                                const createdByNotification = `✅ Задание "${task.name}" взято в работу\n\n📅 Планируемая дата сдачи: ${ctx.session.expectedDate} к ${userInput}\n(создано от лица @${buyerUsername})`;
+                                await ctx.telegram.sendMessage(task.createdBy.tg_id, createdByNotification);
+                                console.log(`Уведомление отправлено главному баеру (createdBy): ${task.createdBy.tg_id}`);
+                            } catch (err) {
+                                console.error(`Ошибка отправки уведомления главному баеру ${task.createdBy.tg_id}:`, err);
+                            }
+                        }
+                    }
                 } catch (err) {
-                    console.error('Ошибка отправки уведомления креативщику:', err);
+                    console.error('Ошибка отправки уведомлений:', err);
                 }
             }
             

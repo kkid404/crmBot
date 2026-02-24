@@ -579,8 +579,13 @@ getTTScene.action("done", async (ctx) => {
         const timeInfo = ctx.session.expectedTime ? ` к ${ctx.session.expectedTime}` : '';
         const fullDateInfo = `${dateFormatted}${timeInfo}`;
         
-        // Отправляем уведомления админам
+        // Отправляем уведомления чекерам
         try {
+            // Получаем имя пользователя (креативщика)
+            const username = ctx.from.username 
+                ? `@${ctx.from.username}` 
+                : `${ctx.from.first_name} ${ctx.from.last_name || ''}`.trim();
+            
             // Находим всех пользователей с cheker: true
             const checkers = await userService.findAllCheckers();
             console.log(`Найдено чекеров: ${checkers.length}`);
@@ -590,12 +595,7 @@ getTTScene.action("done", async (ctx) => {
                 console.log(`Чекер ${index + 1}: ID=${checker._id}, TG_ID=${checker.tg_id}, Username=${checker.username}`);
             });
             
-            // Получаем имя пользователя
-            const username = ctx.from.username 
-                ? `@${ctx.from.username}` 
-                : `${ctx.from.first_name} ${ctx.from.last_name || ''}`.trim();
-            
-            // Формируем текст уведомления
+            // Формируем текст уведомления для чекеров
             const notificationText = `🔔 Креативщик ${username} взял задание "${ctx.session.taskname}"`;
             
             // Отправляем уведомление каждому чекеру
