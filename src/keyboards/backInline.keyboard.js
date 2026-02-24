@@ -11,6 +11,11 @@ function backInline(task = null, options = {}) {
     inlineKeyboard.unshift([Markup.button.callback('⏰ Установить время', 'set_expected_time')]);
   }
   
+  // Если задача в состоянии 'progress', добавляем кнопку для переноса дедлайна
+  if (task && task.state === 'progress' && task._id) {
+    inlineKeyboard.unshift([Markup.button.callback('📅 Перенести ТЗ', `postpone_deadline_${task._id}`)]);
+  }
+  
   // Добавляем кнопки для полного описания и правок
   if (options.hasFullDescription) {
     inlineKeyboard.unshift([Markup.button.callback('📝 Полное описание', 'show_full_description')]);

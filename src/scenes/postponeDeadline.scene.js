@@ -170,13 +170,12 @@ async function sendPostponeRequest(ctx) {
         const newTime = ctx.session.newExpectedTime;
         const creatorTgId = ctx.from.id;
         
-        // Find all admins and checkers
-        const admins = await userService.findAllAdmins();
+        // Find all checkers (moderators)
         const checkers = await userService.findAllCheckers();
         
-        // Combine and get unique recipients
+        // Get unique recipients
         const recipients = new Set();
-        [...admins, ...checkers].forEach(user => {
+        checkers.forEach(user => {
             if (user.tg_id) {
                 recipients.add(String(user.tg_id));
             }
