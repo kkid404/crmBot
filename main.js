@@ -106,11 +106,17 @@ bot.action(/^postpone_deadline_([0-9a-fA-F]{24})$/, async (ctx) => {
 });
 
 // Global handler for approving postpone request
-bot.action(/^postpone_approve_(.+)$/, async (ctx) => {
+bot.action(/^postpone_ok_(.+)$/, async (ctx) => {
   try {
-    const encodedData = ctx.match[1];
-    const postponeData = JSON.parse(Buffer.from(encodedData, 'base64').toString());
+    const requestKey = ctx.match[1];
     
+    // Get postpone data from global map
+    if (!global.postponeRequests || !global.postponeRequests.has(requestKey)) {
+      await ctx.answerCbQuery('❌ Запрос устарел или не найден');
+      return;
+    }
+    
+    const postponeData = global.postponeRequests.get(requestKey);
     const { taskId, creatorTgId, reason, newDate, newTime } = postponeData;
     
     // Store data in session for comment request
@@ -119,7 +125,8 @@ bot.action(/^postpone_approve_(.+)$/, async (ctx) => {
       creatorTgId,
       reason,
       newDate,
-      newTime
+      newTime,
+      requestKey
     };
     
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
@@ -128,16 +135,24 @@ bot.action(/^postpone_approve_(.+)$/, async (ctx) => {
     
     await ctx.answerCbQuery('Запрос одобрен');
   } catch (error) {
-    console.error('Error handling postpone_approve action:', error);
+    console.error('Error handling postpone_ok action:', error);
     try { await ctx.answerCbQuery('Ошибка при одобрении запроса.'); } catch {}
   }
 });
 
 // Global handler for rejecting postpone request
-bot.action(/^postpone_reject_([0-9a-fA-F]{24})_(\d+)$/, async (ctx) => {
+bot.action(/^postpone_no_(.+)$/, async (ctx) => {
   try {
-    const taskId = ctx.match[1];
-    const creatorTgId = ctx.match[2];
+    const requestKey = ctx.match[1];
+    
+    // Get postpone data from global map
+    if (!global.postponeRequests || !global.postponeRequests.has(requestKey)) {
+      await ctx.answerCbQuery('❌ Запрос устарел или не найден');
+      return;
+    }
+    
+    const postponeData = global.postponeRequests.get(requestKey);
+    const { taskId, creatorTgId } = postponeData;
     
     const taskService = require('./src/services/task.service');
     const task = await taskService.findTaskById(taskId);
@@ -150,11 +165,14 @@ bot.action(/^postpone_reject_([0-9a-fA-F]{24})_(\d+)$/, async (ctx) => {
       );
     }
     
+    // Remove from global map
+    global.postponeRequests.delete(requestKey);
+    
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ Отклонено');
     await ctx.answerCbQuery('Запрос отклонен');
   } catch (error) {
-    console.error('Error handling postpone_reject action:', error);
+    console.error('Error handling postpone_no action:', error);
     try { await ctx.answerCbQuery('Ошибка при отклонении запроса.'); } catch {}
   }
 });
@@ -189,7 +207,7 @@ bot.hears('👨\u200d💼 Меню teamlead', (ctx) => {
 bot.on('text', async (ctx, next) => {
   if (ctx.session?.waitingForPostponeComment && ctx.session?.postponeApprovalData) {
     try {
-      const { taskId, creatorTgId, reason, newDate, newTime } = ctx.session.postponeApprovalData;
+      const { taskId, creatorTgId, reason, newDate, newTime, requestKey } = ctx.session.postponeApprovalData;
       const moderatorComment = ctx.message.text;
       
       const taskService = require('./src/services/task.service');
@@ -246,6 +264,11 @@ bot.on('text', async (ctx, next) => {
         `✅ Ваш запрос на перенос дедлайна для задачи "${task.name}" одобрен!\n\n` +
         `📅 Новый дедлайн: ${newDate} к ${newTime}`
       );
+      
+      // Remove from global map
+      if (requestKey && global.postponeRequests) {
+        global.postponeRequests.delete(requestKey);
+      }
       
       await ctx.reply('✅ Дедлайн обновлен, комментарий отправлен баеру, креативщик уведомлен об одобрении.');
       

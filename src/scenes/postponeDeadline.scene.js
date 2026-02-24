@@ -170,12 +170,18 @@ async function sendPostponeRequest(ctx) {
         const newTime = ctx.session.newExpectedTime;
         const creatorTgId = ctx.from.id;
         
-        // Find all checkers (moderators)
+        // Find all checkers (moderators) and admin creators
         const checkers = await userService.findAllCheckers();
+        const adminCreators = await userService.findCreatorAdmins();
         
         // Get unique recipients
         const recipients = new Set();
         checkers.forEach(user => {
+            if (user.tg_id) {
+                recipients.add(String(user.tg_id));
+            }
+        });
+        adminCreators.forEach(user => {
             if (user.tg_id) {
                 recipients.add(String(user.tg_id));
             }
@@ -193,19 +199,26 @@ async function sendPostponeRequest(ctx) {
             `📅 Новая дата: ${newDate} в ${newTime}\n` +
             `👤 От: @${ctx.from.username || ctx.from.first_name}`;
         
-        // Encode postpone data in callback
-        const postponeData = Buffer.from(JSON.stringify({
+        // Store postpone data in a global map (temporary solution)
+        // Better solution would be to store in database
+        if (!global.postponeRequests) {
+            global.postponeRequests = new Map();
+        }
+        
+        const requestKey = `${task._id}_${creatorTgId}`;
+        global.postponeRequests.set(requestKey, {
             taskId: task._id.toString(),
             creatorTgId,
             reason,
             newDate,
-            newTime
-        })).toString('base64');
+            newTime,
+            timestamp: Date.now()
+        });
         
         const keyboard = Markup.inlineKeyboard([
             [
-                Markup.button.callback('✅ ОК', `postpone_approve_${postponeData}`),
-                Markup.button.callback('❌ Отмена', `postpone_reject_${task._id}_${creatorTgId}`)
+                Markup.button.callback('✅ ОК', `postpone_ok_${requestKey}`),
+                Markup.button.callback('❌ Отмена', `postpone_no_${requestKey}`)
             ]
         ]);
         
