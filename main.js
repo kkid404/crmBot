@@ -237,7 +237,6 @@ bot.on('text', async (ctx, next) => {
         await ctx.telegram.sendMessage(
           task.buyer.tg_id,
           `📅 Задача "${task.name}" перенесена на ${newDate} к ${newTime}\n\n` +
-          `📝 Причина: ${reason}\n` +
           `💬 Комментарий модератора: ${moderatorComment}`
         );
       }
