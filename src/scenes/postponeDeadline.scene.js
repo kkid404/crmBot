@@ -6,6 +6,7 @@ const taskService = require('../services/task.service');
 const userService = require('../services/user.service');
 const { formatDateMSK } = require('../utils/formatDate.util');
 const { selectDateKeyboard } = require('../keyboards/selectDate.keyboard');
+const PostponeRequest = require('../databases/postponeRequest.model');
 
 const postponeDeadlineScene = new BaseScene('postponeDeadlineScene');
 
@@ -41,12 +42,38 @@ postponeDeadlineScene.enter(async (ctx) => {
         }
 
         ctx.session.postponeTask = task;
-        await ctx.reply(`📝 Укажите причину переноса задачи "${task.name}":`);
+        const cancelKeyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+        ]);
+        await ctx.reply(`📝 Укажите причину переноса задачи "${task.name}":`, cancelKeyboard);
         ctx.session.waitingForReason = true;
     } catch (error) {
         console.error('Error in postponeDeadlineScene.enter:', error);
         await ctx.reply('Произошла ошибка. Пожалуйста, попробуйте позже.', await start(ctx.from.id));
         ctx.scene.leave();
+    }
+});
+
+// Handle cancel button
+postponeDeadlineScene.action('cancel_postpone', async (ctx) => {
+    try {
+        await ctx.answerCbQuery('Перенос отменен');
+        await ctx.reply('❌ Перенос дедлайна отменен', await start(ctx.from.id));
+        
+        // Clear session
+        delete ctx.session.postponeTaskId;
+        delete ctx.session.postponeTask;
+        delete ctx.session.postponeReason;
+        delete ctx.session.newExpectedDate;
+        delete ctx.session.newExpectedTime;
+        delete ctx.session.waitingForReason;
+        delete ctx.session.waitingForDateSelection;
+        delete ctx.session.waitingForCustomDate;
+        
+        ctx.scene.leave();
+    } catch (error) {
+        console.error('Error in cancel_postpone handler:', error);
+        await ctx.answerCbQuery('Ошибка при отмене');
     }
 });
 
@@ -59,7 +86,10 @@ postponeDeadlineScene.action('date_today', async (ctx) => {
         ctx.session.newExpectedDate = formattedDate;
         ctx.session.waitingForDateSelection = false;
         
-        await ctx.editMessageText('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):');
+        const cancelKeyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+        ]);
+        await ctx.editMessageText('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):', cancelKeyboard);
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in date_today handler:', error);
@@ -76,7 +106,10 @@ postponeDeadlineScene.action('date_tomorrow', async (ctx) => {
         ctx.session.newExpectedDate = formattedDate;
         ctx.session.waitingForDateSelection = false;
         
-        await ctx.editMessageText('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):');
+        const cancelKeyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+        ]);
+        await ctx.editMessageText('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):', cancelKeyboard);
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in date_tomorrow handler:', error);
@@ -89,7 +122,10 @@ postponeDeadlineScene.action('date_custom', async (ctx) => {
         ctx.session.waitingForCustomDate = true;
         ctx.session.waitingForDateSelection = false;
         
-        await ctx.editMessageText('📅 Введите дату в формате ДД.ММ.ГГГГ (например, 25.02.2026):');
+        const cancelKeyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+        ]);
+        await ctx.editMessageText('📅 Введите дату в формате ДД.ММ.ГГГГ (например, 25.02.2026):', cancelKeyboard);
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in date_custom handler:', error);
@@ -108,7 +144,13 @@ postponeDeadlineScene.on('text', async (ctx) => {
             ctx.session.waitingForReason = false;
             ctx.session.waitingForDateSelection = true;
             
-            await ctx.reply('📅 Выберите новую дату сдачи креатива:', selectDateKeyboard());
+            const dateKeyboard = Markup.inlineKeyboard([
+                [Markup.button.callback('📅 Сегодня', 'date_today')],
+                [Markup.button.callback('📅 Завтра', 'date_tomorrow')],
+                [Markup.button.callback('📅 Своя дата', 'date_custom')],
+                [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+            ]);
+            await ctx.reply('📅 Выберите новую дату сдачи креатива:', dateKeyboard);
             return;
         }
         
@@ -131,7 +173,10 @@ postponeDeadlineScene.on('text', async (ctx) => {
             ctx.session.newExpectedDate = userInput;
             ctx.session.waitingForCustomDate = false;
             
-            await ctx.reply('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):');
+            const cancelKeyboard = Markup.inlineKeyboard([
+                [Markup.button.callback('❌ Отменить', 'cancel_postpone')]
+            ]);
+            await ctx.reply('⏰ Введите новое время сдачи в формате ЧЧ:ММ (например, 18:30):', cancelKeyboard);
             return;
         }
         
@@ -193,32 +238,28 @@ async function sendPostponeRequest(ctx) {
             return;
         }
         
+        // Save postpone request to database
+        const postponeRequest = new PostponeRequest({
+            task: task._id,
+            creator: creatorTgId,
+            reason,
+            newDate,
+            newTime,
+            status: 'pending'
+        });
+        
+        await postponeRequest.save();
+        
         const message = `📋 Запрос на перенос дедлайна\n\n` +
             `📌 Задача: ${task.name}\n` +
             `📝 Причина переноса: ${reason}\n` +
             `📅 Новая дата: ${newDate} в ${newTime}\n` +
             `👤 От: @${ctx.from.username || ctx.from.first_name}`;
         
-        // Store postpone data in a global map (temporary solution)
-        // Better solution would be to store in database
-        if (!global.postponeRequests) {
-            global.postponeRequests = new Map();
-        }
-        
-        const requestKey = `${task._id}_${creatorTgId}`;
-        global.postponeRequests.set(requestKey, {
-            taskId: task._id.toString(),
-            creatorTgId,
-            reason,
-            newDate,
-            newTime,
-            timestamp: Date.now()
-        });
-        
         const keyboard = Markup.inlineKeyboard([
             [
-                Markup.button.callback('✅ ОК', `postpone_ok_${requestKey}`),
-                Markup.button.callback('❌ Отмена', `postpone_no_${requestKey}`)
+                Markup.button.callback('✅ ОК', `postpone_ok_${postponeRequest._id}`),
+                Markup.button.callback('❌ Отмена', `postpone_no_${postponeRequest._id}`)
             ]
         ]);
         

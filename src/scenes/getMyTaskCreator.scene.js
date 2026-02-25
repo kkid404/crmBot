@@ -141,6 +141,13 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
         await ctx.answerCbQuery(ruMessage.messages.taskNotFound); // Если задача не найдена
         return;
     }
+    
+    // Check if task has pending postpone request
+    const PostponeRequest = require('../databases/postponeRequest.model');
+    const pendingPostpone = await PostponeRequest.findOne({ 
+        task: taskId, 
+        status: 'pending' 
+    });
 
     // Определяем, есть ли медиафайлы
     const hasMedia = Array.isArray(task.example_creative) 
@@ -213,7 +220,7 @@ getMyTtCreatorScene.action(/^[a-f0-9]{24}$/, async (ctx) => { // Регуляр�
             '';
         
         return `
-🎯 Название: ${task.name}
+🎯 Название: ${task.name}${pendingPostpone ? ' (перенос)' : ''}
 🔗 Ссылка на приложение: ${task.link_app}
 📝 Описание: ${description}
 ${exampleLine}
