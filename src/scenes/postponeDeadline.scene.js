@@ -215,6 +215,14 @@ async function sendPostponeRequest(ctx) {
         const newTime = ctx.session.newExpectedTime;
         const creatorTgId = ctx.from.id;
         
+        // Find the creator user by Telegram ID
+        const creatorUser = await userService.findUserByTelegramId(creatorTgId);
+        if (!creatorUser) {
+            await ctx.reply('❌ Ошибка: пользователь не найден в системе.');
+            ctx.scene.leave();
+            return;
+        }
+        
         // Find all checkers (moderators) and admin creators
         const checkers = await userService.findAllCheckers();
         const adminCreators = await userService.findCreatorAdmins();
@@ -241,7 +249,7 @@ async function sendPostponeRequest(ctx) {
         // Save postpone request to database
         const postponeRequest = new PostponeRequest({
             task: task._id,
-            creator: creatorTgId,
+            creator: creatorUser._id,
             reason,
             newDate,
             newTime,
