@@ -65,6 +65,7 @@ bot.use(async (ctx, next) => {
       console.log('Postpone data:', { requestId, taskId, creatorTgId, reason, newDate, newTime });
       
       const taskService = require('./src/services/task.service');
+      const userService = require('./src/services/user.service');
       const PostponeRequest = require('./src/databases/postponeRequest.model');
       
       // Get task
@@ -73,6 +74,15 @@ bot.use(async (ctx, next) => {
       
       if (!task) {
         await ctx.reply('❌ Задача не найдена');
+        delete ctx.session.waitingForPostponeComment;
+        delete ctx.session.postponeApprovalData;
+        return;
+      }
+      
+      // Find the moderator user by Telegram ID
+      const moderatorUser = await userService.findUserByTelegramId(ctx.from.id);
+      if (!moderatorUser) {
+        await ctx.reply('❌ Ошибка: пользователь не найден в системе.');
         delete ctx.session.waitingForPostponeComment;
         delete ctx.session.postponeApprovalData;
         return;
@@ -91,7 +101,7 @@ bot.use(async (ctx, next) => {
       // Update postpone request status
       await PostponeRequest.findByIdAndUpdate(requestId, {
         status: 'approved',
-        processedBy: ctx.from.id,
+        processedBy: moderatorUser._id,
         moderatorComment: moderatorComment,
         processedAt: new Date()
       });
@@ -241,6 +251,7 @@ bot.action(/^postpone_no_(.+)$/, async (ctx) => {
   try {
     const requestId = ctx.match[1];
     const PostponeRequest = require('./src/databases/postponeRequest.model');
+    const userService = require('./src/services/user.service');
     
     // Get postpone request from database
     const postponeRequest = await PostponeRequest.findById(requestId).populate('task').populate('creator');
@@ -252,9 +263,16 @@ bot.action(/^postpone_no_(.+)$/, async (ctx) => {
     
     const { task, creator } = postponeRequest;
     
+    // Find the moderator user by Telegram ID
+    const moderatorUser = await userService.findUserByTelegramId(ctx.from.id);
+    if (!moderatorUser) {
+      await ctx.answerCbQuery('❌ Ошибка: пользователь не найден');
+      return;
+    }
+    
     // Update request status
     postponeRequest.status = 'rejected';
-    postponeRequest.processedBy = ctx.from.id;
+    postponeRequest.processedBy = moderatorUser._id;
     postponeRequest.processedAt = new Date();
     await postponeRequest.save();
     

@@ -4,6 +4,7 @@ const ruMessage = require('../lang/ru.json');
 const { start } = require('../keyboards/start.keyboard');
 const { admin } = require('../keyboards/admin.keyboard');
 const PostponeRequest = require('../databases/postponeRequest.model');
+const userService = require('../services/user.service');
 
 const postponeRequestsListScene = new BaseScene('postponeRequestsListScene');
 
@@ -164,10 +165,17 @@ postponeRequestsListScene.action(/^reject_req_(\d+)$/, async (ctx) => {
 
         const request = requests[index];
 
+        // Find the moderator user by Telegram ID
+        const moderatorUser = await userService.findUserByTelegramId(ctx.from.id);
+        if (!moderatorUser) {
+            await ctx.answerCbQuery('❌ Ошибка: пользователь не найден');
+            return;
+        }
+
         // Update request status in database
         await PostponeRequest.findByIdAndUpdate(request._id, {
             status: 'rejected',
-            processedBy: ctx.from.id,
+            processedBy: moderatorUser._id,
             processedAt: new Date()
         });
 
