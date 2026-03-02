@@ -6,7 +6,7 @@ const { isAdmin } = require('../middlewares/isAdmin.middleware');
  */
 const handler = (bot) => {
     // Handler for the "Установить бонус" button
-    bot.hears(ruMessage.keyboards.startAdmin[2], 
+    bot.hears(ruMessage.keyboards.startAdmin[3], 
         isAdmin,
         async (ctx) => {
             try {

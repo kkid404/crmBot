@@ -54,8 +54,81 @@ bot.use(localSession.middleware());
 // Подготовка Stage для сцен
 const stage = new Stage();
 
-// Global text handler for postpone comment (must be BEFORE stage middleware)
+// Global text handler for postpone comment and revision comment (must be BEFORE stage middleware)
 bot.use(async (ctx, next) => {
+  // Handle revision comment
+  if (ctx.message?.text && ctx.session?.waitingForRevisionComment && ctx.session?.revisionApprovalData) {
+    try {
+      console.log('Processing revision comment from:', ctx.from.id);
+      const { requestId, taskId, creatorTgId, buyerMessage, buyerUsername, taskName } = ctx.session.revisionApprovalData;
+      const moderatorComment = ctx.message.text;
+      
+      const taskService = require('./src/services/task.service');
+      const userService = require('./src/services/user.service');
+      const RevisionRequest = require('./src/databases/revisionRequest.model');
+      const splitLongMessage = require('./src/utils/splitMessage.util');
+      
+      // Get task
+      const task = await taskService.findTaskById(taskId);
+      
+      if (!task) {
+        await ctx.reply('❌ Задача не найдена');
+        delete ctx.session.waitingForRevisionComment;
+        delete ctx.session.revisionApprovalData;
+        return;
+      }
+      
+      // Find the moderator user by Telegram ID
+      const moderatorUser = await userService.findUserByTelegramId(ctx.from.id);
+      if (!moderatorUser) {
+        await ctx.reply('❌ Ошибка: пользователь не найден в системе.');
+        delete ctx.session.waitingForRevisionComment;
+        delete ctx.session.revisionApprovalData;
+        return;
+      }
+      
+      // Update task: return to progress and increment version
+      await taskService.updateTask(taskId, { 
+        state: 'progress', 
+        version: (task.version || 1) + 1 
+      });
+      
+      // Update revision request status
+      await RevisionRequest.findByIdAndUpdate(requestId, {
+        status: 'approved',
+        processedBy: moderatorUser._id,
+        moderatorComment: moderatorComment,
+        processedAt: new Date()
+      });
+      
+      // Send message to creator with moderator's comment only
+      const creativeMessage = `
+❌ Задание "${taskName}" отклонено заказчиком и требует доработки:
+
+💬 Комментарий модератора:
+${moderatorComment}
+      `;
+      
+      const messageParts = splitLongMessage(creativeMessage);
+      for (const part of messageParts) {
+        await ctx.telegram.sendMessage(creatorTgId, part);
+      }
+      
+      await ctx.reply('✅ Запрос одобрен. Креативщик получил доработку с вашим комментарием.');
+      
+      delete ctx.session.waitingForRevisionComment;
+      delete ctx.session.revisionApprovalData;
+      return; // Don't call next() - stop processing
+    } catch (error) {
+      console.error('Error processing revision comment:', error);
+      await ctx.reply('Произошла ошибка при обработке комментария');
+      delete ctx.session.waitingForRevisionComment;
+      delete ctx.session.revisionApprovalData;
+      return; // Don't call next() - stop processing
+    }
+  }
+  
+  // Handle postpone comment
   if (ctx.message?.text && ctx.session?.waitingForPostponeComment && ctx.session?.postponeApprovalData) {
     try {
       console.log('Processing postpone comment from:', ctx.from.id);
@@ -289,6 +362,95 @@ bot.action(/^postpone_no_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('Запрос отклонен');
   } catch (error) {
     console.error('Error handling postpone_no action:', error);
+    try { await ctx.answerCbQuery('Ошибка при отклонении запроса.'); } catch {}
+  }
+});
+
+// Global handler for approving revision request
+bot.action(/^revision_approve_(.+)$/, async (ctx) => {
+  try {
+    const requestId = ctx.match[1];
+    const RevisionRequest = require('./src/databases/revisionRequest.model');
+    
+    // Get revision request from database
+    const revisionRequest = await RevisionRequest.findById(requestId)
+      .populate('task')
+      .populate('buyer')
+      .populate('creator');
+    
+    if (!revisionRequest || revisionRequest.status !== 'pending') {
+      await ctx.answerCbQuery('❌ Запрос не найден или уже обработан');
+      return;
+    }
+    
+    const { task, buyer, creator, buyerMessage } = revisionRequest;
+    
+    // Store data in session for comment request
+    ctx.session.revisionApprovalData = {
+      requestId: revisionRequest._id.toString(),
+      taskId: task._id.toString(),
+      creatorTgId: creator.tg_id,
+      buyerMessage: buyerMessage,
+      buyerUsername: buyer.username || buyer.tg_id,
+      taskName: task.name
+    };
+    
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    await ctx.reply('✅ Вы одобрили запрос на доработку.\n\n📝 Напишите комментарий для креативщика:');
+    ctx.session.waitingForRevisionComment = true;
+    
+    await ctx.answerCbQuery('Запрос одобрен');
+  } catch (error) {
+    console.error('Error handling revision_approve action:', error);
+    try { await ctx.answerCbQuery('Ошибка при одобрении запроса.'); } catch {}
+  }
+});
+
+// Global handler for rejecting revision request
+bot.action(/^revision_reject_(.+)$/, async (ctx) => {
+  try {
+    const requestId = ctx.match[1];
+    const RevisionRequest = require('./src/databases/revisionRequest.model');
+    const userService = require('./src/services/user.service');
+    
+    // Get revision request from database
+    const revisionRequest = await RevisionRequest.findById(requestId)
+      .populate('task')
+      .populate('buyer');
+    
+    if (!revisionRequest || revisionRequest.status !== 'pending') {
+      await ctx.answerCbQuery('❌ Запрос не найден или уже обработан');
+      return;
+    }
+    
+    const { task, buyer } = revisionRequest;
+    
+    // Find the moderator user by Telegram ID
+    const moderatorUser = await userService.findUserByTelegramId(ctx.from.id);
+    if (!moderatorUser) {
+      await ctx.answerCbQuery('❌ Ошибка: пользователь не найден');
+      return;
+    }
+    
+    // Update request status
+    revisionRequest.status = 'rejected';
+    revisionRequest.processedBy = moderatorUser._id;
+    revisionRequest.processedAt = new Date();
+    await revisionRequest.save();
+    
+    if (task && buyer) {
+      // Notify buyer that revision request was rejected
+      await ctx.telegram.sendMessage(
+        buyer.tg_id,
+        `❌ Ваш запрос на доработку задачи "${task.name}" был отклонен модератором. Задание остается в статусе "Готово".`
+      );
+    }
+    
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ Отклонено');
+    await ctx.answerCbQuery('Запрос отклонен');
+  } catch (error) {
+    console.error('Error handling revision_reject action:', error);
     try { await ctx.answerCbQuery('Ошибка при отклонении запроса.'); } catch {}
   }
 });

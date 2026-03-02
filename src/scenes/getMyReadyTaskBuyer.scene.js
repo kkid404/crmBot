@@ -1167,7 +1167,9 @@ watchReadyTzScene.on('text', async (ctx) => {
                 return;
             }
             
-            const rejectionMessage = ctx.message.text;
+            const buyerMessage = ctx.message.text;
+            const tgId = String(ctx.from.id);
+            const buyer = await userService.findUserByTelegramId(tgId);
             const creator = await userService.findById(task.creator);
             
             if (!creator) {
@@ -1176,36 +1178,63 @@ watchReadyTzScene.on('text', async (ctx) => {
                 return;
             }
             
-            // Обновляем задание: возвращаем в статус "progress" и увеличиваем версию
-            await taskService.updateTask(taskId, { 
-                state: 'progress', 
-                version: (task.version || 1) + 1 
+            // Создаем запрос на доработку для модерации
+            const RevisionRequest = require('../databases/revisionRequest.model');
+            const revisionRequest = await RevisionRequest.create({
+                task: taskId,
+                buyer: buyer._id,
+                creator: creator._id,
+                buyerMessage: buyerMessage,
+                status: 'pending'
             });
             
-            // Формируем сообщение для креативщика
+            // Находим всех чекеров и админов-креативщиков для уведомления
+            const checkers = await userService.findAllCheckers();
+            
+            // Формируем сообщение для модераторов
             const { taskInfo } = buildTaskInfo(task);
-            const creativeMessage = `
-❌ Задание "${task.name}" отклонено заказчиком и требует доработки:
+            const moderationMessage = `
+🔔 Новый запрос на доработку от баера @${buyer.username || buyer.tg_id}
+
+📋 Задание: ${task.name}
+👨‍💻 Креативщик: @${creator.username || creator.tg_id}
 
 ${taskInfo}
 
-🔴 Правки от заказчика:
-${rejectionMessage}
+📝 Правки от баера:
+${buyerMessage}
             `;
             
-            // Разбиваем длинное сообщение на части и отправляем креативщику
-            const messageParts = splitLongMessage(creativeMessage);
-            for (const part of messageParts) {
-                await ctx.telegram.sendMessage(creator.tg_id, part);
+            // Отправляем уведомления всем чекерам с кнопками
+            const { Markup } = require('telegraf');
+            const moderationKeyboard = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback('✅ Одобрить', `revision_approve_${revisionRequest._id}`),
+                    Markup.button.callback('❌ Отклонить', `revision_reject_${revisionRequest._id}`)
+                ]
+            ]);
+            
+            for (const checker of checkers) {
+                try {
+                    const messageParts = splitLongMessage(moderationMessage);
+                    for (let i = 0; i < messageParts.length; i++) {
+                        if (i === messageParts.length - 1) {
+                            // Последняя часть с клавиатурой
+                            await ctx.telegram.sendMessage(checker.tg_id, messageParts[i], moderationKeyboard);
+                        } else {
+                            await ctx.telegram.sendMessage(checker.tg_id, messageParts[i]);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Failed to send revision request to checker ${checker.username}:`, error);
+                }
             }
             
-            // Сообщаем пользователю об успешном отклонении
-            await ctx.reply(`✅ Задание "${task.name}" отклонено и возвращено креативщику на доработку.`);
+            // Сообщаем баеру об успешной отправке на модерацию
+            await ctx.reply(`✅ Ваш запрос на доработку задания "${task.name}" отправлен на рассмотрение модератору.`);
             
             // Возвращаемся к списку заданий
-            const tgId = String(ctx.from.id);
-            const user = await userService.findUserByTelegramId(tgId);
-            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
+            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(buyer._id, buyer.position, "done"));
             
             // Сбрасываем флаг ожидания
             ctx.session.waitingForRejectionMessage = false;
