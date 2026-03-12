@@ -11,28 +11,44 @@ module.exports = {
 
   async notifyCreatorsNewRound() {
     try {
+      console.log('[NotificationService] notifyCreatorsNewRound called');
+      
       if (!botInstance) {
         console.warn('[NotificationService] Bot instance is not initialized; skip notifyCreatorsNewRound');
         return;
       }
 
       const allUsers = await userService.getAll();
+      console.log(`[NotificationService] Total users: ${allUsers.length}`);
+      
       const creators = allUsers.filter(u => u.position === 'creator' && u.tg_id);
+      console.log(`[NotificationService] Creators with tg_id: ${creators.length}`);
 
-      if (!creators.length) return;
+      if (!creators.length) {
+        console.log('[NotificationService] No creators to notify');
+        return;
+      }
 
       const text = '🎯 Доступны новые задания!';
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('получить тз', 'open_task_pool')]
       ]);
 
+      let successCount = 0;
+      let failCount = 0;
+
       for (const u of creators) {
         try {
           await botInstance.telegram.sendMessage(u.tg_id, text, keyboard);
+          successCount++;
+          console.log(`[NotificationService] ✅ Notified creator @${u.username || u.tg_id}`);
         } catch (err) {
-          console.error(`[NotificationService] Failed to notify creator ${u.tg_id}:`, err?.description || err?.message || err);
+          failCount++;
+          console.error(`[NotificationService] ❌ Failed to notify creator @${u.username || u.tg_id} (${u.tg_id}):`, err?.description || err?.message || err);
         }
       }
+      
+      console.log(`[NotificationService] Notification complete: ${successCount} success, ${failCount} failed`);
     } catch (e) {
       console.error('[NotificationService] notifyCreatorsNewRound error:', e);
     }

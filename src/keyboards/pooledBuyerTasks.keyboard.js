@@ -208,6 +208,15 @@ async function refreshPool() {
                 roundState.roundTasks = {};
                 roundState.roundStartTime = now;
                 await roundState.save();
+                
+                // Notify creators and buyers about new round
+                try {
+                    const notificationService = require('../services/notification.service');
+                    await notificationService.notifyCreatorsNewRound();
+                } catch (notifyErr) {
+                    console.error('[pooledBuyerTasks.keyboard] Failed to notify about new round:', notifyErr);
+                }
+                
                 return refreshPool();
             } else {
                 console.log(`[pooledBuyerTasks.keyboard] Found ${activeUnprocessedTasks.length} active unprocessed tasks, not starting new round`);
