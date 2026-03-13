@@ -177,7 +177,23 @@ async function refreshPool() {
                 currentPool = activeUnprocessedTasks;
                 return;
             } else {
-                console.log('[pooledBuyerTasks.keyboard] No active unprocessed tasks found, can start new round');
+                console.log('[pooledBuyerTasks.keyboard] ✨ No active unprocessed tasks found, STARTING NEW ROUND');
+                
+                // Clear round state to start fresh
+                roundState.processedTaskIds = [];
+                roundState.roundTasks = {};
+                roundState.roundStartTime = now;
+                await roundState.save();
+                
+                // Notify creators about new round
+                try {
+                    console.log('[pooledBuyerTasks.keyboard] 📢 Sending notifications to creators...');
+                    const notificationService = require('../services/notification.service');
+                    await notificationService.notifyCreatorsNewRound();
+                    console.log('[pooledBuyerTasks.keyboard] ✅ Notifications sent successfully');
+                } catch (notifyErr) {
+                    console.error('[pooledBuyerTasks.keyboard] ❌ Failed to notify about new round:', notifyErr);
+                }
             }
         }
 
@@ -203,18 +219,20 @@ async function refreshPool() {
 
             // Only start a new round if there are no active unprocessed tasks
             if (activeUnprocessedTasks.length === 0) {
-                console.log('[pooledBuyerTasks.keyboard] No active unprocessed tasks, starting a new round');
+                console.log('[pooledBuyerTasks.keyboard] ✨ No active unprocessed tasks, STARTING NEW ROUND');
                 roundState.processedTaskIds = [];
                 roundState.roundTasks = {};
                 roundState.roundStartTime = now;
                 await roundState.save();
                 
-                // Notify creators and buyers about new round
+                // Notify creators about new round
                 try {
+                    console.log('[pooledBuyerTasks.keyboard] 📢 Sending notifications to creators...');
                     const notificationService = require('../services/notification.service');
                     await notificationService.notifyCreatorsNewRound();
+                    console.log('[pooledBuyerTasks.keyboard] ✅ Notifications sent successfully');
                 } catch (notifyErr) {
-                    console.error('[pooledBuyerTasks.keyboard] Failed to notify about new round:', notifyErr);
+                    console.error('[pooledBuyerTasks.keyboard] ❌ Failed to notify about new round:', notifyErr);
                 }
                 
                 return refreshPool();

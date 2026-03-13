@@ -246,7 +246,17 @@ async function sendPostponeRequest(ctx) {
             return;
         }
         
-        // Save postpone request to database
+        // Delete any existing pending postpone requests for this task
+        const deletedRequests = await PostponeRequest.deleteMany({
+            task: task._id,
+            status: 'pending'
+        });
+        
+        if (deletedRequests.deletedCount > 0) {
+            console.log(`[postponeDeadline] Deleted ${deletedRequests.deletedCount} previous pending postpone requests for task ${task._id}`);
+        }
+        
+        // Save new postpone request to database
         const postponeRequest = new PostponeRequest({
             task: task._id,
             creator: creatorUser._id,

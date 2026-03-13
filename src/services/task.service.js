@@ -35,6 +35,19 @@ class TaskService {
             const currentTask = await Task.findById(taskId);
             const isStateChanging = updates.state && currentTask && updates.state !== currentTask.state;
             
+            // If state is changing to 'wait' or 'done', delete all pending postpone requests
+            if (isStateChanging && (updates.state === 'wait' || updates.state === 'done')) {
+                const PostponeRequest = require('../databases/postponeRequest.model');
+                const deletedRequests = await PostponeRequest.deleteMany({
+                    task: taskId,
+                    status: 'pending'
+                });
+                
+                if (deletedRequests.deletedCount > 0) {
+                    console.log(`[TaskService] Deleted ${deletedRequests.deletedCount} pending postpone requests for task ${taskId} (state changed to ${updates.state})`);
+                }
+            }
+            
             // Update the task
             const updatedTask = await Task.findByIdAndUpdate(
                 taskId, 
