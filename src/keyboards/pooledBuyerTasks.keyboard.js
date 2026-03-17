@@ -263,9 +263,21 @@ async function refreshPool() {
 
             // Only update if we have new tasks and no active tasks in current round
             if (tasksToAdd.length > 0) {
+                console.log(`[pooledBuyerTasks.keyboard] 📝 Adding ${tasksToAdd.length} new tasks to current round`);
+                
                 // Convert object back to plain object for storage
                 roundState.roundTasks = newRoundTasks;
                 await roundState.save();
+                
+                // Notify creators about new tasks added to round
+                try {
+                    console.log('[pooledBuyerTasks.keyboard] 📢 Sending notifications about new tasks...');
+                    const notificationService = require('../services/notification.service');
+                    await notificationService.notifyCreatorsNewRound();
+                    console.log('[pooledBuyerTasks.keyboard] ✅ Notifications sent successfully');
+                } catch (notifyErr) {
+                    console.error('[pooledBuyerTasks.keyboard] ❌ Failed to notify about new tasks:', notifyErr);
+                }
             }
         }
 

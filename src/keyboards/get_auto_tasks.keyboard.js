@@ -37,6 +37,8 @@ const autoTasks = async () => {
         }
 
         if (needNewRound) {
+            console.log('[get_auto_tasks.keyboard] ✨ Starting new round');
+            
             // Формируем новый круг из всех активных задач
             const tasksByBuyer = {};
             for (const task of activeTasks) {
@@ -50,6 +52,16 @@ const autoTasks = async () => {
             roundState.processedTaskIds = [];
             roundState.roundStartTime = new Date();
             await roundState.save();
+            
+            // Notify creators about new round
+            try {
+                console.log('[get_auto_tasks.keyboard] 📢 Sending notifications to creators...');
+                const notificationService = require('../services/notification.service');
+                await notificationService.notifyCreatorsNewRound();
+                console.log('[get_auto_tasks.keyboard] ✅ Notifications sent successfully');
+            } catch (notifyErr) {
+                console.error('[get_auto_tasks.keyboard] ❌ Failed to notify about new round:', notifyErr);
+            }
         }
 
         // Получаем все задачи текущего круга одним запросом
