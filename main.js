@@ -38,17 +38,6 @@ const { Stage } = Scenes;
 // Использование локальной сессии
 const localSession = new LocalSession({ database: 'session_db.json' });
 
-// Глобальная кнопка для быстрого перехода к пулу ТЗ
-bot.action('open_task_pool', async (ctx) => {
-  try {
-    await ctx.scene.enter('getTTScene');
-    await ctx.answerCbQuery();
-  } catch (e) {
-    console.error('Error handling open_task_pool:', e);
-    try { await ctx.answerCbQuery('Ошибка открытия пула заданий'); } catch {}
-  }
-});
-
 bot.use(localSession.middleware());
 
 // Подготовка Stage для сцен
@@ -234,6 +223,17 @@ bot.use(stage.middleware());
 
 // Глобальное middleware проверки пользователя
 bot.use(checkUser);
+
+// Глобальная кнопка для быстрого перехода к пулу ТЗ
+bot.action('open_task_pool', async (ctx) => {
+  try {
+    await ctx.scene.enter('getTTScene');
+    await ctx.answerCbQuery();
+  } catch (e) {
+    console.error('Error handling open_task_pool:', e);
+    try { await ctx.answerCbQuery('Ошибка открытия пула заданий'); } catch {}
+  }
+});
 
 
 // Global handler for setting expected time from any context (must be AFTER session/stage/checkUser)
