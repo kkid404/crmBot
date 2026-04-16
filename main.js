@@ -173,7 +173,6 @@ ${moderatorComment}
         await ctx.telegram.sendMessage(
           task.buyer.tg_id,
           `📅 Задача "${task.name}" перенесена на ${newDate} к ${newTime}\n\n` +
-          `📝 Причина: ${reason}\n` +
           `💬 Комментарий модератора: ${moderatorComment}`
         );
       }
@@ -187,7 +186,6 @@ ${moderatorComment}
           await ctx.telegram.sendMessage(
             task.createdBy.tg_id,
             `📅 Задача "${task.name}" перенесена на ${newDate} к ${newTime}\n\n` +
-            `📝 Причина: ${reason}\n` +
             `💬 Комментарий модератора: ${moderatorComment}\n` +
             `(создано от лица @${task.buyer.username || 'баера'})`
           );
