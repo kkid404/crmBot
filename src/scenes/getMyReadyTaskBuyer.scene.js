@@ -945,7 +945,8 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`
+                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    await start(ctx.from.id)
                 );
                 
                 ctx.session = {};
@@ -1022,7 +1023,8 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`
+                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    await start(ctx.from.id)
                 );
                 
                 ctx.session = {};
@@ -1110,7 +1112,8 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`
+                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    await start(ctx.from.id)
                 );
                 
                 ctx.session = {};
@@ -1397,7 +1400,7 @@ ${buyerMessage}
                                     }
                                 }
                             }
-                        
+            
                             // Если медиа было отправлено, сохраняем его message_id для удаления
                             if (mediaResponse && mediaResponse.message_id) {
                                 ctx.session.mediaMessageId = mediaResponse.message_id;
