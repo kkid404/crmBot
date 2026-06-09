@@ -178,7 +178,27 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
                         date: sentMessage.date,
                         chat: sentMessage.chat?.id
                     });
-                    
+
+                    // Уведомляем баера, от лица которого создана задача, если это не сам создатель
+                    const selectedBuyerMongoId = String(buyerId);
+                    const createdByMongoId = String(user._id);
+                    if (selectedBuyerMongoId !== createdByMongoId) {
+                        try {
+                            const selectedBuyer = await userService.findById(buyerId);
+                            if (selectedBuyer && selectedBuyer.tg_id) {
+                                await ctx.telegram.sendMessage(
+                                    selectedBuyer.tg_id,
+                                    `📋 Главный баер @${user.username || 'неизвестно'} создал задачу от вашего имени:\n\n` +
+                                    `🎯 Задача: "${taskData.name}"\n` +
+                                    `📝 Описание: ${taskData.description}\n` +
+                                    `👨‍🎨 Назначена креативщику: @${creator.username || 'неизвестно'}`
+                                );
+                            }
+                        } catch (buyerNotifyErr) {
+                            console.error(`Не удалось отправить уведомление баеру:`, buyerNotifyErr.message);
+                        }
+                    }
+
                     await ctx.reply(
                         `✅ Задача "${taskData.name}" успешно создана и отправлена креативщику для установки времени.`,
                         await start(ctx.from.id)
