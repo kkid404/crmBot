@@ -22,21 +22,10 @@ async function start(tgId) {
             // owner получает buyer-кнопки + owner-кнопки
             keyboardLayout = [...buyerButtons, ...ruMessage.keyboards.ownerKeyboard];
         } else if (user.position === "creator") {
-            // Создаем копию массива и фильтруем undefined
-            keyboardLayout = [...ruMessage.keyboards.startCreo].filter(btn => btn != null);
-
-            // Проверяем наличие элементов для замены
-            const shiftControl = ruMessage.keyboards.shiftControl;
-            if (!shiftControl) throw new Error('Shift control buttons not defined');
-
-            const hasActiveShift = await EmployeeScheduleService.findActiveShiftByCreativeId(user._id);
-            const shiftButton = hasActiveShift === null ? shiftControl.start_shift : shiftControl.end_shift;
-            // Убедимся, что индекс существует, или добавляем кнопку в конец
-            if (keyboardLayout.length >= 4) {
-                keyboardLayout[3] = shiftButton;
-            } else {
-                keyboardLayout.push(shiftButton);
-            }
+            // Креативщики работают через веб-интерфейс
+            return Markup.inlineKeyboard([
+                [Markup.button.url('🌐 Перейти на сайт', 'http://wmacreoweb.shop/')]
+            ]);
         } else if (user.position === "finance") {
             keyboardLayout = [Object.values(ruMessage.keyboards.startFinance)];
 
