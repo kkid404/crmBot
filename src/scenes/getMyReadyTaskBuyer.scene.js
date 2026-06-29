@@ -133,12 +133,7 @@ ${createdByInfo}📅 Дата создания: ${formatDateMSK(task.createdAt)}
     // Добавляем информацию о CTR, если она задана
     if (task.CTR !== null && task.CTR !== undefined) {
         taskInfo += `\n📊 CTR: ${task.CTR}`;
-    }  
-
-    // Добавляем информацию о бонусе, если она задана
-    if (task.bonus !== null && task.bonus !== undefined) {
-        taskInfo += `\n💰 Бонус для креативщика: ${task.bonus}`;
-    }  
+    }
 
     return { taskInfo, fullDescription, hasFullDescription };
 }
@@ -564,27 +559,6 @@ watchReadyTzScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
     }
 });
 
-watchReadyTzScene.action('edit_ctr', async (ctx) => {
-    try {
-
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
-
-        if (!task) {
-            await ctx.answerCbQuery('Задача не найдена');
-            return;
-        }
-
-        // Устанавливаем шаг для редактирования
-        ctx.session.step = 1;
-
-        // Запрашиваем у пользователя CTR
-        await ctx.editMessageText('Введите новый CTR:\nНапример: 0.3');
-    } catch (error) {
-        console.error('Ошибка при обработке edit_ctr:', error);
-        await ctx.answerCbQuery('Произошла ошибка');
-    }
-});
 
 watchReadyTzScene.action('reply', async (ctx) => {
     await ctx.editMessageText(
@@ -1276,59 +1250,7 @@ ${buyerMessage}
         return;
     }
 
-    // Добавляем обработку шагов для ввода CTR и бонуса
-    if (step === 1) {
-        // Пользователь ввел CTR
-        let ctrInput = ctx.message.text.trim();
-        
-        // Убираем символ % если он есть
-        ctrInput = ctrInput.replace('%', '').trim();
-        
-        // Преобразуем в число
-        const ctrValue = parseFloat(ctrInput);
-        
-        // Проверяем, что это валидное число
-        if (isNaN(ctrValue)) {
-            await ctx.reply('❌ Ошибка: введите корректное числовое значение CTR.\nНапример: 3.5 или 3.5%');
-            return;
-        }
-        
-        ctx.session.CTR = ctrValue;
-
-        // Переходим ко второму вопросу — запрос бонуса
-        ctx.session.step = 2;
-        await ctx.reply('Введите бонус для креативщика:\nНапример: 1000');
-    } else if (step === 2) {
-        // Пользователь ввел бонус
-        let bonusInput = ctx.message.text.trim();
-        
-        // Преобразуем в число
-        const bonusValue = parseFloat(bonusInput);
-        
-        // Проверяем, что это валидное число
-        if (isNaN(bonusValue)) {
-            await ctx.reply('❌ Ошибка: введите корректное числовое значение бонуса.\nНапример: 1000');
-            return;
-        }
-
-        // Сохраняем значения в задаче
-        const taskId = ctx.session.selectedTask;
-        const task = await taskService.findTaskById(taskId);
-
-        if (task) {
-            task.CTR = ctx.session.CTR;  // Обновляем CTR
-            task.bonus = bonusValue;  // Обновляем бонус
-
-            // Сохраняем обновленную задачу в базе данных
-            await taskService.updateTask(taskId, { CTR: task.CTR, bonus: task.bonus });
-
-            // Отправляем подтверждение пользователю
-            ctx.session.step = 0; // Сбрасываем шаг
-
-            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done"));
-        } else {
-            await ctx.reply('Задача не найдена.');
-        }
+    if (false) {
     } else {
         // Если мы здесь, значит пользователь отправил текст, который не обрабатывается ни одним из обработчиков
         // Возвращаем информацию о текущем шаге
