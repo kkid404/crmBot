@@ -20,6 +20,21 @@ module.exports = async (ctx, next) => {
         return; // Останавливаем выполнение, если пользователь забанен
     }
 
-    ctx.state.user = user; // Сохраняем информацию о пользователе в ctx.state
-    await next(); // Переход к следующему middleware или обработчику
+    ctx.state.user = user;
+
+    // Креативщики работают через веб-интерфейс — в боте только уведомления
+    if (user.position === 'creator') {
+        const text = ctx.message?.text || ctx.callbackQuery?.data || '';
+        const isStart = text === '/start' || text.startsWith('/start ');
+        if (!isStart) {
+            const { Markup } = require('telegraf');
+            await ctx.reply(
+                '🌐 Работа ведётся через сайт.',
+                Markup.inlineKeyboard([[Markup.button.url('Перейти на сайт', 'http://wmacreoweb.shop/')]])
+            );
+            return;
+        }
+    }
+
+    await next();
 };
