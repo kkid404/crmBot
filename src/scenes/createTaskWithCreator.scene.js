@@ -12,6 +12,7 @@ const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
 const { Markup } = require('telegraf');
 const { Mutex } = require('async-mutex');
 const mediaMutex = new Mutex();
+const Notification = require('../databases/notification.model');
 
 // Функция для создания имени задачи
 const createName = async (geo) => {
@@ -142,6 +143,20 @@ async function createTaskForCreator(ctx, creatorId, creatorUsername) {
             return;
         }
         
+        // Веб-уведомление креативщику (общая MongoDB с веб-сервером)
+        try {
+            await Notification.create({
+                user: creatorId,
+                type: 'task_assigned',
+                title: 'Новая задача',
+                body: task.name,
+                link: `/tasks/${task._id.toString()}`,
+                data: { taskId: task._id.toString() },
+            });
+        } catch (e) {
+            console.error('[createTaskWithCreator] Failed to create web notification:', e);
+        }
+
         // Send notification to creator to set time
         const creator = await userService.findById(creatorId);
         
