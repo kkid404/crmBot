@@ -15,7 +15,8 @@ const splitLongMessage = require('../utils/splitMessage.util');
 const { formatDateMSK, formatDateTimeMSK } = require('../utils/formatDate.util');
 
 const WEB_BASE_URL = process.env.WEB_BASE_URL || 'http://localhost:3001';
-const axios = require('axios');
+const https = require('https');
+const http = require('http');
 const path = require('path');
 
 // Определяет является ли строка веб-путём (/uploads/...) а не Telegram file_id
@@ -56,14 +57,23 @@ async function sendResultMedia(ctx, resultFiles, taskName) {
         const ext = file.split('.').pop().toLowerCase().split('?')[0];
         const filename = taskName ? `${taskName}.${ext}` : path.basename(file);
         try {
-            const response = await axios.get(url, { responseType: 'stream' });
-            const source = { source: response.data, filename };
+            const stream = await new Promise((resolve, reject) => {
+                const mod = url.startsWith('https') ? https : http;
+                mod.get(url, (res) => resolve(res)).on('error', reject);
+            });
+            const source = { source: stream, filename };
             if (type === 'video') await ctx.replyWithVideo(source);
             else if (type === 'photo') await ctx.replyWithPhoto(source);
             else await ctx.replyWithDocument(source);
         } catch (e) {
             console.error('[sendResultMedia] Failed to send web file:', url, e?.description || e?.message);
-            await ctx.reply(`📎 Файл результата: ${url}`);
+            // Файл слишком большой для Bot API (>50МБ) — отправляем кнопку-ссылку
+            await ctx.reply(`🎬 <b>${filename}</b>\n\nФайл слишком большой для Telegram. Скачайте напрямую:`, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[{ text: '⬇️ Скачать файл', url }]]
+                }
+            });
         }
     }
 
