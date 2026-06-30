@@ -50,28 +50,22 @@ async function sendResultMedia(ctx, resultFiles, taskName) {
     const webFiles = resultFiles.filter(isWebPath);
     const tgFiles = resultFiles.filter(f => !isWebPath(f));
 
-    // Веб-файлы: скачиваем сами и отправляем как стрим — Telegram получает нормальное видео
+    // Веб-файлы: пробуем отправить через URL, при ошибке даём кнопку скачивания
     for (const file of webFiles) {
         const url = toFullUrl(file);
         const type = getMediaType(file);
         const ext = file.split('.').pop().toLowerCase().split('?')[0];
         const filename = taskName ? `${taskName}.${ext}` : path.basename(file);
         try {
-            const stream = await new Promise((resolve, reject) => {
-                const mod = url.startsWith('https') ? https : http;
-                mod.get(url, (res) => resolve(res)).on('error', reject);
-            });
-            const source = { source: stream, filename };
-            if (type === 'video') await ctx.replyWithVideo(source);
-            else if (type === 'photo') await ctx.replyWithPhoto(source);
-            else await ctx.replyWithDocument(source);
+            if (type === 'video') await ctx.replyWithVideo({ url });
+            else if (type === 'photo') await ctx.replyWithPhoto({ url });
+            else await ctx.replyWithDocument({ url });
         } catch (e) {
             console.error('[sendResultMedia] Failed to send web file:', url, e?.description || e?.message);
-            // Файл слишком большой для Bot API (>50МБ) — отправляем кнопку-ссылку
-            await ctx.reply(`🎬 <b>${filename}</b>\n\nФайл слишком большой для Telegram. Скачайте напрямую:`, {
+            await ctx.reply(`🎬 <b>${filename}</b>\n\nСкачайте файл напрямую:`, {
                 parse_mode: 'HTML',
                 reply_markup: {
-                    inline_keyboard: [[{ text: '⬇️ Скачать файл', url }]]
+                    inline_keyboard: [[{ text: '⬇️ Скачать', url }]]
                 }
             });
         }
