@@ -15,6 +15,8 @@ const splitLongMessage = require('../utils/splitMessage.util');
 const { formatDateMSK, formatDateTimeMSK } = require('../utils/formatDate.util');
 
 const WEB_BASE_URL = process.env.WEB_BASE_URL || 'http://localhost:3001';
+const axios = require('axios');
+const path = require('path');
 
 // Определяет является ли строка веб-путём (/uploads/...) а не Telegram file_id
 function isWebPath(str) {
@@ -41,24 +43,24 @@ function getMediaType(str) {
 }
 
 // Отправляет массив файлов результата (веб-пути или Telegram file_id) пользователю
-async function sendResultMedia(ctx, resultFiles) {
+async function sendResultMedia(ctx, resultFiles, taskName) {
     if (!resultFiles || resultFiles.length === 0) return;
 
     const webFiles = resultFiles.filter(isWebPath);
     const tgFiles = resultFiles.filter(f => !isWebPath(f));
 
-    // Веб-файлы: отправляем через URL по одному (sendMediaGroup не поддерживает URL в некоторых версиях)
+    // Веб-файлы: скачиваем сами и отправляем как стрим — Telegram получает нормальное видео
     for (const file of webFiles) {
         const url = toFullUrl(file);
         const type = getMediaType(file);
+        const ext = file.split('.').pop().toLowerCase().split('?')[0];
+        const filename = taskName ? `${taskName}.${ext}` : path.basename(file);
         try {
-            if (type === 'video') {
-                await ctx.replyWithVideo({ url });
-            } else if (type === 'photo') {
-                await ctx.replyWithPhoto({ url });
-            } else {
-                await ctx.replyWithDocument({ url });
-            }
+            const response = await axios.get(url, { responseType: 'stream' });
+            const source = { source: response.data, filename };
+            if (type === 'video') await ctx.replyWithVideo(source);
+            else if (type === 'photo') await ctx.replyWithPhoto(source);
+            else await ctx.replyWithDocument(source);
         } catch (e) {
             console.error('[sendResultMedia] Failed to send web file:', url, e?.description || e?.message);
             await ctx.reply(`📎 Файл результата: ${url}`);
@@ -189,7 +191,7 @@ watchReadyTzScene.enter(async (ctx) => {
 
         if (task.result) {
             const files = Array.isArray(task.result) ? task.result : [task.result];
-            await sendResultMedia(ctx, files);
+            await sendResultMedia(ctx, files, task.name);
         }
 
         // Разбиваем длинное сообщение на части
@@ -377,7 +379,7 @@ watchReadyTzScene.action('back_to_task', async (ctx) => {
         // Редактируем сообщение с описанием задания
         if (task.result) {
             const files = Array.isArray(task.result) ? task.result : [task.result];
-            await sendResultMedia(ctx, files);
+            await sendResultMedia(ctx, files, task.name);
         }
     
         // Разбиваем длинное сообщение на части
@@ -534,7 +536,7 @@ watchReadyTzScene.action(/^[a-f0-9]{24}$/, async (ctx) => {
 
         if (task.result) {
             const files = Array.isArray(task.result) ? task.result : [task.result];
-            await sendResultMedia(ctx, files);
+            await sendResultMedia(ctx, files, task.name);
         }
 
         // Разбиваем длинное сообщение на части
