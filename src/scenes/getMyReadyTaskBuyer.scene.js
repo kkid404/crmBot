@@ -38,7 +38,7 @@ function getMediaType(str) {
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'photo';
         return 'document';
     }
-    if (str.startsWith('BAA')) return 'video';
+    if (str.startsWith('BAA') || str.startsWith('BAQ')) return 'video';
     if (str.startsWith('BQA') || str.startsWith('CQA') || str.startsWith('DQA')) return 'document';
     return 'photo';
 }
