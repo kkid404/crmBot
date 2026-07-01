@@ -97,9 +97,13 @@ MyTzBuyerScene.action('back', async (ctx) => {
         // Сбрасываем страницу при возврате к списку задач
         ctx.session.currentPage = 0;
         
+        const search = ctx.session.searchQuery || '';
+        const listText = search
+            ? `🔍 Результаты по запросу «${search}»:`
+            : ruMessage.messages.getTT.select_tt;
         await ctx.editMessageText(
-            ruMessage.messages.getTT.select_tt, 
-            await myTasks(user._id, 'buyer', state, ctx.session.currentPage)
+            listText,
+            await myTasks(user._id, 'buyer', state, ctx.session.currentPage, search)
         );
         
         // Очищаем выбранную задачу
@@ -141,11 +145,15 @@ MyTzBuyerScene.action(/^page_\d+$/, async (ctx) => {
         // Используем состояние из сессии (progress или wait)
         const state = ctx.session.stateGetTask || 'progress';
         
-        // Получаем обновленную клавиатуру с новой страницей
-        const keyboard = await myTasks(user._id, 'buyer', state, pageNumber);
-        
+        // Получаем обновленную клавиатуру с новой страницей (сохраняем поисковый запрос)
+        const search = ctx.session.searchQuery || '';
+        const keyboard = await myTasks(user._id, 'buyer', state, pageNumber, search);
+
         // Обновляем сообщение с новой клавиатурой
-        await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+        const listText = search
+            ? `🔍 Результаты по запросу «${search}»:`
+            : ruMessage.messages.getTT.select_tt;
+        await ctx.editMessageText(listText, keyboard);
         await ctx.answerCbQuery();
     } catch (error) {
         console.error('Error in pagination action:', error);
@@ -156,6 +164,26 @@ MyTzBuyerScene.action(/^page_\d+$/, async (ctx) => {
 // Обработчик для кнопки текущей страницы (чтобы не выдавать ошибку при нажатии)
 MyTzBuyerScene.action('current_page', async (ctx) => {
     await ctx.answerCbQuery('Текущая страница');
+});
+
+// Поиск по названию
+MyTzBuyerScene.action('search_tasks', async (ctx) => {
+    ctx.session.step = 'SEARCH';
+    await ctx.answerCbQuery();
+    await ctx.reply('🔍 Введите название задачи или его часть:');
+});
+
+// Сброс поиска
+MyTzBuyerScene.action('clear_search', async (ctx) => {
+    ctx.session.searchQuery = '';
+    ctx.session.currentPage = 0;
+    const tgId = String(ctx.from.id);
+    const user = await userService.findUserByTelegramId(tgId);
+    if (!user) { await ctx.answerCbQuery(); return; }
+    const state = ctx.session.stateGetTask || 'progress';
+    const keyboard = await myTasks(user._id, 'buyer', state, 0, '');
+    await ctx.editMessageText(ruMessage.messages.getTT.select_tt, keyboard);
+    await ctx.answerCbQuery('Поиск сброшен');
 });
 
 // Обработчик для кнопки "show_example"
@@ -544,6 +572,24 @@ MyTzBuyerScene.on('text', async (ctx) => {
     const tgId = String(ctx.from.id);
     const userInput = ctx.message.text;
     const user = await userService.findUserByTelegramId(tgId);
+
+    // Обработка поискового запроса
+    if (step === 'SEARCH') {
+        ctx.session.searchQuery = userInput.trim();
+        ctx.session.currentPage = 0;
+        ctx.session.step = null;
+        const state = ctx.session.stateGetTask || 'progress';
+        if (user) {
+            const keyboard = await myTasks(user._id, 'buyer', state, 0, ctx.session.searchQuery);
+            await ctx.reply(
+                ctx.session.searchQuery
+                    ? `🔍 Результаты по запросу «${ctx.session.searchQuery}»:`
+                    : ruMessage.messages.getTT.select_tt,
+                keyboard
+            );
+        }
+        return;
+    }
 
     // Если пользователь зачем-то ввёл "назад" текстом
     if (userInput === ruMessage.keyboards.back[0]) {

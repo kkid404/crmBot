@@ -212,6 +212,20 @@ async function handleText(ctx) {
         }
     }
 
+    // Накопление продолжения описания (если текст пришёл частями)
+    if (ctx.session.awaitingDescription && step === 3) {
+        ctx.session.description = ctx.session.description
+            ? ctx.session.description + '\n' + userInput
+            : userInput;
+        await ctx.reply(
+            `📝 Продолжение добавлено (всего ${ctx.session.description.length} символов). Отправьте ещё или нажмите кнопку:`,
+            Markup.inlineKeyboard([
+                Markup.button.callback('✅ Описание готово', 'description_done')
+            ])
+        );
+        return;
+    }
+
     // Обработка текстового примера, когда ждем медиа
     if (ctx.session.awaitingMedia && step === 3) {
         // Инициализация массива медиафайлов
@@ -256,9 +270,18 @@ async function handleText(ctx) {
             await ctx.reply(ruMessage.messages.writeTT.send_description, back());
             break;
         case 3:
-            ctx.session.description = userInput;
-            await ctx.reply(ruMessage.messages.writeTT.send_example, await dont_example());
-            ctx.session.awaitingMedia = true;
+            // Накапливаем описание — Telegram может разбить длинный текст на несколько сообщений
+            ctx.session.description = ctx.session.description
+                ? ctx.session.description + '\n' + userInput
+                : userInput;
+            ctx.session.awaitingDescription = true;
+            await ctx.reply(
+                `📝 Описание сохранено (${ctx.session.description.length} символов).\n\nЕсли текст разбился на части — отправьте продолжение. Когда всё готово — нажмите кнопку:`,
+                Markup.inlineKeyboard([
+                    Markup.button.callback('✅ Описание готово', 'description_done')
+                ])
+            );
+            shouldIncrementStep = false; // Не переходим дальше, ждём подтверждения
             break;
         default:
             await ctx.reply(ruMessage.messages.errors.writeTT, await start(ctx.from.id));
@@ -396,6 +419,15 @@ writeTTScene.on('text', handleText)
 writeTTScene.on('photo', handleMedia);
 writeTTScene.on('video', handleMedia);
 writeTTScene.action('save_task', handleSaveTask);
+
+// Подтверждение описания — переходим к шагу с примерами
+writeTTScene.action('description_done', async (ctx) => {
+    ctx.session.awaitingDescription = false;
+    ctx.session.step = 3; // остаёмся на step 3 но включаем awaitingMedia
+    ctx.session.awaitingMedia = true;
+    await ctx.answerCbQuery();
+    await ctx.reply(ruMessage.messages.writeTT.send_example, await dont_example());
+});
 
 // Обработчик нажатия на кнопку "Нет примера"
 writeTTScene.action('no_example', async (ctx) => {

@@ -5,9 +5,14 @@ const { Markup } = require('telegraf');
 const TASKS_PER_PAGE = 5; // Максимальное количество задач на странице
 
 // Функция для создания inline клавиатуры на основе данных задач с пагинацией
-const myTasks = async (id, role = '', state, page = 0) => {
+const myTasks = async (id, role = '', state, page = 0, search = '') => {
     let tasks = await taskService.getUserTasks(id, role, state); // Получаем активные задачи
-    
+
+    // Фильтрация по поиску
+    if (search) {
+        tasks = tasks.filter(t => t.name.toLowerCase().includes(search.toLowerCase()));
+    }
+
     // Сортируем задачи по дате создания (сначала новые)
     tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     
@@ -61,6 +66,16 @@ const myTasks = async (id, role = '', state, page = 0) => {
         }
         
         inlineKeyboard.push(navigationButtons);
+    }
+
+    // Кнопка поиска / сброса поиска
+    if (search) {
+        inlineKeyboard.push([
+            Markup.button.callback('🔍 Поиск', 'search_tasks'),
+            Markup.button.callback(`✖️ Сбросить: «${search.slice(0, 15)}»`, 'clear_search'),
+        ]);
+    } else {
+        inlineKeyboard.push([Markup.button.callback('🔍 Поиск по названию', 'search_tasks')]);
     }
 
     // Добавляем кнопку выхода
