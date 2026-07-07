@@ -13,6 +13,17 @@ const { Markup } = require('telegraf');
 const { Mutex } = require('async-mutex');
 const mediaMutex = new Mutex();
 const Notification = require('../databases/notification.model');
+const FileName = require('../databases/fileName.model');
+
+// Сохраняем исходное имя файла по file_id — веб использует его при скачивании
+async function saveFileName(fileId, name) {
+    if (!fileId || !name) return;
+    try {
+        await FileName.updateOne({ file_id: fileId }, { $set: { name } }, { upsert: true });
+    } catch (e) {
+        console.error('saveFileName error:', e.message);
+    }
+}
 
 // Функция для создания имени задачи
 const createName = async (geo) => {
@@ -420,6 +431,7 @@ async function handleMedia(ctx) {
             fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         } else if (ctx.message.video) {
             fileId = ctx.message.video.file_id;
+            await saveFileName(fileId, ctx.message.video.file_name);
         }
 
         if (!fileId) return;

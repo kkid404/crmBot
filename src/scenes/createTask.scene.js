@@ -11,6 +11,17 @@ const mediaMutex = new Mutex();
 const taskService = require('../services/task.service');
 const { isValidAlpha2CountryCode } = require('../utils/countryValidation');
 const BuyerLinkService = require('../services/buyerLink.service');
+const FileName = require('../databases/fileName.model');
+
+// Сохраняем исходное имя файла по file_id — веб использует его при скачивании
+async function saveFileName(fileId, name) {
+    if (!fileId || !name) return;
+    try {
+        await FileName.updateOne({ file_id: fileId }, { $set: { name } }, { upsert: true });
+    } catch (e) {
+        console.error('saveFileName error:', e.message);
+    }
+}
 
 function handleError(error) {
     console.error(`Error occurred: ${error.message}`);
@@ -314,6 +325,7 @@ async function handleMedia(ctx) {
             fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         } else if (ctx.message.video) {
             fileId = ctx.message.video.file_id;
+            await saveFileName(fileId, ctx.message.video.file_name);
         }
 
         if (!fileId) return;
