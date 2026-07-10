@@ -24,6 +24,12 @@ function isWebPath(str) {
     return typeof str === 'string' && (str.startsWith('/uploads/') || str.startsWith('http'));
 }
 
+// Внешняя ссылка (Google Drive и т.п.) — не наш файл, отправляем текстом, а не медиа,
+// иначе Telegram скачивает HTML-страницу и присылает document.dat
+function isExternalUrl(str) {
+    return typeof str === 'string' && str.startsWith('http') && !str.includes('/uploads/');
+}
+
 // Возвращает полный URL для веб-файла
 function toFullUrl(str) {
     if (str.startsWith('http')) return str;
@@ -47,8 +53,21 @@ function getMediaType(str) {
 async function sendResultMedia(ctx, resultFiles, taskName) {
     if (!resultFiles || resultFiles.length === 0) return;
 
-    const webFiles = resultFiles.filter(isWebPath);
-    const tgFiles = resultFiles.filter(f => !isWebPath(f));
+    // Внешние ссылки (Google Drive и т.п.) — текстом
+    const externalUrls = resultFiles.filter(isExternalUrl);
+    if (externalUrls.length) {
+        const text = `🔗 Результат работы${taskName ? ` «${taskName}»` : ''}:\n\n` +
+            externalUrls.map((u, i) => (externalUrls.length > 1 ? `${i + 1}. ${u}` : u)).join('\n');
+        try {
+            await ctx.reply(text, { disable_web_page_preview: false });
+        } catch (e) {
+            console.error('[sendResultMedia] Failed to send external links:', e?.description || e?.message);
+        }
+    }
+
+    const mediaFiles = resultFiles.filter(f => !isExternalUrl(f));
+    const webFiles = mediaFiles.filter(isWebPath);
+    const tgFiles = mediaFiles.filter(f => !isWebPath(f));
 
     // Веб-файлы: пробуем отправить через URL, при ошибке даём кнопку скачивания
     for (const file of webFiles) {
@@ -1151,21 +1170,35 @@ ${buyerMessage}
                     try {
                         // Обрабатываем случай, когда result является массивом (новый формат)
                         if (Array.isArray(task.result) && task.result.length > 0) {
+                            // Внешние ссылки (Google Drive и т.п.) — текстом, иначе Telegram пришлёт document.dat
+                            const externalUrls = task.result.filter(isExternalUrl);
+                            if (externalUrls.length) {
+                                const linksText = `🔗 Результат работы:\n\n` +
+                                    externalUrls.map((u, i) => (externalUrls.length > 1 ? `${i + 1}. ${u}` : u)).join('\n');
+                                const linksMsg = await ctx.reply(linksText);
+                                if (!ctx.session.mediaMessageIds) ctx.session.mediaMessageIds = [];
+                                ctx.session.mediaMessageIds.push(linksMsg.message_id);
+                            }
+
                             // Разделяем медиафайлы по типам
-                            const mediaGroup = task.result.map(fileId => {
+                            const mediaGroup = task.result.filter(f => !isExternalUrl(f)).map(fileId => {
+                                // Наши файлы с веба — отправляем по полному URL
+                                if (isWebPath(fileId)) {
+                                    return { type: getMediaType(fileId), media: toFullUrl(fileId) };
+                                }
                                 // Определяем тип медиа по первым символам file_id
                                 const isVideo = fileId.startsWith('BAA');
                                 const isDocument = fileId.startsWith('BQA');
                                 const isAudio = fileId.startsWith('CQA');
                                 const isAnimation = fileId.startsWith('DQA');
-                                
+
                                 // Определяем тип медиа
                                 let type = 'photo'; // По умолчанию фото
                                 if (isVideo) type = 'video';
                                 else if (isDocument) type = 'document';
                                 else if (isAudio) type = 'audio';
                                 else if (isAnimation) type = 'animation';
-                                
+
                                 return {
                                     type: type,
                                     media: fileId

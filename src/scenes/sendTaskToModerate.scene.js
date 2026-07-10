@@ -11,6 +11,17 @@ const { formatDateMSK } = require('../utils/formatDate.util');
 const { points_for_creatives } = require('../keyboards/points_for_creatives.keyboard');
 const { Markup } = require('telegraf');
 const splitLongMessage = require('../utils/splitMessage.util');
+const FileName = require('../databases/fileName.model');
+
+// Сохраняем исходное имя файла по file_id — веб использует его при скачивании
+async function saveFileName(fileId, name) {
+    if (!fileId || !name) return;
+    try {
+        await FileName.updateOne({ file_id: fileId }, { $set: { name } }, { upsert: true });
+    } catch (e) {
+        console.error('saveFileName error:', e.message);
+    }
+}
 
 const ttToModerateScene = new BaseScene('ttToModerateScene');
 
@@ -353,6 +364,7 @@ async function handleMedia(ctx) {
     } else if (ctx.message.video) {
         fileId = ctx.message.video.file_id;
         mediaType = 'видео';
+        await saveFileName(fileId, ctx.message.video.file_name);
     } else {
         return; // Если другой тип медиа, игнорируем
     }
