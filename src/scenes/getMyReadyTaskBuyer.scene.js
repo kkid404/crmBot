@@ -695,6 +695,17 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
             return;
         }
 
+        // Креативщик исходного ТЗ уволен (забанен) — новую задачу на него не вешаем,
+        // иначе она зависнет «в работе». Отправляем её в общую очередь: сначала оценка,
+        // потом задача уйдёт в круг и достанется другому креативщику.
+        const creatorBanned = creator.isBan === true;
+        const assignment = creatorBanned
+            ? { creator: null, state: 'active' }
+            : { creator: creator._id, state: 'time' };
+        if (creatorBanned) {
+            console.log(`[REPLY_HANDLER] Creator @${creator.username} is banned — task goes to queue instead`);
+        }
+
         // Переменная для создания нового имени креатива (номер по счету)
         let newName;
         // Базовое описание с учетом комментария заказчика
@@ -730,8 +741,7 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                     example_creative: examplesForUniq,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
+                    ...assignment,
                     points: null,
                     completionDate: null,
                     CTR: null,
@@ -768,22 +778,28 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
 
                 // Разбиваем сообщение на части, если оно слишком длинное
                 const messageParts = splitLongMessage(composed);
-                for (const part of messageParts) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                if (!creatorBanned) {
+                    for (const part of messageParts) {
+                        await ctx.telegram.sendMessage(creator.tg_id, part);
+                    }
                 }
 
                 // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdTask?._id)
-                );
+                if (!creatorBanned) {
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        `🔔 Для задачи "${createdTask?.name}" укажите дату и время сдачи:`,
+                        setExpectedTimeKeyboard(createdTask?._id)
+                    );
+                }
                 
                 // Уведомляем баера о создании задачи
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    (creatorBanned
+                        ? `📤 Прошлый креативщик больше не работает — задача отправлена на оценку и уйдёт в общую очередь.`
+                        : `📤 Задача отправлена креативщику на установку времени выполнения.`),
                     await start(ctx.from.id)
                 );
                 
@@ -810,8 +826,7 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                     example_creative: examplesForAdaptiv,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
+                    ...assignment,
                     points: null,
                     completionDate: null,
                     CTR: null,
@@ -846,22 +861,28 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 
                 // Разбиваем сообщение на части, если оно слишком длинное
                 const messagePartsA = splitLongMessage(composedA);
-                for (const part of messagePartsA) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                if (!creatorBanned) {
+                    for (const part of messagePartsA) {
+                        await ctx.telegram.sendMessage(creator.tg_id, part);
+                    }
                 }
 
                 // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdAdaptiv?._id)
-                );
+                if (!creatorBanned) {
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        `🔔 Для задачи "${createdAdaptiv?.name}" укажите дату и время сдачи:`,
+                        setExpectedTimeKeyboard(createdAdaptiv?._id)
+                    );
+                }
                 
                 // Уведомляем баера о создании задачи
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    (creatorBanned
+                        ? `📤 Прошлый креативщик больше не работает — задача отправлена на оценку и уйдёт в общую очередь.`
+                        : `📤 Задача отправлена креативщику на установку времени выполнения.`),
                     await start(ctx.from.id)
                 );
                 
@@ -897,8 +918,7 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                     example_creative: examplesForDU,
                     buyer: user._id,
                     createdBy: task.createdBy || user._id,
-                    creator: creator._id,
-                    state: 'time',
+                    ...assignment,
                     points: null,
                     completionDate: null,
                     CTR: null,
@@ -935,22 +955,28 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
                 
                 // Разбиваем сообщение на части, если оно слишком длинное
                 const messagePartsDU = splitLongMessage(composedDU);
-                for (const part of messagePartsDU) {
-                    await ctx.telegram.sendMessage(creator.tg_id, part);
+                if (!creatorBanned) {
+                    for (const part of messagePartsDU) {
+                        await ctx.telegram.sendMessage(creator.tg_id, part);
+                    }
                 }
 
                 // Prompt to set expected time
-                await ctx.telegram.sendMessage(
-                    creator.tg_id,
-                    `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
-                    setExpectedTimeKeyboard(createdTaskDU?._id)
-                );
+                if (!creatorBanned) {
+                    await ctx.telegram.sendMessage(
+                        creator.tg_id,
+                        `🔔 Для задачи "${createdTaskDU?.name}" укажите дату и время сдачи:`,
+                        setExpectedTimeKeyboard(createdTaskDU?._id)
+                    );
+                }
                 
                 // Уведомляем баера о создании задачи
                 await ctx.reply(
                     `✅ Задача создана!\n\n` +
                     `📌 Название: ${newName}\n` +
-                    `📤 Задача отправлена креативщику на установку времени выполнения.`,
+                    (creatorBanned
+                        ? `📤 Прошлый креативщик больше не работает — задача отправлена на оценку и уйдёт в общую очередь.`
+                        : `📤 Задача отправлена креативщику на установку времени выполнения.`),
                     await start(ctx.from.id)
                 );
                 
