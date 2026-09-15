@@ -37,6 +37,9 @@ const myTasks = async (id, role = '', state, page = 0, search = '') => {
             // Если текущий пользователь создал задачу, но она от лица другого баера
             if (createdById === currentUserId && buyerId !== currentUserId) {
                 delegateIndicator = '👤 ';
+            } else if (createdById !== currentUserId && buyerId !== currentUserId) {
+                // Крео тимлида команды
+                delegateIndicator = '👥 ';
             }
         }
         

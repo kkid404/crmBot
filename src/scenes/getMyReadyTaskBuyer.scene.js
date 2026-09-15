@@ -5,6 +5,7 @@ const { start } = require('../keyboards/start.keyboard');
 const { tzBuyers } = require('../keyboards/tzBuyers.keyboard');
 const taskService = require('../services/task.service');
 const userService = require('../services/user.service');
+const TeamService = require('../services/team.service');
 const { myTasks } = require('../keyboards/get_my_tt.keyboard');
 const { replyCreative } = require('../keyboards/replyCreative.keyboard');
 const { doneTask } = require('../keyboards/doneTask.keyboard');
@@ -182,7 +183,15 @@ watchReadyTzScene.enter(async (ctx) => {
             await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
             return;
         }
-        
+
+        // Внутри команды баеры не видят крео друг друга — только свои и тимлида
+        if (!(await TeamService.canViewTask(user, task))) {
+            ctx.session.selectedTask = null;
+            await ctx.reply('⛔ Это крео другого баера — открыть его нельзя.');
+            await ctx.reply(ruMessage.messages.getTT.select_tt, await myTasks(user._id, user.position, "done", ctx.session.currentPage));
+            return;
+        }
+
         // Определяем, есть ли медиафайлы и преобразуем в массив, если нужно
         const hasMedia = Array.isArray(task.example_creative) 
             ? task.example_creative.length > 0 

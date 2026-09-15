@@ -157,6 +157,12 @@ class TaskService {
                         { buyer: userId },
                         { createdBy: userId }
                     ];
+                    // Готовые крео тимлида команды видны её участникам (крео других участников — нет)
+                    if (state === 'done') {
+                        const TeamService = require('./team.service');
+                        const leads = await TeamService.leadsOf(userId);
+                        if (leads.length) query.$or.push({ buyer: { $in: leads } });
+                    }
                 } else if (role === 'creator') {
                     query.creator = userId;
                 } else {
