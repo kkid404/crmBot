@@ -381,11 +381,17 @@ writeTTScene.enter(async (ctx) => {
     try {
         const tgId = String(ctx.from.id);
         const user = await userService.findUserByTelegramId(tgId);
-        
+
+        if (userService.isExternalBuyer(user)) {
+            await ctx.reply(ruMessage.messages.external_buyer_orders_closed, await start(ctx.from.id));
+            ctx.session = {};
+            return ctx.scene.leave();
+        }
+
         // Проверяем, есть ли у баера связанные баеры
         if (user && user.position === 'buyer') {
             const buyerLinks = await BuyerLinkService.getLinkedBuyersByMainBuyer(user._id);
-            
+
             // Если есть связанные баеры, показываем выбор
             if (buyerLinks && buyerLinks.linkedBuyers && buyerLinks.linkedBuyers.length > 0) {
                 const keyboard = await createBuyerSelectionKeyboard(tgId);

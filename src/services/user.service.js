@@ -90,6 +90,11 @@ class UserService {
         return user && user.isBan === true;
     }
 
+    /** Сторонний баер (isOur === false) — заказы через бота ему закрыты */
+    static isExternalBuyer(user) {
+        return !!user && user.position === 'buyer' && user.isOur === false;
+    }
+
     /** Найти баеров по фильтрам принадлежности и бану */
     static async findBuyers({ isOur = null, isBan = null } = {}) {
         const query = { position: 'buyer' };

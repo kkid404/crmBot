@@ -11,7 +11,13 @@ async function start(tgId) {
         let keyboardLayout;
 
         // Универсальная buyer-клавиатура
-        const buyerButtons = [...Object.values(ruMessage.keyboards.startBuyer), "📝 Быстрое ТЗ"];
+        let buyerButtons = [...Object.values(ruMessage.keyboards.startBuyer), "📝 Быстрое ТЗ"];
+
+        // Сторонним баерам заказ закрыт — убираем кнопки создания ТЗ
+        if (userService.isExternalBuyer(user)) {
+            const orderButtons = [ruMessage.keyboards.startBuyer.createTz, "📝 Быстрое ТЗ"];
+            buyerButtons = buyerButtons.filter(btn => !orderButtons.includes(btn));
+        }
 
         if (user.position === "buyer" && user.role === "teamlead") {
             // For buyers who are also team leads
