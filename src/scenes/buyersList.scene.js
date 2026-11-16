@@ -33,6 +33,26 @@ BuyersListScene.on('text', async (ctx) => {
   }
 
   try {
+    // Неотмеченные баеры: доступа к боту нет, пока не отметят как «Наш»
+    if (text === kb.unclassified) {
+      const buyers = await userService.findUnclassifiedBuyers();
+      if (!buyers || buyers.length === 0) {
+        await ctx.reply(ruMessage.messages.buyersList.empty);
+        return;
+      }
+      const { Markup } = require('telegraf');
+      for (const b of buyers) {
+        await ctx.reply(
+          ruMessage.messages.classify_buyer.new_buyer.replace('{username}', b.username || b.tg_id),
+          Markup.inlineKeyboard([[
+            Markup.button.callback(ruMessage.messages.classify_buyer.our, `classify_buyer:${b._id}:our`),
+            Markup.button.callback(ruMessage.messages.classify_buyer.not_our, `classify_buyer:${b._id}:not_our`)
+          ]])
+        );
+      }
+      return;
+    }
+
     let filter = {};
     if (text === kb.ours) filter = { isOur: true };
     else if (text === kb.externals) filter = { isOur: false };

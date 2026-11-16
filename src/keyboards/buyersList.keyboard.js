@@ -6,6 +6,7 @@ async function buyersList() {
   return Markup.keyboard([
     [kb.ours],
     [kb.externals],
+    [kb.unclassified],
     [kb.banned],
     [kb.back]
   ]).resize().oneTime();

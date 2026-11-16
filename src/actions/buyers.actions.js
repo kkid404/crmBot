@@ -9,9 +9,10 @@ function actions(bot) {
       const flag = ctx.match[2];
       const isOur = flag === 'our';
 
-      // Разрешим только админам-креативщикам
+      // Разрешим только админам (кнопки приходят админам-креативщикам при регистрации
+      // и доступны админам в «Список баеров» → «Неотмеченные»)
       const actor = await userService.findUserByTelegramId(String(ctx.from.id));
-      if (!actor || actor.role !== 'admin' || actor.position !== 'creator') {
+      if (!actor || actor.role !== 'admin') {
         try { await ctx.answerCbQuery('Недостаточно прав'); } catch {}
         return;
       }
@@ -20,6 +21,18 @@ function actions(bot) {
       if (!updated) {
         try { await ctx.answerCbQuery('Пользователь не найден'); } catch {}
         return;
+      }
+
+      // Сообщаем баеру об открытии/закрытии доступа к боту
+      try {
+        if (isOur) {
+          const { start } = require('../keyboards/start.keyboard');
+          await ctx.telegram.sendMessage(updated.tg_id, ruMessage.messages.buyer_access_granted, await start(updated.tg_id));
+        } else {
+          await ctx.telegram.sendMessage(updated.tg_id, ruMessage.messages.buyer_access_denied, { reply_markup: { remove_keyboard: true } });
+        }
+      } catch (e) {
+        console.error('classify_buyer: failed to notify buyer:', e?.description || e?.message || e);
       }
 
       const statusText = isOur ? ruMessage.messages.classify_buyer.our : ruMessage.messages.classify_buyer.not_our;

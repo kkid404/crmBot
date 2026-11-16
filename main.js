@@ -40,6 +40,9 @@ const localSession = new LocalSession({ database: 'session_db.json' });
 
 bot.use(localSession.middleware());
 
+// Ботом пользуются только баеры, отмеченные как «Наш» (до stage, чтобы не обходилось через сцены)
+bot.use(require('./src/middlewares/buyerAccess.middleware'));
+
 // Подготовка Stage для сцен
 const stage = new Stage();
 

@@ -606,13 +606,6 @@ watchReadyTzScene.action(/^reply_/, async (ctx) => {
     // Получаем данные кнопки
     const actionData = ctx.callbackQuery.data; // например, "reply_uniq"
 
-    const replyUser = await userService.findUserByTelegramId(String(ctx.from.id));
-    if (userService.isExternalBuyer(replyUser)) {
-        await ctx.answerCbQuery();
-        await ctx.reply(ruMessage.messages.external_buyer_orders_closed);
-        return;
-    }
-
     // Отделяем префикс "reply_" от оставшейся части
     const replyType = actionData.replace('reply_', '');
 
@@ -702,11 +695,6 @@ watchReadyTzScene.action('finish_comment_input', async (ctx) => {
         } catch (error) {
             console.error("Ошибка получения пользователя:", error);
             await ctx.reply("Ошибка при получении данных пользователя.");
-            return;
-        }
-
-        if (userService.isExternalBuyer(user)) {
-            await ctx.reply(ruMessage.messages.external_buyer_orders_closed);
             return;
         }
 

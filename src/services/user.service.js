@@ -90,9 +90,12 @@ class UserService {
         return user && user.isBan === true;
     }
 
-    /** Сторонний баер (isOur === false) — заказы через бота ему закрыты */
-    static isExternalBuyer(user) {
-        return !!user && user.position === 'buyer' && user.isOur === false;
+    /**
+     * Баер без доступа к боту: пользоваться ботом могут только баеры,
+     * отмеченные как «Наш» (isOur === true). Админы не ограничиваются.
+     */
+    static isBuyerWithoutAccess(user) {
+        return !!user && user.position === 'buyer' && user.role !== 'admin' && user.isOur !== true;
     }
 
     /** Найти баеров по фильтрам принадлежности и бану */
@@ -101,6 +104,11 @@ class UserService {
         if (isOur !== null) query.isOur = isOur;
         if (isBan !== null) query.isBan = isBan;
         return User.find(query).sort({ createdAt: -1 });
+    }
+
+    /** Баеры, которых ещё не отметили как «Наш» / «Не наш» */
+    static async findUnclassifiedBuyers() {
+        return User.find({ position: 'buyer', isOur: null }).sort({ createdAt: -1 });
     }
 
     /** Установить принадлежность баера (наш/не наш) */

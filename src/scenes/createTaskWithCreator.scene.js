@@ -294,12 +294,6 @@ createTaskWithCreatorScene.enter(async (ctx) => {
             return;
         }
 
-        if (userService.isExternalBuyer(user)) {
-            await ctx.reply(ruMessage.messages.external_buyer_orders_closed, await start(ctx.from.id));
-            ctx.scene.leave();
-            return;
-        }
-
         // Проверяем, есть ли у баера связанные креативщики
         const buyerCreator = await BuyerCreatorService.getCreatorsByBuyer(user._id);
         if (!buyerCreator || !buyerCreator.creators || buyerCreator.creators.length === 0) {

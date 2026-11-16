@@ -89,10 +89,15 @@ RegisterUserScene.on('text', async (ctx) => {
             }
 
             try {
-                await ctx.reply(
-                    `Вы успешно зарегистрированы как ${tokenData.position} с ролью ${tokenData.role}.`,
-                    await start(ctx.from.id)
-                );
+                const registeredText = `Вы успешно зарегистрированы как ${tokenData.position} с ролью ${tokenData.role}.`;
+                if (userService.isBuyerWithoutAccess(newUser)) {
+                    await ctx.reply(
+                        `${registeredText}\n${ruMessage.messages.buyer_access_pending}`,
+                        { reply_markup: { remove_keyboard: true } }
+                    );
+                } else {
+                    await ctx.reply(registeredText, await start(ctx.from.id));
+                }
             } catch (error) {
                 if (error.response?.error_code === 403) {
                     console.log(`Пользователь ${tgId} заблокировал бота`);
